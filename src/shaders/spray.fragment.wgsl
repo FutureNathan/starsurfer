@@ -86,7 +86,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let state = input.vState;
     let kind = state.z;
 
-    // Break the disc's edge. A perfectly circular puff is the tell that gives
+    // Break the disc's edge. A perfectly circular grain is the tell that gives
     // billboards away; a hashed radial wobble costs one noise fetch.
     let ang = atan2(input.vCorner.y, input.vCorner.x);
     let wob = 1.0 + 0.34 * noise2(vec2f(cos(ang), sin(ang)) * 2.4 + state.y * 37.0);
@@ -100,9 +100,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         kind
     );
     // A loose grain is close to transparent on its own; density has to come from
-    // many of them overlapping, or a single one turns into a decal. 0.26 was low
-    // enough that even fifteen hundred live grains read as haze rather than as a
-    // plume.
+    // many of them overlapping, or a single one turns into a decal. Below about a
+    // third even fifteen hundred live grains read as haze rather than as a plume.
     var alpha = state.w * edge * mix(0.36, 0.55, kind);
     if (alpha < 0.004) { discard; }
 
@@ -137,10 +136,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // The coefficient is small and has to be. A phase function is normalised over
     // the sphere, so using it as a direct multiplier on radiance — without the
     // optical depth and scattering albedo that belong in front of it — overstates
-    // the peak by more than an order of magnitude. At 0.55 a fully backlit veil
-    // lands a little over the bloom knee: a grain with the star behind it flares,
-    // which is the whole point of carrying the term, and one with the star behind
-    // *the camera* is four stops down and does not.
+    // the peak by more than an order of magnitude. At 0.55 a fully backlit grain
+    // lands a little over the bloom knee once its own coverage is applied — so it
+    // flares, which is the whole point of carrying the term — while the same grain
+    // with the star behind the camera is more than five stops down and does not.
     let mu = dot(-V, L);
     let fwd = phaseMie(mu, 0.55) * 0.55;
     color += sun * albedo * fwd * mix(0.25, 1.0, shadow) * (1.0 - kind * 0.5);
@@ -148,7 +147,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // Sky, which is what fills the shadowed side and keeps it violet.
     color += albedo * INV_PI * shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
-    // Spell light. Airborne dust inside a power is the most legible thing the
+    // Spell light. Airborne dust inside a spell is the most legible thing the
     // dynamic lights do — a mist of grains a metre from a bright emitter picks up
     // far more of it than the ground does, which is why a fallout curtain reads as
     // lit from within rather than as grey dust over a glow.
@@ -164,16 +163,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // Every grain left the field carrying a share of the discharge that freshly
     // broken dust sheds, and the shares are deliberately not equal. A sixth power
     // on a uniform hash leaves the great majority an order of magnitude under the
-    // bloom knee and lifts a few per cent clear over it. A plume in which every
-    // grain blooms is a cloud of light with no grain left in it; a plume in which
-    // none do is grey powder. What sells it is the handful that do, seen against
-    // the many that do not.
+    // bloom knee and lifts roughly one in six clear over it at the instant it is
+    // thrown — and the cooling curve takes even those back under inside the first
+    // half of their life. A plume in which every grain blooms is a cloud of light
+    // with no grain left in it; a plume in which none do is grey smoke. What
+    // sells it is the handful that do, seen against the many that do not.
     //
-    // Shards run hotter, and not arbitrarily: they are the dense fragments, so
-    // they carry more mass and more freshly broken surface behind the same
-    // projected area than a loose grain of the same size.
+    // Shards run at twice the charge, and not arbitrarily: they are the dense
+    // fragments, so the same charge leaves through a smaller surface and the
+    // radiance off that surface goes up in proportion.
     let h = fract(sin(state.y * 217.3 + 11.7) * 43758.5453);
-    let flare = (0.05 + 0.95 * pow(h, 6.0)) * mix(1.0, 2.2, kind);
+    let flare = (0.05 + 0.95 * pow(h, 6.0)) * mix(1.0, 2.0, kind);
 
     // Cooling, on the same square law the alpha envelope fades on, so a grain can
     // never outlive its own glow. White-hot at separation, falling back through

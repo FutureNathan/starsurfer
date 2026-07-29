@@ -70,26 +70,30 @@ const BOW_LEAD = 0.55;
 const MAX_HEIGHT = 2.4;
 
 /**
- * Radiance gain on the gold at the lip.
+ * Radiance gain on the gold at the hottest point of the lip.
  *
- * Derived from the bloom knee rather than dialled in. The bright pass thresholds
- * at linear 3.0 and lit dust sits near 5, so a gain of 5 on an accent whose red
- * channel is exactly 1.0 in linear puts the crest's own emission at the
- * brightness of the field it was thrown out of, with nothing reflected in it at
- * all. Add the violet body underneath and a full-speed carve clears the knee by
- * better than a stop — and nothing short of a full-speed carve does, which is the
- * half of the requirement that is easy to lose.
+ * Derived rather than dialled in. `LIN.accent`'s red channel is exactly 1.0, so
+ * this number *is* the crest's peak radiance in red — and it has two floors to
+ * clear. The bloom bright pass thresholds at linear 3.0, and lit dust sits near
+ * 5; the lip has to be past both or it is not the brightest thing thrown. And it
+ * has to beat the violet it is interpolating away from, whose blue channel is
+ * `EMIT.wake.gain` — a lip dimmer than the wall underneath it draws a dark line
+ * along the crest, which is exactly backwards.
+ *
+ * Ten clears the knee by a stop and three quarters and sits a third of a stop
+ * above the body, so the crest is both the hottest point on the wake and the
+ * warmest.
  */
-const LIP_GAIN = 5.0;
+const LIP_GAIN = 10.0;
 
 /**
  * The discharge ramp. Same pair the dust material carries, same reason: the wall
  * and the berm at its foot are one body of thrown mass and must glow as one.
  *
  * `_wakeBody` is the nebula violet the whole wall wells with, at the wake's own
- * brand gain; `_wakeLip` is the warm gold only the hottest, freshest mass
- * reaches. Both are linear radiances with their gains already folded in, so the
- * shader multiplies by nothing but its own heat term.
+ * brand gain; `_wakeLip` is the warm gold the hottest, freshest mass reaches.
+ * Both are linear radiances with their gains already folded in, so the shader
+ * multiplies by nothing but its own heat term.
  */
 const _wakeBody = new Color3(...emissive(EMIT.wake));
 const _wakeLip = new Color3(
@@ -500,9 +504,10 @@ export class SurfWake {
         //             is disintegrating rather than sliding.
         //   throw     ballistic grains flung clear. These give the plume its
         //             reach and its silhouette against the stars, and they are
-        //             the population the spray shader lets burn: a grain thrown
-        //             far enough to be seen on its own against the void is a
-        //             point of light, not a smudge.
+        //             the only source of shards — the `kind` the spray shader
+        //             gives twice the charge to. Every grain carries some, but
+        //             one inside the curtain is buried under fifty others and
+        //             one thrown clear is a point of light against the void.
         //
         // Sizing is set by the curtain: at ten metres a six-centimetre grain is
         // six pixels, and a thousand six-pixel dots at low opacity spread over

@@ -26,9 +26,10 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { S } from "../core/settings.js";
-import { LIN, EMIT, emissive } from "../core/brand.js";
+import { EMIT, emissive } from "../core/brand.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
@@ -40,8 +41,8 @@ import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
  * Sized for the surf plume, which is the heaviest consumer by an order of
  * magnitude and which needs sheer count more than it needs anything else: at
  * 1200 live grains the plume renders as a field of separated soft discs — legible
- * as bokeh, not as snow — and the only thing that turns that into a continuous
- * mass is enough of them to overlap. 75 a metre at 19.5 m/s across two
+ * as bokeh, not as thrown mass — and the only thing that turns that into a
+ * continuous body is enough of them to overlap. 75 a metre at 19.5 m/s across two
  * populations lands near 3500 live, and the footfall kick and the spells still
  * have to fit alongside.
  *
@@ -50,8 +51,22 @@ import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
  */
 const CAPACITY = 5120;
 
-/** Terminal fall speed of a snow grain, m/s. Drag is tuned to land here. */
+/** Terminal fall speed of a dust grain, m/s. Drag is tuned to land here. */
 const TERMINAL = 1.9;
+
+/**
+ * The grain discharge ramp, off the brand palette and folded to plain linear
+ * radiances so the shader multiplies by nothing but its own heat term.
+ *
+ * `_grainGlow` is `EMIT.grain`, starlight white — the palette's brightest
+ * emissive, and it has to be, because a grain at full charge is meant to clear
+ * the bloom knee on its own while the haze around it does not. `_grainCool` is
+ * `EMIT.wake`, the same nebula violet the wall of thrown mass wells with, which
+ * is where a grain ends up once it has cooled: it came out of that wall and it
+ * goes back to its colour.
+ */
+const _grainGlow = new Color3(...emissive(EMIT.grain));
+const _grainCool = new Color3(...emissive(EMIT.wake));
 
 const _right = new Vector3();
 const _up = new Vector3();
@@ -76,17 +91,19 @@ export class SprayField {
         this.life = new Float32Array(CAPACITY);
         this.size = new Float32Array(CAPACITY);
         this.seed = new Float32Array(CAPACITY);
-        /** 0 = powder puff, 1 = heavy clod. Drives edge hardness and opacity. */
+        /**
+         * 0 = loose veil grain, 1 = dense shard. Drives edge hardness, opacity
+         * and — in the spray shader — how much charge the grain carries.
+         */
         this.kind = new Float32Array(CAPACITY);
         /**
          * Linear drag coefficient, 1/s. Separate from `kind` on purpose.
          *
-         * A plume has to look like powder — soft-edged, translucent, puffy —
-         * and fly like a stone, because it is a mass of snow launched off a
-         * wave at eight metres a second rather than a grain drifting down. With
-         * drag welded to appearance, asking for the look costs 5.2/s of drag,
-         * which stops the grain dead in 120 ms and inside the wave that threw
-         * it.
+         * A plume has to look loose — soft-edged, translucent, dispersing — and
+         * fly like a stone, because it is a mass of dust launched off a wave at
+         * eight metres a second rather than a grain drifting down. With drag
+         * welded to appearance, asking for the look costs 5.2/s of drag, which
+         * stops the grain dead in 120 ms and inside the wave that threw it.
          */
         this.drag = new Float32Array(CAPACITY);
         /** Index of the next slot to try. Wraps; a live slot is skipped. */
@@ -126,6 +143,7 @@ export class SprayField {
                     "shadowTexel", "shadowSoftness", "shadowBias",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity",
+                    "grainGlowColor", "grainCoolColor", "grainGlow",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
                 samplers: ["sprayTex", "skyLUT", "cascade0", "cascade1", "cascade2"],
@@ -139,6 +157,8 @@ export class SprayField {
         // ShaderMaterial decides blending from `alpha` and its option flag; this
         // makes it unambiguous whichever version is underneath.
         mat.needAlphaBlending = () => true;
+        mat.setColor3("grainGlowColor", _grainGlow);
+        mat.setColor3("grainCoolColor", _grainCool);
         mat.setTexture("sprayTex", this.dataTex);
         mat.setTexture("skyLUT", this.sky.lut);
         for (let i = 0; i < CASCADE_COUNT; i++) {
@@ -154,9 +174,9 @@ export class SprayField {
      * @param {number} vx @param {number} vy @param {number} vz
      * @param {number} size metres, radius
      * @param {number} life seconds
-     * @param {number} kind 0 powder, 1 clod — appearance only
+     * @param {number} kind 0 loose veil, 1 dense shard — appearance and charge
      * @param {number} [drag] 1/s. Defaults to the fall-in-place value for a
-     *   grain of settling powder; pass something near 1 for anything thrown.
+     *   settling grain; pass something near 1 for anything thrown.
      */
     emit(x, y, z, vx, vy, vz, size, life, kind, drag) {
         // Find a free slot. Bounded scan: after CAPACITY tries the pool is full
@@ -228,8 +248,8 @@ export class SprayField {
             this.pos[o + 1] += this.vel[o + 1] * h;
             this.pos[o + 2] += this.vel[o + 2] * h;
 
-            // Settle on the snow instead of falling through it. The grain does
-            // not bounce — it is snow landing on snow — it just stops and fades.
+            // Settle on the field instead of falling through it. The grain does
+            // not bounce — it is dust landing on dust — it just stops and fades.
             const g = this.terrain.heightAt(this.pos[o], this.pos[o + 2]);
             if (this.pos[o + 1] < g) {
                 this.pos[o + 1] = g;
@@ -238,7 +258,7 @@ export class SprayField {
                 this.age[i] += h * 2.5;
             }
 
-            // Puffs expand as they disperse; clods do not.
+            // Loose grains expand as they disperse; shards do not.
             const grow = this.kind[i] > 0.5 ? 1.0 : 1.0 + a01 * 1.3;
             // Fade in fast, out slowly.
             const alpha =
@@ -291,6 +311,13 @@ export class SprayField {
         m.setFloat("fogStart", S.fogStart);
         m.setFloat("aerialStrength", S.aerialStrength);
         m.setFloat("ambientIntensity", S.ambientIntensity);
+
+        // Emission. The ramp is constant, but it is re-sent with the rest so the
+        // material never depends on a value bound once at construction, and the
+        // scale tracks the same slider the dust field and the wake read.
+        m.setColor3("grainGlowColor", _grainGlow);
+        m.setColor3("grainCoolColor", _grainCool);
+        m.setFloat("grainGlow", S.dustGlow);
     }
 
     async warmUp() {

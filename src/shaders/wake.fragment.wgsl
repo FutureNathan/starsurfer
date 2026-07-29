@@ -247,11 +247,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // starlight plus its emission, solved against the LUT until it converges — and
     // the SH is projected over the *whole* sphere of it. So a downward-facing patch
     // on the underside of the curl already collects the sea through `shIrradiance`
-    // itself. The separate "bounce off the surface underneath" term that a snow
-    // field needs would be counting the same light twice here, and counting it
-    // through a nine-percent albedo at that, which is a rounding error beside what
-    // the sea emits.
-    var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
+    // itself. A separate "bounce off the surface underneath" term would count the
+    // same light a second time, and would count it through a nine-percent albedo
+    // at that — a rounding error beside what the sea emits.
+    let irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
     let ambientTerm = albedo * INV_PI * irradiance;
     color += ambientTerm;
 
@@ -300,16 +299,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // all of them already resolved by the sweep — no new state, and nothing the
     // geometry does not already know:
     //
-    //   load   `vCurl`, the per-side curl the CPU resolved out of the carve. 1.0
-    //          on the outboard wall of a hard turn and 0.26 on the inboard one,
-    //          which is exactly the split in how much mass each side is being
-    //          asked to throw.
+    //   load   `vCurl`, the per-side curl the CPU resolved out of the carve. It
+    //          runs 0.26 on the inboard wall of a hard turn to 1.0 on the outboard
+    //          one, remapped to 0..1 here — which is exactly the split in how much
+    //          mass each side is being asked to throw.
     //   mass   the column's amplitude against the tallest wall a full-speed carve
     //          can raise. This is what stops a slow drift glowing like a committed
     //          turn, and it falls away as the wall collapses.
     //   cool   age. Exponential, with a time constant near a third of the 0.88 s
-    //          life, so the two metres of wall just behind the board are visibly
-    //          hotter than the four metres behind that.
+    //          life — so at top speed the first five metres behind the board are
+    //          visibly hotter than the ten metres behind those.
     //
     // The bloom knee at linear 3.0 is what sets the scale. At a full-speed carve
     // the crest has to clear it — that is the whole read, a board throwing light —
@@ -326,14 +325,19 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let mass = clamp(input.vAmp / max(uniforms.wakeAmpRef, 1e-3), 0.0, 1.0);
     let cool = exp(-input.vAge * 3.2);
     let lip = smoothstep(0.30, 1.0, q);
-    let heat = cool * mix(0.35, 1.0, load) * mix(0.20, 1.0, mass);
+    let heat = cool * mix(0.30, 1.0, load) * mix(0.20, 1.0, mass);
 
-    // Violet through the body, gold only where it is hottest. The gold goes as
-    // heat *squared* so it stays a lip on a loaded carve rather than washing the
-    // whole sheet warm: the accent has to be scarce to stay an accent.
-    var emissiveTerm = uniforms.wakeBodyColor * (heat * mix(0.60, 1.0, lip));
-    emissiveTerm += uniforms.wakeLipColor * (heat * heat * lip);
-    emissiveTerm *= uniforms.wakeEmissive;
+    // One material at two temperatures, so the ramp is a *mix* and not a sum.
+    // Adding gold on top of violet gives white, which is the one colour this
+    // palette exists to avoid; interpolating keeps the crest gold, the body
+    // violet, and everything between them on a continuous ramp.
+    //
+    // The gold fraction goes as heat *squared* so it stays confined to the crest
+    // of a loaded carve instead of washing the whole sheet warm. An accent has to
+    // be scarce to stay an accent.
+    let gold = clamp(heat * heat * lip, 0.0, 1.0);
+    let hue = mix(uniforms.wakeBodyColor, uniforms.wakeLipColor, gold);
+    let emissiveTerm = hue * (heat * mix(0.60, 1.0, lip) * uniforms.wakeEmissive);
     color += emissiveTerm;
 
     color = applyAerial(
@@ -353,7 +357,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //
     //   1 direct  2 subsurface  3 ambient  4 sky spec  5 star spec
     //   6 occlusion (grey)      7 shadow (grey)        8 |N.L| (grey)
-    //   9 raw N.L               10 emission
+    //   9 raw N.L               10 emission            11 inside/outside
+    //
+    // The flat views — the three greys and the inside/outside flag — are lifted
+    // onto the scene's own radiance scale, or they tonemap into the bottom of the
+    // curve where nothing is separable. Lit dust sits near 5 in linear, so 5 is the
+    // multiplier: a fully unoccluded, fully lit patch comes back at the brightness
+    // of the ground beside it.
+    const DBG_GREY: f32 = 5.0;
     let dbg = uniforms.wakeDebug;
     if (dbg > 0.5) {
         if (dbg < 1.5) { color = directTerm; }
@@ -361,19 +372,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         else if (dbg < 3.5) { color = ambientTerm; }
         else if (dbg < 4.5) { color = skyTerm; }
         else if (dbg < 5.5) { color = specTerm; }
-        else if (dbg < 6.5) { color = vec3f(occ * 12.0); }
-        else if (dbg < 7.5) { color = vec3f(shadow * 12.0); }
-        else if (dbg < 8.5) { color = vec3f(max(NdotL, 0.0) * 12.0); }
+        else if (dbg < 6.5) { color = vec3f(occ * DBG_GREY); }
+        else if (dbg < 7.5) { color = vec3f(shadow * DBG_GREY); }
+        else if (dbg < 8.5) { color = vec3f(max(NdotL, 0.0) * DBG_GREY); }
         // Unscaled, to line up with the dust material's own `ndotl` view — the
         // only way to compare the two surfaces is on one screen at one scale.
         else if (dbg < 9.5) { color = vec3f(max(NdotL, 0.0)); }
-        // 10: the discharge alone. This is the one to read against the bloom
-        // knee — anything at or above middle grey after exposure is over it.
+        // 10: the discharge alone, in scene radiance. Read it against the lit
+        // dust beside it — the knee sits a little under where the field lands, so
+        // anything here that is clearly brighter than the ground is blooming.
         else if (dbg < 10.5) { color = emissiveTerm; }
         // 11: which side of the sheet the eye is on. Red = inside the curl,
         // green = the open outer face. The two walls are mirror images, so this
         // is the view that says whether they agree.
-        else { color = select(vec3f(0.0, 9.0, 0.0), vec3f(9.0, 0.0, 0.0), inside); }
+        else { color = select(vec3f(0.0, DBG_GREY, 0.0), vec3f(DBG_GREY, 0.0, 0.0), inside); }
     }
 
     fragmentOutputs.color = vec4f(color, 1.0);
