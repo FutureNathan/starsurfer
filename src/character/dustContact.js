@@ -1,11 +1,11 @@
 /**
- * Where the character meets the snow.
+ * Where the astronaut meets the dust.
  *
  * Translates locomotion state into brushes on the terrain state buffer. This is
  * the only thing standing between the physics in `controller.js` and the marks
  * left on the field, and it is deliberately separate from both: the controller
  * should not know a deformation buffer exists, and the buffer should not know
- * what a foot is.
+ * what a boot is.
  *
  * Three writers:
  *
@@ -22,18 +22,24 @@
 
 /**
  * Boot geometry, metres. `WIDTH` is the short-axis radius, so the print is
- * 20 cm across and 34 cm long — a boot plus the collapse of the snow around it,
- * which is what a print in deep snow actually measures. Narrower than this and
- * the print is only six texels wide and the rim detail has nowhere to live.
+ * 24 cm across and 41 cm long — an EVA boot plus the collapse of the dust
+ * around it, which is what a print in an uncompacted powder actually measures.
+ * Narrower than this and the print is only six texels wide and the rim detail
+ * has nowhere to live.
  */
-const BOOT_WIDTH = 0.10;
+const BOOT_WIDTH = 0.12;
 const BOOT_ELONG = 1.7;
 
-/** Surf groove geometry, metres. */
-const SURF_WIDTH = 0.30;
+/**
+ * Surf groove geometry, metres. `WIDTH` has to be the board's own half-width —
+ * it is 0.180 at the stance in `build.js` — because the groove is the mark that
+ * board is leaving, and a trench wider than the thing cutting it reads as a
+ * decal painted under the rider.
+ */
+const SURF_WIDTH = 0.18;
 const SURF_ELONG = 2.6;
 
-export class SnowContact {
+export class DustContact {
     /**
      * @param {import("./controller.js").CharacterController} character
      * @param {import("../terrain/deformation.js").DeformationField} field
@@ -98,15 +104,15 @@ export class SnowContact {
             f.brush(
                 px, pz,
                 BOOT_WIDTH,
-                // Depth: a boot sinks 13-27 cm into unpacked snow depending on
-                // how hard it lands. Deeper than that and the character is
+                // Depth: a boot sinks 17-31 cm into uncompacted dust depending
+                // on how hard it lands. Deeper than that and the astronaut is
                 // wading, which is a different animation problem.
                 0.17 + 0.14 * impact,
                 // The berm is the whole point. Mass pushed out of the hole has
                 // to go somewhere, and seeing it pile at the rim is what makes
-                // the print read as displaced snow rather than as a dark decal.
+                // the print read as displaced dust rather than as a dark decal.
                 0.10 + 0.08 * impact,
-                0.9,                    // compression: trodden snow is dense
+                0.9,                    // compression: trodden dust packs hard
                 0,                      // no ice
                 ch.facing,
                 BOOT_ELONG,
@@ -119,14 +125,14 @@ export class SnowContact {
     }
 
     /**
-     * Snow thrown by a boot landing.
+     * Dust thrown by a boot landing.
      *
      * Fired from the same branch that stamps the print, so the grains leave the
      * ground on the exact frame the foot arrives — one event, rather than two
      * systems agreeing about when it happened.
      *
-     * The kick goes up and *backward* relative to travel. A boot in deep snow
-     * scoops: it enters forward, compresses, and throws the displaced snow out
+     * The kick goes up and *backward* relative to travel. A boot in deep powder
+     * scoops: it enters forward, compresses, and throws the displaced mass out
      * behind the heel as the weight rolls over it.
      */
     _kick(x, y, z, impact) {
@@ -138,8 +144,9 @@ export class SnowContact {
         const fx = Math.sin(ch.facing);
         const fz = Math.cos(ch.facing);
         // Many small grains rather than a few large ones. The size at which a
-        // puff stops reading as powder and starts reading as a cotton ball is
-        // somewhere around five centimetres, and it is a hard threshold.
+        // puff stops reading as a cloud of glowing grains and starts reading as
+        // a cotton ball is somewhere around five centimetres, and it is a hard
+        // threshold.
         const n = 6 + ((impact * 14) | 0);
 
         for (let k = 0; k < n; k++) {
@@ -182,10 +189,10 @@ export class SnowContact {
         // packed the whole path to 1.0, the boot prints stamped on top would
         // have nothing left to darken and the trail would read as one flat
         // ribbon instead of as a line of prints in a churned path.
-        // Shallower and narrower than the boot prints it links, on purpose. It
-        // was originally deep enough to dominate them, which turned a line of
-        // footprints into one continuous ski track — fine while the feet were
-        // hidden under a floor-length robe, wrong now that they are not.
+        //
+        // Shallower and narrower than the boot prints it links, on purpose:
+        // deep enough to dominate them and a line of footprints collapses into
+        // one continuous furrow, which is the mark a board leaves, not a walk.
         this.field.brush(
             ch.position.x, ch.position.z,
             0.22,
@@ -204,7 +211,7 @@ export class SnowContact {
      *
      * Three brushes: the groove the board cuts, and one berm on each side
      * weighted by the carve, so the outside of a turn throws a much heavier wall
-     * of snow than the inside. That asymmetry is what makes a carve read as a
+     * of dust than the inside. That asymmetry is what makes a carve read as a
      * carve rather than as a straight furrow.
      */
     _surf(dt, moved) {
@@ -221,7 +228,7 @@ export class SnowContact {
         if (k <= 0) return;
 
         // Past the point where the trench stops deepening, extra speed still
-        // means extra snow moved — it goes into width and into the walls, which
+        // means extra mass moved — it goes into width and into the walls, which
         // is what makes a fast run's scar read as bigger rather than just longer.
         const fast = Math.min(1, Math.max(0, ch.speed - 6) / 12);
 
@@ -250,10 +257,10 @@ export class SnowContact {
 
         // --- thrown mass -----------------------------------------------------
         // The outside of the turn takes most of it, and the outside of a *right*
-        // turn is the left-hand side — the board resists the turn and throws snow
-        // away from its centre, the same way a carving snowboard's spray arcs out
-        // of the turn rather than into it. `carve` is positive turning right, so
-        // the weights run against it.
+        // turn is the left-hand side — the board resists the turn and throws mass
+        // away from its centre, the same way a carving rail's spray arcs out of
+        // the turn rather than into it. `carve` is positive turning right, so the
+        // weights run against it.
         //
         // The wake mesh in `src/vfx/surfWake.js` resolves its sides from the same
         // sign, so the airborne wave and the mark it leaves agree.

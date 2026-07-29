@@ -22,7 +22,7 @@ import { initInput, pollInput, endFrame, input } from "./core/input.js";
 import { CameraRig } from "./core/camera.js";
 import { CharacterController } from "./character/controller.js";
 import { Character } from "./character/character.js";
-import { SnowContact } from "./character/snowContact.js";
+import { DustContact } from "./character/dustContact.js";
 import { SprayField } from "./vfx/particles.js";
 import { SurfWake } from "./vfx/surfWake.js";
 import { SpellSystem } from "./spells/spellSystem.js";
@@ -137,7 +137,7 @@ async function boot() {
     const spray = new SprayField(scene, terrain, sky, shadows);
 
     // Feet and the surf groove write into the terrain state buffer through here.
-    const contact = new SnowContact(character, terrain.deform, figure.figure, spray);
+    const contact = new DustContact(character, terrain.deform, figure.figure, spray);
 
     // The breaking wave, its bow crest and the plume it sheds.
     const wake = new SurfWake(scene, sky, shadows, character, spray, terrain);

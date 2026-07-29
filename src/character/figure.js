@@ -20,6 +20,8 @@
  * construction.
  */
 
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+
 import { setFrameFromDir, invertRigid, mul, xformPoint } from "../core/mat4.js";
 
 // --------------------------------------------------------------- bone indices
@@ -28,7 +30,7 @@ export const B_SPINE = 1;
 export const B_CHEST = 2;
 export const B_NECK = 3;
 export const B_HEAD = 4;
-export const B_HOOD = 5;
+export const B_HELMET = 5;
 export const B_UPPER_L = 6;
 export const B_FORE_L = 7;
 export const B_HAND_L = 8;
@@ -41,14 +43,19 @@ export const B_FOOT_L = 14;
 export const B_THIGH_R = 15;
 export const B_SHIN_R = 16;
 export const B_FOOT_R = 17;
-export const BONE_COUNT = 18;
+/**
+ * The board. Not parented to the figure at all — it is driven from the surface
+ * it is planing on, and the legs are solved down to it.
+ */
+export const B_BOARD = 18;
+export const BONE_COUNT = 19;
 
 /**
  * Bind pose, nine floats per bone: joint position, bone direction, front
  * reference. A 1.79 m figure with the pelvis at 0.95 — deliberately a little
  * long in the leg and narrow in the shoulder, because the silhouette is read at
- * fifteen metres through a robe and slightly heroic proportions survive that
- * better than accurate ones.
+ * fifteen metres inside a pressure suit and slightly heroic proportions survive
+ * that better than accurate ones.
  */
 const BIND = new Float32Array([
     /* ROOT    */ 0, 0.95, 0, 0, 1, 0, 0, 0, 1,
@@ -56,7 +63,7 @@ const BIND = new Float32Array([
     /* CHEST   */ 0, 1.26, 0, 0, 1, 0, 0, 0, 1,
     /* NECK    */ 0, 1.46, 0, 0, 1, 0, 0, 0, 1,
     /* HEAD    */ 0, 1.55, 0, 0, 1, 0, 0, 0, 1,
-    /* HOOD    */ 0, 1.55, 0, 0, 1, 0, 0, 0, 1,
+    /* HELMET  */ 0, 1.55, 0, 0, 1, 0, 0, 0, 1,
 
     /* UPPER_L */ -0.185, 1.400, 0.000, -0.16, -0.987, 0, 0, 0, 1,
     /* FORE_L  */ -0.230, 1.123, 0.000, -0.05, -0.997, 0.06, 0, 0, 1,
@@ -71,6 +78,11 @@ const BIND = new Float32Array([
     /* THIGH_R */ 0.100, 0.900, 0, 0, -1, 0, 0, 0, 1,
     /* SHIN_R  */ 0.100, 0.460, 0, 0, -1, 0, 0, 0, 1,
     /* FOOT_R  */ 0.100, 0.090, 0, 0, 0, 1, 0, 1, 0,
+
+    // Deck-forward along +Z with world up as its front reference — the same
+    // convention the feet use, so the board's geometry can be authored lying
+    // flat along Z with its centreline on the joint.
+    /* BOARD   */ 0, 0.020, 0, 0, 0, 1, 0, 1, 0,
 ]);
 
 /** Segment lengths implied by the bind table, metres. */
@@ -82,12 +94,34 @@ const FORE_LEN = 0.26;
 /** Pelvis height above the feet in the bind pose. */
 const HIP_HEIGHT = 0.95;
 
+/**
+ * Board geometry the pose has to agree with, in bind metres.
+ *
+ * The deck's half-thickness at the stance and the drop from the ankle joint to
+ * the sole of the boot are both fixed by `build.js`; restating them here is what
+ * lets the surf stance put the soles *on* the deck rather than an inch through
+ * it, and it is the only coupling between the two files that is not a bone.
+ */
+const BOARD_HALF_T = 0.033;
+const BOOT_SOLE = 0.022;
+/**
+ * How far above the dust the soles stand while surfing: the board's full
+ * thickness plus the sole drop, less four millimetres so the boots bite into
+ * the deck instead of hovering over it.
+ */
+const BOARD_STAND = 2 * BOARD_HALF_T + BOOT_SOLE - 0.004;
+
+/** Board footprint: half the stance width and half its fore-aft stagger. */
+const STANCE_LATERAL = 0.100;
+const STANCE_ALONG = 0.240;
+
 // ------------------------------------------------------- module-scope scratch
 const _axes = new Float32Array(9);   // X, Y, Z of a composed basis
 const _p = new Float32Array(3);
 const _knee = new Float32Array(3);
 const _hip = new Float32Array(3);
 const _sh = new Float32Array(3);
+const _gnd = new Vector3(0, 1, 0);   // terrain normal under the board
 
 /**
  * Compose an orthonormal basis from yaw, then pitch about its own right axis,
@@ -214,10 +248,10 @@ export class Figure {
         this.bob = 0;
         this.headYaw = 0;
         this.headPitch = 0;
-        this.hoodYaw = 0;
-        this.hoodPitch = 0;
+        this.helmetYaw = 0;
+        this.helmetPitch = 0;
         this.armPhase = 0;
-        /** How far the figure has settled into the snow, metres. */
+        /** How far the figure has settled into the dust, metres. */
         this.sink = 0.04;
 
         this._t = 0;
@@ -240,7 +274,7 @@ export class Figure {
         // ---------------------------------------------------------- footfalls
         // Stance/swing is derived from the same distance-driven phase the
         // controller uses to fire footfall events, so the visual plant and the
-        // snow splat are the same instant by construction.
+        // splat in the dust are the same instant by construction.
         this._updateFeet(h, ch);
 
         // -------------------------------------------------------- body attitude
@@ -272,7 +306,7 @@ export class Figure {
         const crouch = 0.035 * run + surf * (0.13 + 0.05 * ch.speed01);
         this.hipY = damp(this.hipY, HIP_HEIGHT - crouch, 9, h);
 
-        // The figure settles into the snow it is standing on. Reading the real
+        // The figure settles into the dust it is standing on. Reading the real
         // depth would mean a GPU readback; this is the same number the contact
         // brushes are writing, held on the CPU.
         this.sink = damp(this.sink, 0.045 + surf * 0.055, 4, h);
@@ -325,12 +359,14 @@ export class Figure {
         const headX = neckX + cUx * 0.09, headY = neckY + cUy * 0.09, headZ = neckZ + cUz * 0.09;
         this._setBone(B_HEAD, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
 
-        // The hood is a lagged copy. A hood that tracks the skull exactly reads
-        // as a helmet; a few frames of lag reads as fabric.
-        this.hoodYaw = damp(this.hoodYaw, ch.facing + chestTwist + this.headYaw, 11, h);
-        this.hoodPitch = damp(this.hoodPitch, chestPitch + this.headPitch + 0.05, 9, h);
-        composeBasis(this.hoodYaw, this.hoodPitch, this.roll * 0.5);
-        this._setBone(B_HOOD, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
+        // The helmet is bolted to a metal disconnect ring, so it does not lag
+        // the way a hood did — a rigid shell that slides around the skull during
+        // a carve reads as broken. All the bearing has is about a frame of
+        // compliance, which is what these rates come to at sixty hertz.
+        this.helmetYaw = damp(this.helmetYaw, ch.facing + chestTwist + this.headYaw, 60, h);
+        this.helmetPitch = damp(this.helmetPitch, chestPitch + this.headPitch, 60, h);
+        composeBasis(this.helmetYaw, this.helmetPitch, this.roll * 0.5);
+        this._setBone(B_HELMET, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
 
         // -------------------------------------------------------------- arms
         this._poseArms(h, ch, chestX, chestY, chestZ, cRx, cRy, cRz, cUx, cUy, cUz, cFx, cFy, cFz);
@@ -338,6 +374,10 @@ export class Figure {
         // -------------------------------------------------------------- legs
         this._poseLeg(0, gx, rootY, gz, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ);
         this._poseLeg(1, gx, rootY, gz, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ);
+
+        // ------------------------------------------------------------- board
+        this._poseBoard(ch, gx, groundY, gz, chestX, chestY, chestZ,
+                        cUx, cUy, cUz, cFx, cFy, cFz);
 
         // ------------------------------------------------------------- skin
         for (let b = 0; b < BONE_COUNT; b++) {
@@ -438,17 +478,22 @@ export class Figure {
             this._wasStance[f] = stance;
         }
 
-        // Surfing: both feet ride the board, offset along the body's long axis
-        // and rotated across the direction of travel. Blended in, never snapped.
+        // Surfing: both feet ride the board. Blended in, never snapped.
         if (surf > 0.001) {
             for (let f = 0; f < 2; f++) {
-                // Wide and staggered: feet apart across the direction of travel
-                // for lateral stability, with the leading foot a little ahead.
-                const lateral = f === 0 ? -0.17 : 0.17;
-                const along = f === 0 ? 0.11 : -0.11;
+                // A surf stance, not a snowboard one: the feet run down the
+                // stringer, the left forward and the right back, only a hand's
+                // width apart across the board. `STANCE_ALONG` is what decides
+                // how long the deck has to be, and `STANCE_LATERAL` plus the
+                // boot's own half-width is what decides how wide.
+                const lateral = f === 0 ? -STANCE_LATERAL : STANCE_LATERAL;
+                const along = f === 0 ? STANCE_ALONG : -STANCE_ALONG;
                 const sx = ch.position.x + fwdX * along + rgtX * lateral;
                 const sz = ch.position.z + fwdZ * along + rgtZ * lateral;
-                const sy = this.terrain.heightAt(sx, sz) - this.sink;
+                // Standing on the deck, which is itself planing on the dust the
+                // board has already compressed — hence the `sink` and then the
+                // board's own thickness back up again.
+                const sy = this.terrain.heightAt(sx, sz) - this.sink + BOARD_STAND;
                 const o = f * 3;
                 this.footPos[o] += (sx - this.footPos[o]) * surf;
                 this.footPos[o + 1] += (sy - this.footPos[o + 1]) * surf;
@@ -509,10 +554,82 @@ export class Figure {
     }
 
     /**
+     * Place the board.
+     *
+     * The board does not hang off the skeleton — it is driven from the surface
+     * it is planing on. Its deck normal is the terrain normal banked by the same
+     * lean the torso is already carrying, and its nose is the direction of
+     * travel flattened into that plane, so on a dune face the board lies along
+     * the face instead of sitting level in a hole.
+     *
+     * When the astronaut is not surfing it has to go somewhere. A bone is a
+     * rigid orthonormal frame with no scale channel, so there is no way to
+     * shrink the board out of frame; it is slung nose-up across the life-support
+     * pack instead. The two poses are blended by `surf`, which is the same eased
+     * blend the stance itself rides, so the board arrives under the feet exactly
+     * as the crouch does.
+     */
+    _poseBoard(ch, gx, groundY, gz, chestX, chestY, chestZ, uX, uY, uZ, fX, fY, fZ) {
+        const w = ch.surf;
+
+        // ---- riding ------------------------------------------------------
+        const n = this.terrain.normalAt(gx, gz, _gnd);
+
+        // Nose: the direction of travel, flattened into the surface plane.
+        let nx = Math.sin(ch.facing), ny = 0, nz = Math.cos(ch.facing);
+        const proj = nx * n.x + ny * n.y + nz * n.z;
+        nx -= n.x * proj; ny -= n.y * proj; nz -= n.z * proj;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        nx /= nl; ny /= nl; nz /= nl;
+
+        // Bank. Right = up x nose, and rolling the up vector toward it is the
+        // same sign convention `composeBasis` uses, so the deck tips into the
+        // turn the body is already leaning into.
+        const rx = n.y * nz - n.z * ny;
+        const ry = n.z * nx - n.x * nz;
+        const rz = n.x * ny - n.y * nx;
+        const cb = Math.cos(this.roll), sb = Math.sin(this.roll);
+        const bx = n.x * cb + rx * sb;
+        const by = n.y * cb + ry * sb;
+        const bz = n.z * cb + rz * sb;
+
+        // The underside rides on the dust the board has just compressed, which
+        // is `sink` below the undisturbed surface — the same depth the contact
+        // system is carving the groove to.
+        const rideY = groundY - this.sink + BOARD_HALF_T;
+
+        // ---- slung on the pack -------------------------------------------
+        // Nose up and tilted twenty degrees back, deck facing outward. Both
+        // axes are combinations of the chest's own orthonormal up and forward,
+        // so the pair stays orthonormal for free.
+        const sNx = uX * 0.94 - fX * 0.34;
+        const sNy = uY * 0.94 - fY * 0.34;
+        const sNz = uZ * 0.94 - fZ * 0.34;
+        const sUx = -(uX * 0.34 + fX * 0.94);
+        const sUy = -(uY * 0.34 + fY * 0.94);
+        const sUz = -(uZ * 0.34 + fZ * 0.94);
+        const sPx = chestX - fX * 0.42 + uX * 0.10;
+        const sPy = chestY - fY * 0.42 + uY * 0.10;
+        const sPz = chestZ - fZ * 0.42 + uZ * 0.10;
+
+        // Lerped, then handed to `setFrameFromDir`, which re-normalises the
+        // direction and re-orthogonalises the reference against it — so an
+        // interpolated pair does not have to be orthonormal on the way through.
+        this._setBone(
+            B_BOARD,
+            sPx + (gx - sPx) * w,
+            sPy + (rideY - sPy) * w,
+            sPz + (gz - sPz) * w,
+            sNx + (nx - sNx) * w, sNy + (ny - sNy) * w, sNz + (nz - sNz) * w,
+            sUx + (bx - sUx) * w, sUy + (by - sUy) * w, sUz + (bz - sUz) * w
+        );
+    }
+
+    /**
      * Arms. Counter-swing against the legs while walking, and a wide, low
-     * bending stance while surfing — hands out and forward, which is the
-     * Water Tribe pose in the reference and also just what a person does at
-     * twenty metres a second.
+     * bending stance while surfing — hands out and forward, which is what a
+     * person does at twenty metres a second whether or not there is a board
+     * under them.
      */
     _poseArms(h, ch, cx, cy, cz, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ) {
         const surf = ch.surf;
@@ -574,7 +691,7 @@ export class Figure {
             if (surf > 0.001) {
                 const carve = ch.carve;
                 // Trailing arm rises, leading arm drops into the turn — the
-                // same asymmetry a snowboarder holds through a carve.
+                // same asymmetry anyone riding a rail holds through a carve.
                 const rise = 0.02 + carve * sgn * 0.22;
                 const sx = _sh[0] + rX * (sgn * 0.33) + fX * 0.24 + uX * rise;
                 const sy = _sh[1] + rY * (sgn * 0.33) + fY * 0.24 + uY * rise;

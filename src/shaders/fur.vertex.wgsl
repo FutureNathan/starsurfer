@@ -1,23 +1,23 @@
-// Shell fur.
+// Shell nap.
 //
 // The shell offset is already baked into the vertex position at build time, so
-// all this adds is droop: gravity, wind and the character's own acceleration,
+// all this adds is droop: gravity, drift and the character's own acceleration,
 // applied in world space and scaled by the square of the shell parameter. The
-// square is what curves a strand instead of shearing it — the tip moves four
+// square is what curves a fibre instead of shearing it — the tip moves four
 // times as far as the midpoint.
 
 #include<snowCharSkin>
 
 attribute position: vec3f;   // bind-pose world position, shell offset included
 attribute normal: vec3f;     // shell direction, unit
-attribute uv: vec2f;         // strand field coordinates, in metres of surface
+attribute uv: vec2f;         // fibre field coordinates, in metres of surface
 attribute aux: vec2f;        // (shell parameter 0..1, baked occlusion)
 attribute boneIdx: vec4f;
 attribute boneWt: vec4f;
 
 uniform viewProjection: mat4x4f;
 uniform cameraPos: vec3f;
-/// World-space displacement applied to a strand tip.
+/// World-space displacement applied to a fibre tip.
 uniform furDroop: vec3f;
 
 var charTex: texture_2d<f32>;

@@ -1,8 +1,8 @@
 /**
- * Garment simulation — verlet cloth on coarse grids.
+ * Soft-goods simulation — verlet cloth on coarse grids.
  *
- * Each garment is a closed tube of particles, `cols` around by `rows` down.
- * The grids are deliberately coarse (twenty by twelve for the robe) because the
+ * Each panel is a closed tube of particles, `cols` around by `rows` down.
+ * The grids are deliberately coarse (eight by twenty for the tether) because the
  * render mesh does not use them directly: the vertex shader reconstructs a
  * smooth surface from them with Catmull-Rom, so tessellation and simulation cost
  * are completely decoupled. Doubling the visible smoothness costs nothing here.
@@ -12,10 +12,10 @@
  * exactly what a rigidly-skinned vertex would do. A per-particle `pinRate`
  * decides how hard it is pulled toward that target, in units of 1/second:
  *
- *   Infinity   the waistband, the collar, the shoulder of a sleeve. Welded.
+ *   Infinity   the tether's anchor, the waist seam, the shoulder of a sleeve.
  *   10-60      follows the body closely, with a frame or two of give.
- *   1-5        follows loosely — this is where a garment starts to read as cloth.
- *   0.2-0.5    shape memory only. Stops a free hem from slowly collapsing into
+ *   1-5        follows loosely — this is where fabric starts to read as fabric.
+ *   0.2-0.5    shape memory only. Stops a free end from slowly collapsing into
  *              a rope without meaningfully resisting motion.
  *
  * Expressing the pull as a rate rather than a per-frame blend is not a detail:
@@ -24,8 +24,9 @@
  * change has to be written as a rate.
  *
  * Wind is *apparent* wind — the field wind minus the character's own velocity —
- * with quadratic drag, so the robe whips back hard during a snow-surf run
- * without needing a special case for it.
+ * with quadratic drag. Over a dust sea the field term is a slow drift at most,
+ * so it is the velocity term that does the work: the tether streams straight out
+ * behind a nineteen-metre-a-second run with no special case for it anywhere.
  *
  * Allocation: none per frame. All state is typed arrays sized at construction.
  */
@@ -36,7 +37,7 @@ import {
     B_UPPER_R, B_FORE_R, B_HAND_R, B_NECK, B_SHIN_L, B_SHIN_R,
     B_THIGH_L, B_THIGH_R, B_FOOT_L, B_FOOT_R,
 } from "./figure.js";
-import { M_ROBE, M_MANTLE } from "./build.js";
+import { M_SOFT, M_TRIM } from "./build.js";
 
 /** Which body capsules a panel is allowed to collide against. */
 const C_TORSO = 1;
@@ -57,7 +58,7 @@ export class ClothPanel {
         this.aoTop = spec.aoTop;
         this.aoBottom = spec.aoBottom;
         this.collide = spec.collide;
-        /** Rows at the bottom that check the snow surface. */
+        /** Rows at the bottom that check the dust surface. */
         this.groundRows = spec.groundRows || 0;
         /** Row in the shared transform texture where this panel's grid starts. */
         this.nodeRow = 0;
@@ -72,7 +73,7 @@ export class ClothPanel {
         this.pinRate = new Float32Array(n);
 
         // Rest lengths: around the ring, down the panel, and the bending pair
-        // two rows apart. Measured from the bind pose, so the garment's rest
+        // two rows apart. Measured from the bind pose, so a panel's rest
         // shape *is* its authored shape.
         this.restU = new Float32Array(n);
         this.restV = new Float32Array(n);
@@ -107,7 +108,7 @@ function dist3(a, ia, b, ib) {
 }
 
 // -----------------------------------------------------------------------------
-//  Garment shapes
+//  Panel shapes
 // -----------------------------------------------------------------------------
 
 /** Piecewise-linear lookup over a table of `[t, a, b]` control points. */
@@ -121,70 +122,63 @@ function curve(table, t) {
 }
 
 /**
- * The robe: a long tube from the waist, flaring to a hem that is cut high at
- * the front so the boots read, and trails behind. The asymmetry is what makes
- * the silhouette move when the figure turns.
+ * The safety tether.
+ *
+ * A flattened tube — eight columns around a ring six millimetres thick and
+ * ninety wide — anchored to the life-support pack and left otherwise free. It
+ * has to be a tube and not an open sheet: `clothNode` in charSkin.wgsl wraps `u`
+ * and every panel builder sweeps a full turn, so opening the topology would mean
+ * changing the wrap to a clamp for *every* panel at once.
+ *
+ * It carries no ground rows. A hem rides on the surface; a tether trailing at
+ * head height must not be clamped to it.
+ *
+ * This is the single most valuable thing the solver does now. Nothing else on
+ * the figure is free enough to show the difference between nineteen metres a
+ * second and a standstill, and it costs one panel.
  */
-function makeRobe() {
+function makeTether() {
     const p = new ClothPanel({
-        // Thirty-six columns is set by the fold count, not by smoothness: nine
-        // pleats need four samples each to survive the grid at all, and the
-        // Catmull-Rom reconstruction turns four samples per fold into a clean
-        // wave. Twenty columns aliased them into a wobble.
-        name: "robe", cols: 36, rows: 12, matId: M_ROBE,
-        renderCols: 72, renderRows: 32,
-        // Metres of surface, so the shader's weave and slub scales are physical.
-        weaveU: 1.75, weaveV: 1.05,
-        aoTop: 0.55, aoBottom: 0.42,
-        collide: C_TORSO | C_LEGS, groundRows: 2,
+        name: "tether", cols: 8, rows: 20, matId: M_TRIM,
+        renderCols: 16, renderRows: 48,
+        // Metres of surface, so the shader's slub scale stays physical.
+        weaveU: 0.20, weaveV: 2.4,
+        aoTop: 0.9, aoBottom: 1.0,
+        collide: C_TORSO,
     });
 
-    const RATE = [Infinity, 30, 10, 4, 1.6, 0.9, 0.55, 0.4, 0.35, 0.3, 0.3, 0.3];
+    // Welded at the anchor, then let go quickly. Past the fourth row it is
+    // shape memory only — a tether that is pulled toward a skinned target is a
+    // tether that cannot whip.
+    const RATE = [Infinity, 40, 8, 2, 0.8, 0.4];
+
+    // Anchored on the back of the pack and falling away behind. One and a
+    // half metres, not the two and a half it would like to be: the figure casts
+    // into only the near two shadow cascades, and a tether long enough to cross
+    // the second split loses its shadow half way along itself.
+    const AX = 0, AY = 1.300, AZ = -0.330;
+    const EX = 0, EY = 0.620, EZ = -1.900;
 
     for (let j = 0; j < p.rows; j++) {
         const v = j / (p.rows - 1);
+        // Sags on the way back rather than running straight, so the rest shape
+        // already has the curve the solver would otherwise have to find.
+        const cx = AX + (EX - AX) * v;
+        const cy = AY + (EY - AY) * Math.pow(v, 1.4);
+        const cz = AZ + (EZ - AZ) * v;
+        // Tapers along its length, the way a woven strap frays out of its
+        // clamp: widest at the anchor, narrow at the free end.
+        const rx = 0.045 * (1 - 0.35 * v);
+        const rz = 0.006 * (1 - 0.35 * v);
+
         for (let i = 0; i < p.cols; i++) {
             const a = (i / p.cols) * Math.PI * 2;
-            const sa = Math.sin(a), ca = Math.cos(a);
-            // The flare accelerates downward, and the back flares furthest —
-            // that extra fabric is what becomes the train.
-            const f = Math.pow(v, 1.25);
-
-            // Pleats. A garment cut as a smooth cone stays a smooth cone: the
-            // solver has nothing to break the symmetry with, and a robe with no
-            // vertical folds reads as a traffic cone no matter how good the
-            // shading is. Putting the folds in the *rest shape* means the
-            // constraints preserve them, they deepen toward the hem where the
-            // fabric is loose, and they travel with the garment rather than
-            // sliding across it the way a normal map would.
-            //
-            // Three incommensurate frequencies, so no two folds are alike and
-            // the pattern never repeats around the tube.
-            const fold =
-                0.118 * Math.sin(a * 7 + 0.6) +
-                0.055 * Math.sin(a * 12 + 2.1) +
-                0.026 * Math.sin(a * 19 + 4.4);
-            const pleat = 1 + f * fold;
-
-            // ca = +1 at the front, -1 at the back. The hem hangs *lowest* at
-            // the crest of a fold, where there is most fabric to hang — in
-            // phase with the pleat it produced a row of hard spikes instead.
-            //
-            // Cut high at the front and long at the back. Ankle length all the
-            // way round hides the boots, and with the boots hidden the entire
-            // foot-planting solve is invisible.
-            const hemY = 0.300 + 0.200 * ca - 0.048 * Math.sin(a * 7 + 0.6);
-            const y = 0.990 + (hemY - 0.990) * v;
-
-            const rx = (0.158 + (0.345 - 0.158) * f) * pleat;
-            const rz = (0.128 + (0.318 - 0.128) * f * (1 - 0.12 * ca)) * pleat;
-
             const o = (j * p.cols + i) * 3;
-            p.bindPos[o] = rx * sa;
-            p.bindPos[o + 1] = y;
-            p.bindPos[o + 2] = rz * ca - 0.010 * v;
-            p.bone[j * p.cols + i] = B_ROOT;
-            p.pinRate[j * p.cols + i] = RATE[j];
+            p.bindPos[o] = cx + Math.sin(a) * rx;
+            p.bindPos[o + 1] = cy + Math.cos(a) * rz;
+            p.bindPos[o + 2] = cz;
+            p.bone[j * p.cols + i] = B_CHEST;
+            p.pinRate[j * p.cols + i] = j < RATE.length ? RATE[j] : 0.25;
         }
     }
     p.finalise();
@@ -192,37 +186,34 @@ function makeRobe() {
 }
 
 /**
- * The over-mantle: a short cape that clears the shoulders and falls to the
- * small of the back. Its job is to break up the vertical line of the robe and
- * to catch the light on the shoulders, which is the read that says "layered"
- * from fifteen metres.
+ * The lower torso: the soft section between the hard upper torso and the legs.
+ *
+ * It hangs off the waist bearing and stops above the knee. Short and close, so
+ * it never covers the boots — with the boots hidden the entire foot-planting
+ * solve would be invisible, and that solve is most of why the walk reads.
  */
-function makeMantle() {
+function makeLowerTorso() {
     const p = new ClothPanel({
-        name: "mantle", cols: 28, rows: 7, matId: M_MANTLE,
+        name: "lower", cols: 28, rows: 7, matId: M_SOFT,
         renderCols: 64, renderRows: 22,
         weaveU: 1.35, weaveV: 0.72,
-        aoTop: 0.85, aoBottom: 0.6,
-        collide: C_TORSO | C_ARM_L | C_ARM_R,
+        aoTop: 0.7, aoBottom: 0.5,
+        collide: C_TORSO | C_LEGS,
     });
 
     const RATE = [Infinity, 40, 12, 4, 1.5, 0.8, 0.45];
-    // The collar has to clear the torso it sits on: start it inside the
-    // shoulders (0.176 across) and the top of the mantle only emerges at the
-    // shoulder line, which reads as a flat plate bolted to the chest.
+    // Starts inside the waist bearing's 0.190 and grows past the leg capsules,
+    // so the collision pass is shaping it rather than fighting it.
     const RAD = [
-        [0.00, 0.176, 0.148],
-        [0.20, 0.222, 0.176],
-        [0.55, 0.235, 0.196],
-        [1.00, 0.246, 0.214],
+        [0.00, 0.180, 0.150],
+        [0.30, 0.205, 0.174],
+        [0.70, 0.230, 0.198],
+        [1.00, 0.248, 0.216],
     ];
-    // Stops around the elbow, so the sleeves and their fur cuffs stay visible
-    // below it. A mantle long enough to cover the forearms swallows the whole
-    // silhouette into one dark mass.
     const YT = [
-        [0.00, 1.442, 0],
-        [0.20, 1.352, 0],
-        [0.55, 1.220, 0],
+        [0.00, 0.985, 0],
+        [0.30, 0.880, 0],
+        [0.70, 0.760, 0],
         [1.00, 0.000, 0], // filled per column below
     ];
 
@@ -234,15 +225,20 @@ function makeMantle() {
             const sa = Math.sin(a), ca = Math.cos(a);
             // Front hangs shorter than the back, and the edge scallops with the
             // folds rather than cutting a clean arc.
-            YT[3][1] = 1.045 + 0.115 * ca + 0.035 * Math.sin(a * 7 + 1.4);
+            YT[3][1] = 0.660 + 0.055 * ca + 0.022 * Math.sin(a * 7 + 1.4);
             const y = curve(YT, v)[0];
+            // Pleats. A tube cut as a smooth cone stays a smooth cone: the
+            // solver has nothing to break the symmetry with. Putting the folds
+            // in the *rest shape* means the constraints preserve them, and they
+            // travel with the fabric rather than sliding across it the way a
+            // normal map would.
             const pleat = 1 + v * (0.062 * Math.sin(a * 7 + 1.4) + 0.026 * Math.sin(a * 11 + 3.0));
 
             const o = (j * p.cols + i) * 3;
             p.bindPos[o] = rx * sa * pleat;
             p.bindPos[o + 1] = y;
             p.bindPos[o + 2] = rz * ca * pleat - 0.012;
-            p.bone[j * p.cols + i] = B_CHEST;
+            p.bone[j * p.cols + i] = B_ROOT;
             p.pinRate[j * p.cols + i] = RATE[j];
         }
     }
@@ -258,7 +254,7 @@ function makeMantle() {
 function makeSleeve(side) {
     const s = side === 0 ? -1 : 1;
     const p = new ClothPanel({
-        name: "sleeve" + side, cols: 10, rows: 8, matId: M_ROBE,
+        name: "sleeve" + side, cols: 10, rows: 8, matId: M_SOFT,
         renderCols: 26, renderRows: 20,
         weaveU: 0.46, weaveV: 0.66,
         aoTop: 0.6, aoBottom: 0.5,
@@ -275,11 +271,13 @@ function makeSleeve(side) {
     dx /= dl; dy /= dl; dz /= dl;
 
     // (segment, t, radius) per row. Segment 0 = upper arm, 1 = forearm,
-    // 2 = past the wrist.
+    // 2 = past the wrist. Every radius clears the pressurised limb under it by
+    // about a centimetre — a suit arm is far fatter than the arm inside it, and
+    // a sleeve cut to the old figure would be worn *inside* this one.
     const ROWS = [
-        [0, 0.00, 0.084], [0, 0.45, 0.076], [0, 1.00, 0.072],
-        [1, 0.40, 0.068], [1, 0.75, 0.064], [1, 1.00, 0.061],
-        [2, 0.045, 0.072], [2, 0.125, 0.098],
+        [0, 0.00, 0.094], [0, 0.45, 0.086], [0, 1.00, 0.081],
+        [1, 0.40, 0.076], [1, 0.75, 0.072], [1, 1.00, 0.069],
+        [2, 0.045, 0.080], [2, 0.125, 0.106],
     ];
     const BONE = [
         B_UPPER_L, B_UPPER_L, B_UPPER_L,
@@ -321,27 +319,36 @@ function makeSleeve(side) {
 }
 
 export function makePanels() {
-    return [makeRobe(), makeMantle(), makeSleeve(0), makeSleeve(1)];
+    return [makeTether(), makeLowerTorso(), makeSleeve(0), makeSleeve(1)];
 }
 
 // -----------------------------------------------------------------------------
 //  Solver
 // -----------------------------------------------------------------------------
 
-/** Constraint relaxation iterations. Six is where the robe stops looking rubbery. */
+/** Constraint relaxation iterations. Six is where fabric stops looking rubbery. */
 const ITERATIONS = 6;
 
-/** Capsule table: [boneA, boneB, radius, mask]. Rebuilt from joints each frame. */
+/**
+ * Capsule table: [boneA, boneB, radius, mask]. Rebuilt from joints each frame.
+ *
+ * Every radius is the pressurised limb's, not the body's — the suit adds one to
+ * two centimetres everywhere and a capsule cut to the figure inside it lets the
+ * soft goods sink straight through the shell they are supposed to lie on. The
+ * torso is the one exception: it is kept a little under the hard shell's widest
+ * so that the lower torso's welded top row starts inside its own capsule instead
+ * of being shoved out of it on the first frame.
+ */
 const CAPSULES = [
-    [B_ROOT, B_NECK, 0.175, C_TORSO],
-    [B_THIGH_L, B_SHIN_L, 0.125, C_LEGS],
-    [B_SHIN_L, B_FOOT_L, 0.098, C_LEGS],
-    [B_THIGH_R, B_SHIN_R, 0.125, C_LEGS],
-    [B_SHIN_R, B_FOOT_R, 0.098, C_LEGS],
-    [B_UPPER_L, B_FORE_L, 0.078, C_ARM_L],
-    [B_FORE_L, B_HAND_L, 0.068, C_ARM_L],
-    [B_UPPER_R, B_FORE_R, 0.078, C_ARM_R],
-    [B_FORE_R, B_HAND_R, 0.068, C_ARM_R],
+    [B_ROOT, B_NECK, 0.195, C_TORSO],
+    [B_THIGH_L, B_SHIN_L, 0.142, C_LEGS],
+    [B_SHIN_L, B_FOOT_L, 0.112, C_LEGS],
+    [B_THIGH_R, B_SHIN_R, 0.142, C_LEGS],
+    [B_SHIN_R, B_FOOT_R, 0.112, C_LEGS],
+    [B_UPPER_L, B_FORE_L, 0.092, C_ARM_L],
+    [B_FORE_L, B_HAND_L, 0.080, C_ARM_L],
+    [B_UPPER_R, B_FORE_R, 0.092, C_ARM_R],
+    [B_FORE_R, B_HAND_R, 0.080, C_ARM_R],
 ];
 
 export class ClothSolver {
@@ -364,7 +371,7 @@ export class ClothSolver {
      */
     update(dt, fig, ch) {
         // Two sub-steps at 30 Hz and below. Verlet with hard pins is stable but
-        // a long step lets the hem overshoot through the legs before the
+        // a long step lets a free edge overshoot through the legs before the
         // collision pass sees it.
         let h = Math.min(dt, 1 / 30);
         let steps = 1;
@@ -374,7 +381,7 @@ export class ClothSolver {
         // ---- apparent wind ----------------------------------------------
         const a = (S.windDirection * Math.PI) / 180;
         const ws = 3.2 * S.windStrength;
-        // Gusts, so a standing figure's robe is never dead still.
+        // Gusts in the drift, so a standing figure's tether is never dead still.
         const gust = 1 + 0.35 * Math.sin(this._t * 0.7) + 0.18 * Math.sin(this._t * 2.3 + 1.1);
         this._wind[0] = Math.sin(a) * ws * gust - ch.velocity.x;
         this._wind[1] = 0.35 * Math.sin(this._t * 1.9);
@@ -407,7 +414,7 @@ export class ClothSolver {
         // ---- integrate ----------------------------------------------------
         // Quadratic drag against the apparent wind. At walking pace this is a
         // fraction of gravity; at nineteen metres a second it is four times it,
-        // which is what lays the robe out flat behind a surf run with no special
+        // which is what lays the tether out flat behind a surf run with no special
         // case anywhere.
         const wx = this._wind[0], wy = this._wind[1], wz = this._wind[2];
         const wmag = Math.hypot(wx, wy, wz);
@@ -419,7 +426,7 @@ export class ClothSolver {
             if (!isFinite(p.pinRate[k])) continue; // welded; skip the integrator
             const o = k * 3;
             // Turbulence, hashed off the particle index so it does not pulse in
-            // unison across the garment.
+            // unison across the panel.
             const ph = k * 1.7 + this._t * 4.5;
             const tx = Math.sin(ph) * 0.9;
             const ty = Math.sin(ph * 1.31 + 2.1) * 0.7;
@@ -475,12 +482,12 @@ export class ClothSolver {
      * Distance and bending constraints, Gauss-Seidel.
      *
      * Welded particles have infinite mass: they take none of the correction, so
-     * a hem cannot drag the waistband off the hips.
+     * a free end cannot drag its anchor off the pack.
      */
     _distance(p, iteration) {
         const { cols, rows, pos, restU, restV, restB, pinRate } = p;
         // Bending is solved softly and only on the later iterations. Solved hard
-        // it fights the distance constraints and the garment goes stiff.
+        // it fights the distance constraints and the fabric goes stiff.
         const bendK = iteration >= ITERATIONS - 3 ? 0.22 : 0;
 
         for (let j = 0; j < rows; j++) {
@@ -501,7 +508,7 @@ export class ClothSolver {
         }
     }
 
-    /** Push particles out of the body capsules and off the snow. */
+    /** Push particles out of the body capsules and off the dust. */
     _collide(p, fig) {
         const n = p.count;
         const pos = p.pos;
@@ -533,7 +540,7 @@ export class ClothSolver {
             }
         }
 
-        // The hem rides on the snow rather than through it. Only the bottom rows
+        // A free edge rides on the dust rather than through it. Only the bottom rows
         // check, because that is the only place it can happen and `heightAt` is
         // a filtered lookup, not free.
         if (p.groundRows > 0) {

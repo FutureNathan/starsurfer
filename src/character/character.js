@@ -1,7 +1,7 @@
 /**
  * The character system.
  *
- * Owns the skeleton, the garment simulation, the three meshes and the seven
+ * Owns the skeleton, the soft-goods simulation, the three meshes and the seven
  * pipelines that draw them, and the single small texture that carries every
  * per-frame transform to the GPU.
  *
@@ -23,6 +23,7 @@ import { Vector2, Vector3, Vector4, Color3 } from "@babylonjs/core/Maths/math";
 import { Figure, BONE_COUNT } from "./figure.js";
 import { makePanels, ClothSolver } from "./cloth.js";
 import { buildBody, buildFur, buildClothMesh } from "./build.js";
+import { LIN, EMIT } from "../core/brand.js";
 import { S } from "../core/settings.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
@@ -38,59 +39,106 @@ const CLOTH_ROW0 = 4;
 const CHAR_CASCADES = 2;
 
 /**
- * Material palette. Eight slots, uploaded as two vec4 arrays so every value is
- * live-tunable and nothing is baked into the shader: deep indigo wool, a
- * lighter blue-grey mantle, a pale under-layer at the collar, dark leather.
+ * Radiance scale for the brand's emissive gains.
  *
- * Two properties of these numbers are deliberate and were measured off the
- * render rather than picked as colours.
+ * `EMIT` states each emitter's gain against a unit surface. In this scene lit
+ * dust sits near linear 5 and the post chain's bright-pass knee is at 3, so the
+ * gains have to be lifted onto that scale to mean what they say. At 1.6 the trim
+ * strip lands a little over the knee and blooms — it is a luminaire, and a
+ * luminaire that does not bloom is paint — while the faceplate's glow lands
+ * comfortably under it, which is what keeps it a mirror with a warm floor rather
+ * than a lamp.
+ */
+const EMIT_SCALE = 1.6;
+
+/** Linear mix of two brand colours, for the values that sit between two. */
+function mixLin(a, b, t) {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+/**
+ * Material palette. Eight slots, uploaded as three vec4 arrays so every value is
+ * live-tunable and nothing is baked into the shader.
  *
- * They are *very* saturated. At thirteen degrees the sun has lost most of its
- * blue — the direct beam here is roughly 17:13:6 — so a merely blue-ish albedo
- * comes back out of the multiply as warm grey. The blue has to be about four
- * times the red in the albedo just to survive to two-to-one in the lit areas.
+ * Every colour resolves through `brand.js`. The two exceptions are the metals,
+ * and they are exceptions on purpose: a conductor's normal-incidence
+ * reflectance is a measured optical constant, not a design choice, and dialling
+ * aluminium away from 0.91 is how a metal stops reading as metal.
  *
- * They are *very* dark. AgX compresses hard, so an eighth of the snow's albedo
- * is only about three stops down and lands near mid grey on screen. Anything
- * lighter stops reading as a silhouette against the field, which is the one
- * thing the figure has to do at fifteen metres.
+ * The suit is genuinely bright — an EVA outer layer reflects about eighty per
+ * cent, and against a near-black void that is the correct answer and also the
+ * iconic one. It does mean the sunlit side of the figure is by some way the
+ * brightest thing in frame and will sit hard against the tonemap's shoulder.
+ * That is the picture, not a bug: what stops it flattening into a white blob is
+ * that at thirteen degrees the sun is behind the figure for most of the framing
+ * here, so what the camera mostly sees is the ambient side, the faceplate and
+ * the light strips.
  */
 const PALETTE = [
     // rgb, roughness
-    [0.030, 0.048, 0.125, 0.80], // 0 robe, deep indigo
-    [0.075, 0.105, 0.185, 0.74], // 1 mantle, blue-grey
-    [0.230, 0.225, 0.205, 0.82], // 2 collar lining, warm pale
-    [0.048, 0.033, 0.024, 0.60], // 3 leather
-    [0.135, 0.095, 0.072, 0.85], // 4 skin, deep in shade
-    [0.120, 0.195, 0.310, 0.70], // 5 trim / scarf, pale blue
-    [0.700, 0.720, 0.760, 0.85], // 6 fur (unused by the fabric shader)
-    [0.100, 0.100, 0.100, 0.80], // 7 spare
+    [...LIN.suit, 0.55],                        // 0 suit, woven ortho-fabric
+    [...LIN.suitDark, 0.72],                    // 1 soft goods, bellows, boots
+    [...LIN.accent, 0.055],                     // 2 visor, gold film on glass
+    [...LIN.suit, 0.30],                        // 3 hard shell, white composite
+    [...mixLin(LIN.suit, LIN.suitDark, 0.45), 0.60], // 4 glove
+    [...LIN.accent, 0.30],                      // 5 trim
+    [0.912, 0.914, 0.920, 0.34],                // 6 bare aluminium, bead-blasted
+    [...LIN.suit, 0.16],                        // 7 board deck, clear-coated
 ];
 
 /**
  * (sheen, anisotropy, transmission, weave depth) per slot.
  *
- * Transmission is the number to be careful with. Sunlight through a *blue*
- * robe, multiplied by a *warm* sun, comes back grey — so a generous
- * transmission term does not make the garment glow, it desaturates it to the
- * point where the albedo stops mattering. Heavy wool is close to opaque; only
- * the thin under-layer gets a real value.
+ * Weave depth is the switch that matters. At zero the procedural weave and the
+ * yarn slub are both skipped entirely in the fragment shader, which is exactly
+ * what a faceplate, a composite shell, a bearing and a glassed deck want — a
+ * woven surface texture on any of them is the single fastest way to make a hard
+ * part read as cloth.
+ *
+ * Transmission stays near zero everywhere. A pressure suit is a laminate a
+ * centimetre thick; nothing on this figure is a single layer of anything.
  */
 const PARAMS = [
-    [0.22, 0.55, 0.05, 1.00],
-    [0.28, 0.45, 0.07, 0.90],
-    [0.35, 0.30, 0.22, 1.10],
-    [0.06, 0.20, 0.01, 0.35],
-    [0.05, 0.00, 0.08, 0.00],
-    [0.25, 0.60, 0.12, 1.00],
-    [1.00, 0.00, 0.90, 0.00],
-    [0.20, 0.00, 0.00, 0.50],
+    [0.12, 0.20, 0.02, 0.55],
+    [0.30, 0.50, 0.10, 1.00],
+    [0.00, 0.00, 0.00, 0.00],
+    [0.03, 0.05, 0.00, 0.00],
+    [0.16, 0.35, 0.02, 0.70],
+    [0.00, 0.00, 0.00, 0.00],
+    [0.02, 0.12, 0.00, 0.00],
+    [0.02, 0.00, 0.00, 0.00],
+];
+
+/**
+ * (F0, metallic, emissive gain, unused) per slot.
+ *
+ * `metallic` is not a PBR workflow bolted on late — it is two lines in the
+ * shader, and without it nothing on an astronaut is expressible. A metal takes
+ * its Fresnel reflectance from its own albedo and has no diffuse lobe at all,
+ * which is the whole difference between a gold mirror and a surface painted
+ * gold. 0.035 is the dielectric everything else uses; 0.05 is a polyester
+ * clear-coat, whose 1.55 refractive index puts it there.
+ *
+ * The emissive gain multiplies the slot's own albedo, so an emitter and its
+ * colour can never disagree — both the faceplate's floor and the trim's output
+ * come out exactly the accent hue `brand.js` authored them at.
+ */
+const EXTRA = [
+    [0.035, 0.0, 0.0, 0.0],
+    [0.035, 0.0, 0.0, 0.0],
+    [0.040, 1.0, EMIT.visor.gain * EMIT_SCALE, 0.0],
+    [0.040, 0.0, 0.0, 0.0],
+    [0.035, 0.0, 0.0, 0.0],
+    [0.040, 0.0, EMIT.trim.gain * EMIT_SCALE, 0.0],
+    [0.040, 1.0, 0.0, 0.0],
+    [0.050, 0.0, 0.0, 0.0],
 ];
 
 // ------------------------------------------------------- module-scope scratch
 const _droop = new Vector3();
 const _screen = new Vector2();
-const _furCol = new Color3(0.74, 0.755, 0.795);
+/** Insulation nap is the same white as the suit it frays off. */
+const _furCol = new Color3(LIN.suit[0], LIN.suit[1], LIN.suit[2]);
 
 export class Character {
     /**
@@ -139,10 +187,12 @@ export class Character {
         // ---- palette ------------------------------------------------------
         this._matAlbedo = new Float32Array(32);
         this._matParams = new Float32Array(32);
+        this._matExtra = new Float32Array(32);
         for (let i = 0; i < 8; i++) {
             for (let k = 0; k < 4; k++) {
                 this._matAlbedo[i * 4 + k] = PALETTE[i][k];
                 this._matParams[i * 4 + k] = PARAMS[i][k];
+                this._matExtra[i * 4 + k] = EXTRA[i][k];
             }
         }
 
@@ -171,10 +221,10 @@ export class Character {
         shadows.registerCaster(
             this.clothMesh, (c) => this._makeDepthMaterial("clothDepth", c, true), CHAR_CASCADES
         );
-        // Fur is not registered as a caster. Its shadow lands inside the hood's
-        // own, an alpha-tested 22-shell depth pass is not cheap, and what it
-        // would contribute is a slightly fuzzier edge on a shadow already an
-        // order of magnitude softer than that.
+        // The nap is not registered as a caster. Its shadow lands inside the
+        // suit's own, an alpha-tested ten-shell depth pass is not free, and what
+        // it would contribute is a fractionally fuzzier edge on a shadow already
+        // an order of magnitude softer than that.
 
         this.triangles =
             this.bodyMesh.metadata.triangles +
@@ -190,8 +240,8 @@ export class Character {
     }
 
     /**
-     * One surface material. The body and the garments differ only in their
-     * vertex program — the fabric shading, the shadow lookup and the aerial
+     * One surface material. The body and the soft goods differ only in their
+     * vertex program — the shading, the shadow lookup and the aerial
      * perspective are literally the same code.
      */
     _makeSurfaceMaterial(name, vertex, fragment, isCloth) {
@@ -200,7 +250,7 @@ export class Character {
             "sunDir", "sunRadiance", "shR",
             "cascadeMatrices", "cascadeSplits", "cascadeParams",
             "shadowTexel", "shadowSoftness", "shadowBias",
-            "matAlbedo", "matParams",
+            "matAlbedo", "matParams", "matExtra",
             "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
             "ambientIntensity", "sssStrength", "weaveDensity",
             "screenSize",
@@ -222,9 +272,9 @@ export class Character {
                 shaderLanguage: ShaderLanguage.WGSL,
             }
         );
-        // Every garment is an open sheet and the cowl is a shell, so both faces
-        // are visible. The fragment shader turns the normal toward the viewer
-        // rather than trusting winding — see the note there.
+        // Every soft-goods panel is an open sheet and the helmet is a shell, so
+        // both faces are visible. The fragment shader turns the normal toward
+        // the viewer rather than trusting winding — see the note there.
         mat.backFaceCulling = false;
         mat.setTexture("charTex", this.charTex);
         mat.setTexture("skyLUT", this.sky.lut);
@@ -284,12 +334,16 @@ export class Character {
     }
 
     /**
-     * Depth-prepass materials for the body and the garments.
+     * Depth-prepass materials for the body and the soft goods.
      *
-     * The fur is left out on the same grounds it is left out of the shadow
-     * cascades: it is an alpha-tested twenty-two-shell pass, and what it would
-     * contribute is a fractionally fuzzier occlusion edge on a hood rim that is
+     * The nap is left out on the same grounds it is left out of the shadow
+     * cascades: it is an alpha-tested ten-shell pass, and what it would
+     * contribute is a fractionally fuzzier occlusion edge on a seam that is
      * already inside its own baked cavity.
+     *
+     * The body pass carries the `aux` attribute the beauty pass does, which the
+     * cloth pass has no use for: the prepass writes the reflection mask, and the
+     * only mirror on the character is the faceplate.
      *
      * @param {import("../render/depthPass.js").DepthPass} depth
      */
@@ -307,7 +361,7 @@ export class Character {
                 {
                     attributes: spec.cloth
                         ? ["position"]
-                        : ["position", "boneIdx", "boneWt"],
+                        : ["position", "aux", "boneIdx", "boneWt"],
                     uniforms,
                     samplers: ["charTex"],
                     shaderLanguage: ShaderLanguage.WGSL,
@@ -329,12 +383,12 @@ export class Character {
     }
 
     /**
-     * Advance the figure and the garments, then push one texture upload and one
+     * Advance the figure and the soft goods, then push one texture upload and one
      * set of uniforms.
      *
      * Order matters: the skeleton has to be posed before the cloth can find its
      * kinematic targets, and both have to be written before the texture goes up,
-     * or the garments render one frame behind the body they hang from.
+     * or the soft goods render one frame behind the body they hang from.
      *
      * @param {number} dt
      */
@@ -350,7 +404,7 @@ export class Character {
     }
 
     /**
-     * Push this frame's uniforms. Split from `update` because the garments have
+     * Push this frame's uniforms. Split from `update` because the soft goods have
      * to be solved before the contact system reads the feet, while the uniforms
      * cannot be written until the camera has moved and the cascades have been
      * refitted. Doing both at one point in the frame means one of them is a
@@ -366,7 +420,7 @@ export class Character {
     }
 
     /**
-     * Drop every garment straight onto its kinematic target.
+     * Drop every soft-goods panel straight onto its kinematic target.
      *
      * Done once, on the first update. The panels are authored in bind space at
      * the world origin, and letting them fall from there to wherever the player
@@ -431,14 +485,17 @@ export class Character {
         const sh = this.shadows;
         const ch = this.controller;
 
-        // Fur droop: gravity, plus the apparent wind, plus the character's own
-        // acceleration thrown the other way. Scaled to metres of tip travel.
+        // Nap droop: gravity, plus the apparent drift, plus the character's own
+        // acceleration thrown the other way. Scaled to metres of fibre-tip
+        // travel, so it is proportional to fibre length — these fibres are
+        // fourteen millimetres, under a third of what a fur trim carried, and
+        // the coefficients follow that down.
         const a = (S.windDirection * Math.PI) / 180;
         const ws = 0.6 * S.windStrength;
         _droop.set(
-            Math.sin(a) * ws * 0.006 - ch.velocity.x * 0.0016 - ch.acceleration.x * 0.00018,
-            -0.018,
-            Math.cos(a) * ws * 0.006 - ch.velocity.z * 0.0016 - ch.acceleration.z * 0.00018
+            Math.sin(a) * ws * 0.0018 - ch.velocity.x * 0.0005 - ch.acceleration.x * 0.00006,
+            -0.006,
+            Math.cos(a) * ws * 0.0018 - ch.velocity.z * 0.0005 - ch.acceleration.z * 0.00006
         );
 
         this._splits.set(sh.splits[0], sh.splits[1], sh.splits[2], sh.splits[3]);
@@ -458,8 +515,9 @@ export class Character {
             m.setFloat("shadowSoftness", 1.4);
             // Tighter than the terrain's: the figure is small, its cascade is
             // the near one, and a large bias here detaches the contact shadow
-            // between the boots and the snow — which is the shadow that tells
-            // you the character is standing on the ground rather than in it.
+            // between the board and the dust — which is the shadow that tells
+            // you the astronaut is riding the surface rather than floating over
+            // it.
             m.setFloat("shadowBias", 0.012);
 
             m.setFloat("fogDensity", S.fogDensity);
@@ -475,17 +533,22 @@ export class Character {
         for (const m of [this.bodyMat, this.clothMat]) {
             m.setArray4("matAlbedo", this._matAlbedo);
             m.setArray4("matParams", this._matParams);
+            m.setArray4("matExtra", this._matExtra);
             m.setFloat("sssStrength", S.sssStrength);
             m.setVector2("screenSize", _screen);
-            // Threads per metre. Coarse hand-woven wool, which is what puts the
-            // weave right at the edge of visibility at the distance the figure
-            // is normally framed — present in a close-up, gone by ten metres.
+            // Threads per metre. A coarse woven ortho-fabric, which is what puts
+            // the weave right at the edge of visibility at the distance the
+            // figure is normally framed — present in a close-up, gone by ten
+            // metres. The hard slots skip it entirely on their weave depth.
             m.setFloat("weaveDensity", 210);
         }
         this.clothMat.setArray4("panelParams", this._panelParams);
 
         this.furMat.setVector3("furDroop", _droop);
-        this.furMat.setFloat("furDensity", 250);
+        // Cells per metre. A 2.4 mm pitch: fine enough that the nap reads as the
+        // frayed edge of a woven blanket rather than as fur, which at these
+        // fibre lengths is the whole difference between the two.
+        this.furMat.setFloat("furDensity", 420);
         this.furMat.setColor3("furColor", _furCol);
     }
 
@@ -493,7 +556,7 @@ export class Character {
     async warmUp() {
         await whenReady(this.bodyMat, "character body material", [this.bodyMesh, false]);
         await whenReady(this.clothMat, "character cloth material", [this.clothMesh, false]);
-        await whenReady(this.furMat, "character fur material", [this.furMesh, false]);
+        await whenReady(this.furMat, "character nap material", [this.furMesh, false]);
         for (let i = 0; i < this._depthMats.length; i++) {
             const m = this._depthMats[i];
             const mesh = m.name.indexOf("cloth") === 0 ? this.clothMesh : this.bodyMesh;

@@ -1,30 +1,37 @@
 // -----------------------------------------------------------------------------
-// The fabric material — shared by the skinned body and the simulated garments.
+// The suit material — shared by the skinned body and the simulated soft goods.
 //
-// A plain PBR dielectric is the wrong model for cloth and looks it. Three terms
-// carry the difference:
+// One shader has to cover everything on an astronaut, which spans woven fabric,
+// composite shell, bare metal and a gold mirror. Four terms carry that range,
+// and each is switched off per material slot when it does not apply:
 //
 //   sheen        A retroreflective lobe from the fibres standing proud of the
-//                surface. It is why wool has a bright *rim* rather than a
-//                bright *highlight*, and it is the single term that stops this
-//                reading as painted plastic. Charlie distribution, which is an
-//                inverted Gaussian: energy piles up at grazing angles instead
-//                of around the mirror direction.
+//                surface. It is why woven fabric has a bright *rim* rather than
+//                a bright *highlight*, and it is the single term that stops the
+//                soft goods reading as painted plastic. Charlie distribution,
+//                which is an inverted Gaussian: energy piles up at grazing
+//                angles instead of around the mirror direction.
 //   anisotropy   The weave has a direction. A GGX lobe stretched along the warp
 //                gives the soft directional streak real woven cloth has, and it
-//                is what makes the mantle's shoulder read as a fabric plane and
-//                not a shaded cylinder.
+//                is what makes a shoulder read as a fabric plane and not as a
+//                shaded cylinder.
 //   transmission Thin fabric over a lit edge glows. Same back-scatter term the
-//                snow uses, which is not a coincidence — it is the same physics
+//                dust uses, which is not a coincidence — it is the same physics
 //                at a different mean free path.
+//   metallic     A conductor takes its Fresnel reflectance from its own albedo
+//                and has no diffuse lobe at all. Two lines, and without them
+//                the faceplate is a surface painted gold rather than a mirror
+//                made of it — which on this figure is the whole read.
 //
 // On top of that a procedural weave supplies a normal and a cavity at a scale
-// far below the geometry, faded out by pixel footprint so it never aliases.
+// far below the geometry, faded out by pixel footprint so it never aliases. It
+// is gated on the slot's weave depth, along with the yarn slub, because a hard
+// shell with a weave on it is a hard shell that reads as cloth.
 //
 // Everything downstream of the BRDF — cascade selection, PCSS, aerial
-// perspective — is the identical code the snow runs, from shared includes. The
-// character has to sit in the same light as the field or it will look pasted on
-// no matter how good the fabric is.
+// perspective — is the identical code the terrain runs, from shared includes.
+// The character has to sit in the same light as the field or it will look
+// pasted on no matter how good the material is.
 // -----------------------------------------------------------------------------
 
 #include<snowNoise>
@@ -63,6 +70,8 @@ uniform shadowBias: f32;
 uniform matAlbedo: array<vec4f, 8>;
 /// Per material slot: (sheen, anisotropy, transmission, weave depth).
 uniform matParams: array<vec4f, 8>;
+/// Per material slot: (F0, metallic, emissive gain, unused).
+uniform matExtra: array<vec4f, 8>;
 
 uniform fogDensity: f32;
 uniform fogHeightFalloff: f32;
@@ -71,7 +80,7 @@ uniform aerialStrength: f32;
 uniform ambientIntensity: f32;
 uniform sssStrength: f32;
 /// Weave threads per metre. UVs arrive in metres of surface, so this is the
-/// only place the physical scale of the cloth is decided.
+/// only place the physical scale of the woven layers is decided.
 uniform weaveDensity: f32;
 uniform screenSize: vec2f;
 
@@ -128,9 +137,11 @@ fn weave(uv: vec2f) -> vec3f {
 /// Not an optimisation — a correction. Multiplying prefiltered sky radiance by
 /// `fresnelSchlickRough` alone overestimates badly at grazing angles on a rough
 /// surface: the roughness clamp makes the reflectance run to `1 - roughness`
-/// there, which for wool is 0.2 of the *whole sky* on every silhouette pixel.
-/// The result was a navy robe rendering as pale grey whenever the camera looked
-/// across it, with a dark albedo that had nothing to do with the outcome.
+/// there, which for a woven suit layer is 0.2 of the *whole sky* on every
+/// silhouette pixel. The result is a surface rendering as flat pale grey
+/// whenever the camera looks across it, with an albedo that had nothing to do
+/// with the outcome. On a metal, where the reflection *is* the material, the
+/// same error is the difference between gold and tinfoil.
 fn envBRDFApprox(f0: vec3f, roughness: f32, NdotV: f32) -> vec3f {
     let c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
     let c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
@@ -140,7 +151,7 @@ fn envBRDFApprox(f0: vec3f, roughness: f32, NdotV: f32) -> vec3f {
 }
 
 /// Screen-space cotangent frame. Works identically for the skinned body and the
-/// Catmull-Rom garments, neither of which carries an authored tangent.
+/// Catmull-Rom soft goods, neither of which carries an authored tangent.
 fn cotangentFrame(N: vec3f, dp1: vec3f, dp2: vec3f, duv1: vec2f, duv2: vec2f) -> mat3x3f {
     let dp2perp = cross(dp2, N);
     let dp1perp = cross(N, dp1);
@@ -156,11 +167,11 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let V = normalize(uniforms.cameraPos - world);
     let L = uniforms.sunDir;
 
-    // Garments are open sheets and the hood is a shell, so the camera sees both
-    // sides of nearly everything. Rather than depend on winding — which for
-    // procedurally lofted geometry is one sign error away from inside-out — the
-    // normal is simply turned to face the viewer. For a surface this thin that
-    // is also physically the right answer.
+    // Soft-goods panels are open sheets and the helmet is a shell, so the camera
+    // sees both sides of nearly everything. Rather than depend on winding —
+    // which for procedurally lofted geometry is one sign error away from
+    // inside-out — the normal is simply turned to face the viewer. For a surface
+    // this thin that is also physically the right answer.
     var N = normalize(input.vNormal);
     let twoSided = dot(N, V) < 0.0;
     if (twoSided) { N = -N; }
@@ -169,12 +180,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let slot = clamp(i32(input.vAux.x + 0.5), 0, 7);
     let alb4 = uniforms.matAlbedo[slot];
     let par = uniforms.matParams[slot];
+    let ex = uniforms.matExtra[slot];
     var albedo = alb4.rgb;
     var roughness = alb4.a;
     let sheenAmt = par.x;
     let aniso = par.y;
     let transmit = par.z;
     let weaveDepth = par.w;
+    let metallic = ex.y;
+    // A dielectric keeps the slot's own F0; a conductor's reflectance *is* its
+    // albedo, which is why gold reflects gold and aluminium reflects grey.
+    let F0 = mix(vec3f(ex.x), albedo, metallic);
 
     // ------------------------------------------------------------ weave detail
     let wuv = input.vUV * uniforms.weaveDensity;
@@ -185,7 +201,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let TBN = cotangentFrame(N, dp1, dp2, duv1, duv2);
 
     // Fade the weave out once a thread is under a pixel, or it aliases into a
-    // crawling moire — the same footprint logic the snow's detail layers use.
+    // crawling moire — the same footprint logic the dust's detail layers use.
     // At two hundred threads a metre this means the weave only exists in the
     // near field, which is exactly where a real one is visible.
     let uvFoot = max(length(duv1), length(duv2));
@@ -201,12 +217,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // does more for "this is a woven thing" than another specular term. Runs at
     // centimetre scale, an order of magnitude coarser than the weave, so unlike
     // the weave it survives to the distance the figure is actually seen at.
-    let slub = noise2(input.vUV * vec2f(9.0, 26.0)) * 0.5 + 0.5;
-    albedo *= 0.90 + 0.20 * slub;
-    roughness = clamp(roughness * (0.94 + 0.12 * slub), 0.05, 1.0);
+    //
+    // Gated on the same weave depth the weave itself is. A moulded shell, a
+    // bearing and a faceplate have no yarn in them, and a centimetre-scale
+    // albedo wobble is exactly what stops a mirror looking machined.
+    if (weaveDepth > 0.001) {
+        let slub = noise2(input.vUV * vec2f(9.0, 26.0)) * 0.5 + 0.5;
+        albedo *= 0.90 + 0.20 * slub;
+        roughness = clamp(roughness * (0.94 + 0.12 * slub), 0.05, 1.0);
+    }
 
     // Baked at the vertex, times the weave cavity. No screen-space occlusion:
-    // it is a two-metre silhouette against forty metres of snow, and the pass
+    // it is a two-metre silhouette against forty metres of dust, and the pass
     // does not pay for itself on this content.
     var ao = input.vAux.y * cavity;
 
@@ -224,10 +246,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     const INV_PI: f32 = 0.31830988618;
 
     // --- diffuse -----------------------------------------------------------
-    // Wrapped a little: fabric is not opaque at fibre scale, and the terminator
-    // on a sleeve is genuinely soft.
-    let diff = wrapDiffuse(NdotL, 0.18);
-    var color = albedo * INV_PI * sun * diff * shadow;
+    // Wrapped by however woven the slot is. The wrap stands in for scatter
+    // between fibres, so it belongs to fabric and to nothing else: the
+    // terminator on a sleeve is genuinely soft, the one on a moulded shell is
+    // genuinely not, and running a fabric terminator across the helmet is what
+    // would make the hard parts read as upholstery.
+    let diff = wrapDiffuse(NdotL, mix(0.05, 0.18, clamp(weaveDepth, 0.0, 1.0)));
+    var color = albedo * INV_PI * sun * diff * shadow * (1.0 - metallic);
 
     // --- transmission through thin cloth -----------------------------------
     if (transmit > 0.001) {
@@ -247,21 +272,21 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         let ay = ar / (1.0 + aniso);
         let D = dGGXAniso(dot(TBN[0], H), dot(TBN[1], H), NdotH, ax, ay);
         let Vis = visSmithGGXCorrelated(NdotV, max(NdotL, 1e-4), roughness);
-        let F = fresnelSchlick(VdotH, vec3f(0.035));
+        let F = fresnelSchlick(VdotH, F0);
         color += sun * D * Vis * F * NdotL * shadow;
 
         // --- sheen ---------------------------------------------------------
         // Tinted toward the albedo but desaturated: fibre scatter is closer to
-        // white than the bulk colour, which is why a navy robe rims pale blue.
+        // white than the bulk colour, which is why a dark panel rims pale.
         //
         // Two corrections, both learned by looking at the render rather than at
         // the paper. First, the Ashikhmin visibility term runs away when both
         // cosines are small, so the lobe is clamped. Second — and this is the
         // one that mattered — Charlie is an *inverted* distribution: it is near
         // its peak everywhere except close to the mirror direction, so applied
-        // flat it is not a rim, it is a uniform veil over the entire garment.
-        // At full strength it lifted a navy robe to the same value as the snow
-        // behind it and erased the silhouette completely.
+        // flat it is not a rim, it is a uniform veil over the whole surface. At
+        // full strength it lifted the soft goods to the same value as the field
+        // behind them and erased the silhouette completely.
         //
         // The grazing gate puts the energy back where fibre scatter actually
         // shows: the edge, where the line of sight passes along the pile rather
@@ -275,45 +300,65 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // --- ambient ------------------------------------------------------------
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
-    // Bounce off the snow. A figure standing on an 85%-albedo field is lit from
-    // below almost as much as from above, and leaving it out is what makes
-    // characters composited into snow scenes look cut out.
+    // Bounce off the dust. The field reflects about eight per cent, so this is
+    // a tenth of what a bright ground would send back up — but it is not zero,
+    // and it must not be: a figure standing over a field that glows in its own
+    // right is genuinely lit from below, and leaving that out is what makes a
+    // character composited into a scene look cut out of it.
     let up = clamp(-N.y * 0.5 + 0.5, 0.0, 1.0);
     irradiance += shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
-                * uniforms.ambientIntensity * 0.40 * up;
+                * uniforms.ambientIntensity * 0.12 * up;
 
-    color += albedo * INV_PI * irradiance * ao;
+    color += albedo * INV_PI * irradiance * ao * (1.0 - metallic);
 
     // Ambient sheen: the sky wrapping around a fuzzy silhouette. Cheap, and it
     // is most of what reads as "fuzz" when the sun is behind the figure. Kept
     // deliberately small — this term is albedo-independent, so any generosity
-    // here erases the difference between a dark robe and a light one.
+    // here erases the difference between a dark panel and a white one.
     let rim = pow(1.0 - NdotV, 4.0);
     let skyAmb = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity * INV_PI;
     color += skyAmb * rim * sheenAmt * 0.55 * ao;
 
     // Ambient specular from the sky at a roughness-selected mip.
+    //
+    // The exponent is 0.75 rather than the 0.5 a fabric-only material wanted.
+    // A square root biases hard toward blurry — at the faceplate's roughness of
+    // 0.055 it still picks mip 1.4, which smears the galactic band into a
+    // gradient and throws away the only thing on the character that is supposed
+    // to be a mirror. At 0.75 the same surface lands near mip 0.7 and reflects
+    // individual stars, while a rough one is barely moved.
     let R = reflect(-V, N);
-    let mip = sqrt(roughness) * 6.0;
+    let mip = pow(roughness, 0.75) * 6.0;
     let skyRefl = textureSampleLevel(skyLUT, skyLUTSampler, dirToLatLong(R), mip).rgb;
-    color += skyRefl * envBRDFApprox(vec3f(0.035), roughness, NdotV)
+    color += skyRefl * envBRDFApprox(F0, roughness, NdotV)
            * uniforms.ambientIntensity * ao;
 
     // --- spell light --------------------------------------------------------
     // The caster is standing inside the thing they are casting, so this is the
     // one material where the spell lights are almost always the *dominant*
     // source: a 13-degree sun is behind the figure for most of the framing this
-    // demo uses, and a robe lit only by sky ambient is a silhouette. A ribbon of
-    // water held at arm's length is what puts light back on the front of it.
+    // demo uses, and a suit lit only by a space sky's ambient is a silhouette.
+    // Something bright held at arm's length is what puts light back on the front
+    // of it.
     //
     // Wrapped harder than the sun's diffuse, because at half a metre the light
-    // is a broad source rather than a point, and thin cloth over a bright
+    // is a broad source rather than a point, and thin fabric over a bright
     // emitter genuinely does carry light around the fold.
     if (uniforms.spellLightCount > 0.5) {
         color += spellLightingSurface(
-            world, N, V, albedo, vec3f(0.035), roughness, 0.35,
+            world, N, V, albedo * (1.0 - metallic), F0, roughness, 0.35,
             uniforms.spellLightPos, uniforms.spellLightCol, uniforms.spellLightCount
         ) * ao;
+    }
+
+    // --- emission -----------------------------------------------------------
+    // The light strips and the faceplate's own glow. Multiplying the slot's
+    // albedo means an emitter can never disagree with its own colour, and it is
+    // deliberately not multiplied by occlusion: a lamp in a crevice is not a
+    // dimmer lamp. Added before the aerial pass, so a strip a hundred metres out
+    // fogs like everything else rather than punching through.
+    if (ex.z > 0.001) {
+        color += albedo * ex.z;
     }
 
     // ------------------------------------------------------- aerial perspective

@@ -2,17 +2,19 @@
  * Procedural character geometry.
  *
  * Nothing here is authored in a DCC tool. Every surface is a lofted tube, a
- * swept ring or a Bezier-blended shell evaluated from the bind-pose skeleton, so
- * the whole figure is a few hundred lines of tables and a smooth-normal pass.
+ * swept ring or a sphere evaluated from the bind-pose skeleton, so the whole
+ * astronaut is a few hundred lines of tables and a smooth-normal pass.
  *
  * Three meshes come out, because three different vertex programs drive them:
  *
- *   body   linearly blend-skinned to the bones — head, cowl, torso, arms,
- *          trousers, boots, belt.
- *   cloth  driven from the simulated garment grids, sampled with Catmull-Rom in
- *          the vertex shader so a 24x14 solve renders as a smooth surface.
- *   fur    shell fur: the same rim ring emitted N times, each pushed further
- *          along its normal, alpha-tested into strands.
+ *   body   linearly blend-skinned to the bones — helmet, faceplate, pressure
+ *          suit, life-support pack, gloves, boots, and the board under them.
+ *   cloth  driven from the simulated soft goods — the tether, the lower torso
+ *          and the sleeves — sampled with Catmull-Rom in the vertex shader so a
+ *          coarse solve renders as a smooth surface.
+ *   nap    shell layers of multi-layer insulation: the same seam ring emitted N
+ *          times, each pushed further along its normal, alpha-tested into
+ *          fibres.
  *
  * Normals are never derived analytically. Everything is built as positions plus
  * indices and then run through one area-weighted smooth-normal pass, which is
@@ -26,22 +28,65 @@
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import {
-    B_ROOT, B_SPINE, B_CHEST, B_NECK, B_HEAD, B_HOOD,
+    B_ROOT, B_SPINE, B_CHEST, B_NECK, B_HEAD, B_HELMET,
     B_UPPER_L, B_FORE_L, B_HAND_L, B_UPPER_R, B_FORE_R, B_HAND_R,
     B_THIGH_L, B_SHIN_L, B_FOOT_L, B_THIGH_R, B_SHIN_R, B_FOOT_R,
+    B_BOARD,
 } from "./figure.js";
 
 // ------------------------------------------------------------- material slots
-export const M_ROBE = 0;     // deep indigo wool
-export const M_MANTLE = 1;   // lighter blue-grey over-mantle
-export const M_TUNIC = 2;    // pale cream under-layer
-export const M_LEATHER = 3;  // belt and boots
-export const M_SKIN = 4;     // face, deep in shade
-export const M_TRIM = 5;     // pale blue banding
-export const M_FUR = 6;      // hood and cuff trim
+//
+// Exactly eight, which is the ceiling: `matAlbedo`, `matParams` and `matExtra`
+// are all `array<vec4f, 8>` in char.fragment.wgsl and the slot index is clamped
+// to 0..7 there. A ninth would be a coordinated edit across three WGSL array
+// sizes and three Float32Array sizes, so the budget is decided here and not
+// discovered later.
+export const M_SUIT = 0;     // white woven pressure garment
+export const M_SOFT = 1;     // soft goods: joint bellows, neck dam, boots
+export const M_VISOR = 2;    // gold mirror faceplate
+export const M_SHELL = 3;    // white hard shell: helmet, life-support pack
+export const M_GLOVE = 4;    // pressurised glove
+export const M_TRIM = 5;     // emissive accent strip
+export const M_METAL = 6;    // bearings and rings — bare metal
+export const M_BOARD = 7;    // the board's clear-coated deck
 
 /** Segments around a limb. 14 is smooth at the distances this is seen from. */
 const SEG = 14;
+
+// ------------------------------------------------------------- head geometry
+//
+// Declared before anything that reads them. The helmet is a sphere with one
+// hole in it, and every part of the head assembly — the shell, the faceplate,
+// the neck seam nap — is evaluated from the same centre, radius and opening
+// angle, so none of them can drift apart when one is retuned.
+
+/** Centre of the helmet bubble in bind-pose world space. */
+const HELM_C = [0, 1.660, 0.005];
+/** Bubble radius. 31 cm across the outside, which is a real EVA helmet. */
+const HELM_R = 0.155;
+/** Angular radius of the faceplate opening, measured from `FACE_DIR`. */
+const VISOR_ANG = 0.98;
+/** How far the sun visor stands proud of the pressure bubble at its centre. */
+const VISOR_PROUD = 0.010;
+
+/** The direction the faceplate looks: forward, tipped very slightly down. */
+const FACE_DIR = (() => {
+    const v = [0, -0.16, 0.987];
+    const l = Math.hypot(v[0], v[1], v[2]);
+    return [v[0] / l, v[1] / l, v[2] / l];
+})();
+/** Two axes spanning the plane the opening's azimuth sweeps. */
+const FACE_U = [1, 0, 0];
+const FACE_W = [0, FACE_DIR[2], -FACE_DIR[1]];
+
+/**
+ * Tessellation. Columns are shared by the shell and the faceplate so their
+ * seam vertices line up exactly; rows are equal steps in polar angle, which on
+ * a sphere is equal steps in surface area.
+ */
+const HELMET_COLS = 34;
+const HELMET_ROWS = 9;
+const VISOR_ROWS = 4;
 
 // -----------------------------------------------------------------------------
 
@@ -91,7 +136,8 @@ class Builder {
  * Area-weighted smooth normals.
  *
  * Area weighting rather than plain averaging: a long thin triangle at a cap
- * would otherwise pull the pole normal off toward its own plane.
+ * would otherwise pull the pole normal off toward its own plane. It also makes
+ * the degenerate triangles at a fan's apex free — zero area is zero weight.
  */
 function computeNormals(pos, idx) {
     const n = new Float32Array(pos.length);
@@ -157,7 +203,7 @@ function loft(B, rings, matId, ref, capStart, capEnd) {
         }
 
         // Texture coordinates are metres of surface, not normalised. Every
-        // scale in the fabric shader — the weave, the yarn slub — is a physical
+        // scale in the suit shader — the weave, the yarn slub — is a physical
         // size, and normalised UVs would make each of them a different size on
         // every part of the body.
         const circ = Math.PI * (cur[3] + cur[4]);
@@ -248,71 +294,108 @@ function limbRings(x0, y0, z0, x1, y1, z1, r0, r1, steps, boneA, boneB, ao, from
 // -----------------------------------------------------------------------------
 
 /**
- * The figure under the garments: head, cowl, torso, arms, trousers, boots.
+ * The astronaut: helmet, faceplate, pressure suit, life-support pack, gloves,
+ * boots, and the board.
  *
- * Most of this is only seen in slivers — the robe covers the torso, the mantle
- * covers the shoulders. What is genuinely on screen is the hood silhouette, the
- * boots, and the forearms, so that is where the ring counts go.
+ * A pressure suit is a stack of bulky cylinders with hard rings at every
+ * bearing, which is a gift for a lofted-tube pipeline: the bulk comes from the
+ * radii and the joints read because a metal band interrupts every tube. What is
+ * genuinely on screen at fifteen metres is the helmet silhouette with its gold
+ * faceplate, the pack behind the shoulders, and the board — so that is where
+ * the ring counts go.
  */
 export function buildBody(scene) {
     const B = new Builder();
 
-    // ---- torso ------------------------------------------------------------
+    // ---- hard upper torso -------------------------------------------------
+    // Barrel-shaped and near-constant through the chest, tapering only at the
+    // waist bearing and at the shoulder yoke. This is a fibreglass shell, not a
+    // ribcage, and the silhouette should say so.
     const torso = [];
     const TORSO = [
-        [0.88, 0.150, 0.120], [0.98, 0.142, 0.113], [1.06, 0.134, 0.106],
-        [1.14, 0.140, 0.109], [1.22, 0.156, 0.118], [1.30, 0.172, 0.126],
-        [1.38, 0.176, 0.126], [1.44, 0.160, 0.116],
+        [0.88, 0.168, 0.132], [0.98, 0.176, 0.140], [1.06, 0.184, 0.146],
+        [1.14, 0.196, 0.152], [1.22, 0.206, 0.158], [1.30, 0.210, 0.160],
+        [1.38, 0.202, 0.154], [1.44, 0.172, 0.136],
     ];
     for (let i = 0; i < TORSO.length; i++) {
         const [y, rx, rz] = TORSO[i];
-        torso.push(ring(0, y, 0, rx, rz, 0.72, spineBones(y)));
+        torso.push(ring(0, y, 0, rx, rz, 0.75, spineBones(y)));
     }
-    loft(B, torso, M_TRIM, [0, 0, 1], true, false);
+    loft(B, torso, M_SUIT, [0, 0, 1], true, false);
 
-    // ---- belt -------------------------------------------------------------
-    const belt = [
-        ring(0, 0.955, 0, 0.153, 0.124, 0.62, spineBones(0.955)),
-        ring(0, 0.995, 0, 0.160, 0.130, 0.70, spineBones(0.995)),
-        ring(0, 1.035, 0, 0.152, 0.123, 0.62, spineBones(1.035)),
+    // ---- waist bearing ----------------------------------------------------
+    // The hard ring the upper torso rotates on. Stands a centimetre proud of
+    // the shell either side of it, which is the whole point of drawing it.
+    const waist = [
+        ring(0, 0.950, 0, 0.180, 0.146, 0.55, spineBones(0.950)),
+        ring(0, 0.986, 0, 0.190, 0.156, 0.62, spineBones(0.986)),
+        ring(0, 1.022, 0, 0.180, 0.146, 0.55, spineBones(1.022)),
     ];
-    loft(B, belt, M_LEATHER, [0, 0, 1], false, false);
+    loft(B, waist, M_METAL, [0, 0, 1], false, false);
 
-    // ---- neck + head ------------------------------------------------------
+    // ---- chest light bar --------------------------------------------------
+    // A real luminaire, not a painted stripe: it is the one thing on the front
+    // of the figure that still reads when the sun is behind it, which in this
+    // scene is most of the time.
+    const bar = [
+        ring(-0.100, 1.315, 0.148, 0.013, 0.013, 1.0, spineBones(1.315)),
+        ring(0.000, 1.322, 0.156, 0.015, 0.015, 1.0, spineBones(1.322)),
+        ring(0.100, 1.315, 0.148, 0.013, 0.013, 1.0, spineBones(1.315)),
+    ];
+    loft(B, bar, M_TRIM, [0, 1, 0], true, true);
+
+    // ---- neck dam and helmet ring ------------------------------------------
     const neck = [
-        ring(0, 1.42, -0.005, 0.062, 0.058, 0.35, [B_NECK, 1, B_HEAD, 0]),
-        ring(0, 1.50, 0.000, 0.058, 0.055, 0.30, [B_NECK, 0.5, B_HEAD, 0.5]),
-        ring(0, 1.56, 0.002, 0.062, 0.060, 0.28, [B_HEAD, 1, 0, 0]),
+        ring(0, 1.418, -0.004, 0.072, 0.068, 0.35, [B_NECK, 1, B_HEAD, 0]),
+        ring(0, 1.452, 0.000, 0.068, 0.064, 0.32, [B_NECK, 0.4, B_HEAD, 0.6]),
     ];
-    loft(B, neck, M_SKIN, [0, 0, 1], false, false);
+    loft(B, neck, M_SOFT, [0, 0, 1], false, false);
 
-    // The skull. Deliberately featureless: the face stays in shadow under the
-    // cowl, and a half-finished face is far worse than a silhouette. It carries
-    // a heavy baked occlusion so the cavity reads dark even when the sun swings
-    // round to face it.
-    const head = [];
-    for (let i = 0; i <= 8; i++) {
-        const a = (i / 8) * Math.PI;
-        const y = HEAD_C[1] - Math.cos(a) * 0.105;
-        const r = Math.sin(a);
-        head.push(ring(
-            0, y, HEAD_C[2] + r * 0.006,
-            0.089 * r + 0.004, 0.096 * r + 0.004,
-            0.22, [B_HEAD, 1, 0, 0]
-        ));
+    // The helmet ring. The bubble's south pole sits at y 1.505 with a radius of
+    // 78 mm at the top of this band, so the ring genuinely encircles it — the
+    // helmet drops into the ring the way it does on the real disconnect.
+    const collar = [
+        ring(0, 1.478, 0.002, 0.098, 0.094, 0.55, [B_HEAD, 1, 0, 0]),
+        ring(0, 1.502, 0.004, 0.106, 0.102, 0.62, [B_HEAD, 1, 0, 0]),
+        ring(0, 1.526, 0.004, 0.098, 0.094, 0.55, [B_HEAD, 1, 0, 0]),
+    ];
+    loft(B, collar, M_METAL, [0, 0, 1], false, false);
+
+    buildHelmet(B);
+    buildVisor(B);
+
+    // ---- life-support pack -------------------------------------------------
+    // A rounded slab swept backward from inside the chest, so its front ring is
+    // hidden and needs no cap. Bound through `spineBones` rather than to one
+    // bone, so it twists with the chest during a carve instead of hanging off
+    // it like a rucksack.
+    // The last ring is drawn in hard before the end cap, because `capRing`
+    // extends its fan by seven tenths of the ring's radius: leaving the pack
+    // full width to the end would put its tip fifteen centimetres further back
+    // than the geometry says and turn a box into a cone.
+    const pack = [
+        ring(0, 1.270, -0.128, 0.140, 0.132, 0.42, spineBones(1.270)),
+        ring(0, 1.270, -0.158, 0.166, 0.158, 0.50, spineBones(1.270)),
+        ring(0, 1.270, -0.212, 0.172, 0.164, 0.55, spineBones(1.270)),
+        ring(0, 1.270, -0.258, 0.158, 0.150, 0.58, spineBones(1.270)),
+        ring(0, 1.270, -0.286, 0.096, 0.090, 0.52, spineBones(1.270)),
+    ];
+    loft(B, pack, M_SHELL, [0, 1, 0], false, true);
+
+    // Two light strips along the pack's widest line, where they are visible
+    // from behind and from either side — the read that separates the astronaut
+    // from the void in a trailing camera, which is the demo's default framing.
+    // Each sits with its inner face inside the shell, so there is no seam to
+    // catch the light between the strip and the thing it is bolted to.
+    for (let i = 0; i < 2; i++) {
+        const s = i === 0 ? -1 : 1;
+        const strip = [
+            ring(s * 0.172, 1.270, -0.160, 0.012, 0.012, 1.0, spineBones(1.270)),
+            ring(s * 0.180, 1.270, -0.212, 0.014, 0.014, 1.0, spineBones(1.270)),
+            ring(s * 0.170, 1.270, -0.250, 0.012, 0.012, 1.0, spineBones(1.270)),
+        ];
+        loft(B, strip, M_TRIM, [0, 1, 0], true, true);
     }
-    loft(B, head, M_SKIN, [0, 0, 1], true, true);
-
-    // A scarf across the lower face, as in the reference. It is what stops the
-    // shadowed skull reading as an empty hood.
-    const scarf = [
-        ring(0, 1.560, 0.010, 0.086, 0.092, 0.30, [B_HEAD, 1, 0, 0]),
-        ring(0, 1.600, 0.012, 0.094, 0.100, 0.34, [B_HEAD, 1, 0, 0]),
-        ring(0, 1.638, 0.008, 0.092, 0.098, 0.30, [B_HEAD, 1, 0, 0]),
-    ];
-    loft(B, scarf, M_TRIM, [0, 0, 1], false, false);
-
-    buildHood(B);
 
     // ---- arms -------------------------------------------------------------
     for (let a = 0; a < 2; a++) {
@@ -323,25 +406,52 @@ export function buildBody(scene) {
 
         const upper = limbRings(
             s * 0.185, 1.400, 0, s * 0.230, 1.123, 0,
-            0.064, 0.050, 4, up, fo, 0.55, 0.72, 1.0
+            0.078, 0.064, 4, up, fo, 0.62, 0.72, 1.0
         );
-        loft(B, upper, M_ROBE, [0, 0, 1], true, false);
+        loft(B, upper, M_SUIT, [0, 0, 1], true, false);
+
+        // Convolute bellows at the shoulder and the elbow. A pressure suit's
+        // limbs are otherwise two smooth tubes, and without a break at each
+        // joint the arm reads as a length of pipe no matter how it is posed.
+        const shoulder = [
+            ring(s * 0.187, 1.386, 0, 0.085, 0.081, 0.52, [up, 1, 0, 0]),
+            ring(s * 0.193, 1.350, 0, 0.088, 0.084, 0.50, [up, 1, 0, 0]),
+            ring(s * 0.199, 1.314, 0, 0.084, 0.080, 0.52, [up, 1, 0, 0]),
+        ];
+        loft(B, shoulder, M_SOFT, [0, 0, 1], false, false);
+
+        const elbow = [
+            ring(s * 0.226, 1.152, 0, 0.070, 0.066, 0.50, [up, 0.7, fo, 0.3]),
+            ring(s * 0.230, 1.123, 0, 0.074, 0.070, 0.48, [up, 0.4, fo, 0.6]),
+            ring(s * 0.234, 1.094, 0.002, 0.070, 0.066, 0.50, [up, 0.1, fo, 0.9]),
+        ];
+        loft(B, elbow, M_SOFT, [0, 0, 1], false, false);
 
         const fore = limbRings(
             s * 0.230, 1.123, 0, s * 0.243, 0.866, 0.016,
-            0.050, 0.042, 4, fo, hd, 0.62, 0.75, 1.0
+            0.062, 0.054, 4, fo, hd, 0.62, 0.75, 1.0
         );
-        loft(B, fore, M_ROBE, [0, 0, 1], false, false);
+        loft(B, fore, M_SUIT, [0, 0, 1], false, false);
 
-        // The hand is a mitt. Fingers at this distance are three pixels of
-        // noise; a clean silhouette reads better and costs nothing.
-        const hand = [
-            ring(s * 0.243, 0.866, 0.016, 0.044, 0.038, 0.55, [hd, 1, 0, 0]),
-            ring(s * 0.245, 0.820, 0.024, 0.050, 0.040, 0.55, [hd, 1, 0, 0]),
-            ring(s * 0.247, 0.780, 0.032, 0.046, 0.036, 0.52, [hd, 1, 0, 0]),
-            ring(s * 0.248, 0.752, 0.038, 0.030, 0.026, 0.50, [hd, 1, 0, 0]),
+        // Wrist bearing: the glove disconnect. Straddles the hand bone so the
+        // band turns with the glove rather than shearing across the joint.
+        const wrist = [
+            ring(s * 0.242, 0.906, 0.014, 0.062, 0.058, 0.55, [fo, 0.5, hd, 0.5]),
+            ring(s * 0.243, 0.880, 0.016, 0.064, 0.060, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.244, 0.860, 0.018, 0.060, 0.056, 0.55, [hd, 1, 0, 0]),
         ];
-        loft(B, hand, M_LEATHER, [0, 0, 1], false, true);
+        loft(B, wrist, M_METAL, [0, 0, 1], false, false);
+
+        // The glove is a mitt. Fingers at this distance are three pixels of
+        // noise; a clean silhouette reads better and costs nothing, and a
+        // pressurised glove barely articulates anyway.
+        const hand = [
+            ring(s * 0.243, 0.866, 0.016, 0.050, 0.043, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.245, 0.818, 0.025, 0.057, 0.046, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.247, 0.776, 0.034, 0.052, 0.041, 0.52, [hd, 1, 0, 0]),
+            ring(s * 0.248, 0.748, 0.040, 0.034, 0.030, 0.50, [hd, 1, 0, 0]),
+        ];
+        loft(B, hand, M_GLOVE, [0, 0, 1], false, true);
     }
 
     // ---- legs and boots ---------------------------------------------------
@@ -353,195 +463,316 @@ export function buildBody(scene) {
 
         const thigh = limbRings(
             s * 0.100, 0.905, 0, s * 0.100, 0.460, 0,
-            0.114, 0.086, 5, th, sh, 0.5, 0.74, 1.0
+            0.128, 0.100, 5, th, sh, 0.50, 0.74, 1.0
         );
-        loft(B, thigh, M_ROBE, [0, 0, 1], true, false);
+        loft(B, thigh, M_SUIT, [0, 0, 1], true, false);
 
-        // Trousers narrow to the ankle then flare into the boot shaft.
+        // The leg narrows to the ankle then flares into the boot cuff.
         const shin = [
-            ring(s * 0.100, 0.460, 0, 0.086, 0.086, 0.55, [sh, 1, 0, 0]),
-            ring(s * 0.100, 0.360, 0.004, 0.076, 0.076, 0.55, [sh, 1, 0, 0]),
-            ring(s * 0.100, 0.270, 0.006, 0.070, 0.070, 0.52, [sh, 1, 0, 0]),
-            ring(s * 0.100, 0.200, 0.006, 0.075, 0.076, 0.48, [sh, 0.6, ft, 0.4]),
-            ring(s * 0.100, 0.140, 0.004, 0.080, 0.082, 0.44, [sh, 0.25, ft, 0.75]),
-            ring(s * 0.100, 0.100, 0.000, 0.074, 0.078, 0.42, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.460, 0, 0.096, 0.096, 0.55, [sh, 1, 0, 0]),
+            ring(s * 0.100, 0.360, 0.004, 0.085, 0.085, 0.55, [sh, 1, 0, 0]),
+            ring(s * 0.100, 0.270, 0.006, 0.078, 0.078, 0.52, [sh, 1, 0, 0]),
+            ring(s * 0.100, 0.200, 0.006, 0.084, 0.085, 0.48, [sh, 0.6, ft, 0.4]),
+            ring(s * 0.100, 0.140, 0.004, 0.090, 0.092, 0.44, [sh, 0.25, ft, 0.75]),
+            ring(s * 0.100, 0.100, 0.000, 0.083, 0.087, 0.42, [ft, 1, 0, 0]),
         ];
-        loft(B, shin, M_ROBE, [0, 0, 1], false, false);
+        loft(B, shin, M_SUIT, [0, 0, 1], false, false);
 
         // The boot runs along the foot's own axis, so it swings with the ankle
-        // roll rather than being a block bolted to the shin.
+        // roll rather than being a block bolted to the shin. It is the one dark
+        // mass at the bottom of the figure, which is what gives the astronaut
+        // weight on the deck instead of floating above it.
         const boot = [
-            ring(s * 0.100, 0.055, -0.088, 0.046, 0.052, 0.35, [ft, 1, 0, 0]),
-            ring(s * 0.100, 0.058, -0.050, 0.056, 0.066, 0.38, [ft, 1, 0, 0]),
-            ring(s * 0.100, 0.054, 0.010, 0.058, 0.060, 0.42, [ft, 1, 0, 0]),
-            ring(s * 0.100, 0.048, 0.078, 0.056, 0.050, 0.45, [ft, 1, 0, 0]),
-            ring(s * 0.100, 0.043, 0.142, 0.050, 0.043, 0.48, [ft, 1, 0, 0]),
-            ring(s * 0.100, 0.040, 0.190, 0.033, 0.031, 0.48, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.055, -0.096, 0.056, 0.063, 0.35, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.058, -0.055, 0.068, 0.080, 0.38, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.054, 0.011, 0.071, 0.073, 0.42, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.048, 0.086, 0.068, 0.061, 0.45, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.043, 0.156, 0.061, 0.052, 0.48, [ft, 1, 0, 0]),
+            ring(s * 0.100, 0.040, 0.208, 0.040, 0.038, 0.48, [ft, 1, 0, 0]),
         ];
-        loft(B, boot, M_LEATHER, [0, 1, 0], true, true);
+        loft(B, boot, M_SOFT, [0, 1, 0], true, true);
     }
+
+    buildBoard(B);
 
     return finishSkinned(scene, "charBody", B);
 }
 
+// -----------------------------------------------------------------------------
+//  Head assembly
+// -----------------------------------------------------------------------------
+
 /**
- * The cowl.
+ * A unit direction on the helmet sphere: polar angle `ang` measured from the
+ * face direction, at azimuth `a` around it. Azimuth 0 is over the crown and
+ * 0.5 of a turn passes under the chin.
  *
- * Built as a swept Bezier: each strand runs from a point on the face-opening rim
- * to a point on the ring where the hood meets the shoulders, bowed outward by a
- * control point that is pushed furthest over the crown. That gives a genuinely
- * deep hood with a rolled opening, rather than a sphere with a hole in it.
- *
- * The rim curve this produces is reused verbatim by the fur trim, so the two can
- * never drift apart.
+ * The shell, the faceplate and the neck seam are all evaluated from this one
+ * function, which is why the faceplate can never leave a sliver of a gap at the
+ * opening no matter what the radii are retuned to.
  */
-const HOOD_COLS = 34;
-const HOOD_ROWS = 9;
-const HEAD_C = [0, 1.655, 0.005];
-const FACE_DIR = (() => {
-    const v = [0, -0.28, 0.96];
-    const l = Math.hypot(v[0], v[1], v[2]);
-    return [v[0] / l, v[1] / l, v[2] / l];
-})();
-
-/** Face-opening rim point at parameter `s` (0 = crown, 0.5 = under the chin). */
-export function hoodRimPoint(s, out) {
-    const a = s * Math.PI * 2;
-    // U spans the rim horizontally, W vertically, both perpendicular to FACE_DIR.
-    const ux = 1, uy = 0, uz = 0;
-    const wx = FACE_DIR[1] * uz - FACE_DIR[2] * uy;
-    const wy = FACE_DIR[2] * ux - FACE_DIR[0] * uz;
-    const wz = FACE_DIR[0] * uy - FACE_DIR[1] * ux;
-    const cx = HEAD_C[0] + FACE_DIR[0] * 0.105;
-    const cy = HEAD_C[1] + FACE_DIR[1] * 0.105;
-    const cz = HEAD_C[2] + FACE_DIR[2] * 0.105;
-    out[0] = cx + ux * 0.152 * Math.sin(a) + wx * 0.163 * Math.cos(a);
-    out[1] = cy + uy * 0.152 * Math.sin(a) + wy * 0.163 * Math.cos(a);
-    out[2] = cz + uz * 0.152 * Math.sin(a) + wz * 0.163 * Math.cos(a);
+function helmetDir(a, ang, out) {
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const su = Math.sin(a) * sa, sw = Math.cos(a) * sa;
+    out[0] = FACE_DIR[0] * ca + FACE_U[0] * su + FACE_W[0] * sw;
+    out[1] = FACE_DIR[1] * ca + FACE_U[1] * su + FACE_W[1] * sw;
+    out[2] = FACE_DIR[2] * ca + FACE_U[2] * su + FACE_W[2] * sw;
     return out;
 }
 
-function hoodBasePoint(s, out) {
-    const a = s * Math.PI * 2;
-    out[0] = 0.212 * Math.sin(a);
-    out[1] = 1.352;
-    out[2] = -0.012 - 0.182 * Math.cos(a);
-    return out;
+/** Polar angle of the faceplate opening at parameter `s`. */
+function visorAngle(s) {
+    // A few per cent taller than it is wide, the way a faceplate is cut: the
+    // eyes need the vertical field, the cheeks do not need the horizontal.
+    return VISOR_ANG * (1 + 0.05 * Math.cos(s * Math.PI * 2));
 }
 
-function buildHood(B) {
-    const rim = [0, 0, 0];
-    const base = [0, 0, 0];
+/**
+ * The helmet shell.
+ *
+ * A sphere with one hole in it, swept as columns of constant azimuth running
+ * from the faceplate rim, back over the crown and round to a single pole
+ * directly behind the face. Rows are equal steps in polar angle, so the
+ * tessellation is uniform in surface area rather than piling up at the back.
+ *
+ * Opaque, deliberately. The shell is the white micrometeoroid cover that goes
+ * over the pressure bubble, and with the faceplate rendered as an opaque mirror
+ * there is no angle at which the camera can see into an empty helmet — the
+ * failure mode a transparent visor over a featureless head always ends in.
+ */
+function buildHelmet(B) {
+    const d = [0, 0, 0];
     let prevRow = null;
 
-    for (let r = 0; r <= HOOD_ROWS; r++) {
-        const t = r / HOOD_ROWS;
+    // Arc length from the rim to the back pole, and the rim's own circumference
+    // — the UVs are metres of surface like everywhere else.
+    const sweep = HELM_R * (Math.PI - VISOR_ANG);
+    const girth = 2 * Math.PI * HELM_R * Math.sin(VISOR_ANG);
+
+    for (let r = 0; r < HELMET_ROWS; r++) {
+        const t = r / HELMET_ROWS;
         const row = [];
-        for (let c = 0; c < HOOD_COLS; c++) {
-            const s = c / HOOD_COLS;
-            hoodRimPoint(s, rim);
-            hoodBasePoint(s, base);
-
-            // Control point.
-            //
-            // Not the chord's midpoint pushed away from the skull: at the crown
-            // the chord runs from a rim point above and in front of the head to
-            // a base point below and behind it, straight through the skull, so
-            // its midpoint is already inside the head and "away from the head
-            // centre" points down into the shoulders.
-            //
-            // The control direction has to be stated, not derived. It sweeps
-            // from up-and-back over the crown, through sideways at the temples,
-            // to down-and-forward under the chin — which is the same sweep the
-            // rim parameter already makes, so it comes straight off `s`.
-            const a = s * Math.PI * 2;
-            const sa = Math.sin(a), ca = Math.cos(a);
-            let nx = sa * 1.0;
-            let ny = ca * 0.84;
-            let nz = ca * -0.54;
-            const nl = Math.hypot(nx, ny, nz) || 1;
-            nx /= nl; ny /= nl; nz /= nl;
-            // Radius out from the head: widest over the crown, tightest at the
-            // throat, which is what gives the cowl its peak.
-            const rad = 0.205 + 0.062 * ca;
-            const mx = HEAD_C[0] + nx * rad;
-            const my = HEAD_C[1] + ny * rad;
-            const mz = HEAD_C[2] + nz * rad;
-
-            const it = 1 - t;
-            const px = it * it * rim[0] + 2 * it * t * mx + t * t * base[0];
-            const py = it * it * rim[1] + 2 * it * t * my + t * t * base[1];
-            const pz = it * it * rim[2] + 2 * it * t * mz + t * t * base[2];
-
-            // Occlusion: the inside of a cowl sees almost no sky. It is the
-            // single cheapest thing that makes a hood read as deep.
-            const ao = 0.34 + 0.55 * Math.min(1, t * 2.2);
-            // UVs in metres: the rim is about a metre round and the sweep from
-            // rim to shoulder about 45 cm.
-            row.push(B.vert(px, py, pz, s * 1.02, t * 0.45, M_ROBE, ao, B_HOOD, 1, 0, 0));
+        for (let c = 0; c < HELMET_COLS; c++) {
+            const s = c / HELMET_COLS;
+            const ang0 = visorAngle(s);
+            const ang = ang0 + (Math.PI - ang0) * t;
+            helmetDir(s * Math.PI * 2, ang, d);
+            // The outside of a helmet sees the whole sky; only the back is
+            // shaded, and then only by the pack it sits against.
+            const ao = 0.92 - 0.16 * t;
+            row.push(B.vert(
+                HELM_C[0] + d[0] * HELM_R,
+                HELM_C[1] + d[1] * HELM_R,
+                HELM_C[2] + d[2] * HELM_R,
+                s * girth, t * sweep,
+                M_SHELL, ao, B_HELMET, 1, 0, 0
+            ));
         }
         if (prevRow) {
-            for (let c = 0; c < HOOD_COLS; c++) {
-                const c2 = (c + 1) % HOOD_COLS;
+            for (let c = 0; c < HELMET_COLS; c++) {
+                const c2 = (c + 1) % HELMET_COLS;
                 B.quad(prevRow[c], prevRow[c2], row[c2], row[c]);
             }
         }
         prevRow = row;
     }
+
+    // Close the back with a fan to the pole rather than a ring of coincident
+    // vertices: one vertex instead of thirty-four, and no degenerate quads.
+    const pole = B.vert(
+        HELM_C[0] - FACE_DIR[0] * HELM_R,
+        HELM_C[1] - FACE_DIR[1] * HELM_R,
+        HELM_C[2] - FACE_DIR[2] * HELM_R,
+        girth * 0.5, sweep, M_SHELL, 0.76, B_HELMET, 1, 0, 0
+    );
+    for (let c = 0; c < HELMET_COLS; c++) {
+        B.tri(pole, prevRow[c], prevRow[(c + 1) % HELMET_COLS]);
+    }
+}
+
+/**
+ * The sun visor.
+ *
+ * The spherical cap the shell leaves out, built from the same rim function and
+ * bulged ten millimetres proud at its centre so it reads as a separate part
+ * bolted over the opening rather than as a painted patch of the shell.
+ *
+ * This is the single most important read on the whole figure, so it carries no
+ * baked occlusion at all — a mirror does not have ambient occlusion, it has a
+ * reflection, and darkening it here would fight the one thing it is for.
+ */
+function buildVisor(B) {
+    const d = [0, 0, 0];
+    let prevRow = null;
+    const span = HELM_R * VISOR_ANG;
+    const girth = 2 * Math.PI * HELM_R * Math.sin(VISOR_ANG);
+
+    for (let r = 0; r < VISOR_ROWS; r++) {
+        const t = r / VISOR_ROWS;
+        const row = [];
+        for (let c = 0; c < HELMET_COLS; c++) {
+            const s = c / HELMET_COLS;
+            const k = 1 - t;                       // 1 at the rim, 0 at the centre
+            const ang = visorAngle(s) * k;
+            helmetDir(s * Math.PI * 2, ang, d);
+            // Flush with the shell at the rim, proud at the centre. Quadratic,
+            // so the two surfaces meet tangentially and the joint has no crease
+            // for a specular highlight to catch on.
+            const rad = HELM_R + VISOR_PROUD * (1 - k * k);
+            row.push(B.vert(
+                HELM_C[0] + d[0] * rad,
+                HELM_C[1] + d[1] * rad,
+                HELM_C[2] + d[2] * rad,
+                s * girth, t * span,
+                M_VISOR, 1.0, B_HELMET, 1, 0, 0
+            ));
+        }
+        if (prevRow) {
+            for (let c = 0; c < HELMET_COLS; c++) {
+                const c2 = (c + 1) % HELMET_COLS;
+                B.quad(prevRow[c], prevRow[c2], row[c2], row[c]);
+            }
+        }
+        prevRow = row;
+    }
+
+    const centre = B.vert(
+        HELM_C[0] + FACE_DIR[0] * (HELM_R + VISOR_PROUD),
+        HELM_C[1] + FACE_DIR[1] * (HELM_R + VISOR_PROUD),
+        HELM_C[2] + FACE_DIR[2] * (HELM_R + VISOR_PROUD),
+        girth * 0.5, span, M_VISOR, 1.0, B_HELMET, 1, 0, 0
+    );
+    for (let c = 0; c < HELMET_COLS; c++) {
+        B.tri(centre, prevRow[c], prevRow[(c + 1) % HELMET_COLS]);
+    }
 }
 
 // -----------------------------------------------------------------------------
-//  Fur
+//  Board
 // -----------------------------------------------------------------------------
 
-/** Shells per fur band. Below about 18 the layering is visible as banding. */
-const HOOD_SHELLS = 22;
-const CUFF_SHELLS = 18;
+/**
+ * The board.
+ *
+ * Built into the *body* mesh on its own bone rather than as a mesh of its own,
+ * which is the whole trick: it inherits char.vertex, char.fragment, both shadow
+ * cascades through charDepth and the depth prepass through charPrepass without
+ * a single new pipeline, material, caster registration or warm-up entry.
+ *
+ * Authored lying along +Z in bind space with its centreline on the bone origin,
+ * because `B_BOARD`'s bind direction is +Z and its front reference is world up
+ * — the same convention the foot bones use. Rows sweep along Z with the world
+ * up as the loft reference, so a ring's `rx` is its half-width and its `rz` is
+ * its half-thickness.
+ *
+ * The outline is a rounded pin: widest just behind the middle, drawn out to a
+ * point at the nose and a narrower point at the tail. The rocker — the lift in
+ * the centreline toward both ends — is what stops it reading as a plank, and it
+ * is why the nose can plough into a dune face without the whole board stopping.
+ */
+function buildBoard(B) {
+    const bone = [B_BOARD, 1, 0, 0];
+
+    // [z, y, half-width, half-thickness]
+    const OUTLINE = [
+        [0.940, 0.076, 0.022, 0.008],
+        [0.840, 0.058, 0.058, 0.014],
+        [0.700, 0.041, 0.104, 0.021],
+        [0.500, 0.029, 0.144, 0.027],
+        [0.260, 0.022, 0.172, 0.031],
+        [0.000, 0.020, 0.180, 0.033],
+        [-0.260, 0.022, 0.172, 0.031],
+        [-0.480, 0.029, 0.146, 0.027],
+        [-0.680, 0.039, 0.110, 0.022],
+        [-0.810, 0.052, 0.066, 0.015],
+        [-0.880, 0.064, 0.024, 0.009],
+    ];
+    const deck = [];
+    for (let i = 0; i < OUTLINE.length; i++) {
+        const [z, y, w, th] = OUTLINE[i];
+        deck.push(ring(0, y, z, w, th, 0.85, bone));
+    }
+    loft(B, deck, M_BOARD, [0, 1, 0], true, true);
+
+    // A single centre fin. In a dust sea a fin does nothing a keel would not,
+    // but it is the one silhouette element that says "board" from behind, which
+    // is the angle this is nearly always seen from.
+    const fin = [
+        ring(0, 0.010, -0.560, 0.010, 0.075, 0.55, bone),
+        ring(0, -0.040, -0.585, 0.008, 0.055, 0.50, bone),
+        ring(0, -0.088, -0.615, 0.005, 0.030, 0.45, bone),
+    ];
+    loft(B, fin, M_BOARD, [0, 0, 1], false, true);
+
+    // The stringer, run as a light strip. It reads the board's whole length in
+    // one line, which is what tells you which way it is pointing during a carve
+    // — and it ties the board to the same accent the faceplate and the pack
+    // strips carry.
+    const stringer = [
+        ring(0, 0.070, 0.760, 0.008, 0.006, 1.0, bone),
+        ring(0, 0.050, 0.400, 0.010, 0.007, 1.0, bone),
+        ring(0, 0.052, 0.000, 0.010, 0.007, 1.0, bone),
+        ring(0, 0.054, -0.400, 0.010, 0.007, 1.0, bone),
+        ring(0, 0.072, -0.760, 0.008, 0.006, 1.0, bone),
+    ];
+    loft(B, stringer, M_TRIM, [0, 1, 0], true, true);
+}
+
+// -----------------------------------------------------------------------------
+//  Insulation nap
+// -----------------------------------------------------------------------------
+
+/** Shells per nap band. Short fibres, so ten is already past visible banding. */
+const NECK_SHELLS = 10;
+const CUFF_SHELLS = 10;
 
 /**
- * Shell fur.
+ * Shell fur, repurposed as multi-layer-insulation nap.
  *
- * A trim band is modelled as a partial torus around the edge it decorates: a
+ * A seam band is modelled as a partial torus around the edge it decorates: a
  * ring of cross-sections, each an arc of directions pointing away from the
- * garment. That surface is then emitted once per shell, each copy pushed
- * further along its own direction, and the fragment shader alpha-tests a hashed
- * strand field whose threshold rises with the shell parameter — so strands
- * taper, end at different lengths, and the band reads as fur rather than as a
- * smooth sausage.
+ * suit. That surface is then emitted once per shell, each copy pushed further
+ * along its own direction, and the fragment shader alpha-tests a hashed fibre
+ * field whose threshold rises with the shell parameter — so fibres taper, end
+ * at different lengths, and the band reads as soft nap rather than as a smooth
+ * sausage.
  *
- * Bone-bound rather than cloth-bound, deliberately: the hood rim rides the hood
- * bone and the cuffs ride the forearms, both of which are rigid. Binding fur to
- * a simulated surface would need the shell direction to come out of the cloth
+ * Fourteen millimetres long, against the forty-eight a fur trim wanted. This is
+ * the frayed edge of a thermal blanket where it is clamped at a bearing, not a
+ * pelt, and at that length ten shells is plenty — which matters, because these
+ * are the only alpha-tested layers on the character.
+ *
+ * Bone-bound rather than cloth-bound, deliberately: the neck seam rides the
+ * head and the cuffs ride the gloves, both of which are rigid. Binding nap to a
+ * simulated surface would need the shell direction to come out of the cloth
  * solve — a second vertex program, for very little visible gain.
  */
 export function buildFur(scene) {
     const B = new Builder();
     B.explicitNormals = true;
-    const p = [0, 0, 0];
 
-    // ---- hood rim ---------------------------------------------------------
-    // The band's outward direction is the rim's own bisector: away from the
-    // skull, tilted along the face direction so the trim frames the opening.
-    const cols = 26;
+    // ---- helmet-to-suit neck seam -----------------------------------------
+    // A ring just under the helmet ring, fibres pointing outward and a little
+    // downward — the direction the blanket's edge actually lies when it is
+    // clamped at the top and free at the bottom.
+    const cols = 20;
     const bases = new Float32Array(cols * 3);
     const outs = new Float32Array(cols * 3);
     for (let c = 0; c < cols; c++) {
-        hoodRimPoint(c / cols, p);
-        bases[c * 3] = p[0]; bases[c * 3 + 1] = p[1]; bases[c * 3 + 2] = p[2];
-        let dx = p[0] - HEAD_C[0], dy = p[1] - HEAD_C[1], dz = p[2] - HEAD_C[2];
-        const dl = Math.hypot(dx, dy, dz) || 1;
-        dx = dx / dl + FACE_DIR[0] * 0.45;
-        dy = dy / dl + FACE_DIR[1] * 0.45;
-        dz = dz / dl + FACE_DIR[2] * 0.45;
-        const l2 = Math.hypot(dx, dy, dz) || 1;
-        outs[c * 3] = dx / l2; outs[c * 3 + 1] = dy / l2; outs[c * 3 + 2] = dz / l2;
+        const ang = (c / cols) * Math.PI * 2;
+        const rx = Math.sin(ang), rz = Math.cos(ang);
+        bases[c * 3] = rx * 0.100;
+        bases[c * 3 + 1] = 1.458;
+        bases[c * 3 + 2] = 0.004 + rz * 0.100;
+        const l = Math.hypot(rx, -0.25, rz) || 1;
+        outs[c * 3] = rx / l; outs[c * 3 + 1] = -0.25 / l; outs[c * 3 + 2] = rz / l;
     }
-    emitFurBand(B, cols, bases, outs, 0.024, 0.048, HOOD_SHELLS, B_HOOD, 0.62);
+    emitFurBand(B, cols, bases, outs, 0.010, 0.014, NECK_SHELLS, B_HEAD, 0.75);
 
-    // ---- cuffs ------------------------------------------------------------
+    // ---- glove cuffs -------------------------------------------------------
     for (let a = 0; a < 2; a++) {
         const s = a === 0 ? -1 : 1;
-        const bone = a === 0 ? B_FORE_L : B_FORE_R;
+        const bone = a === 0 ? B_HAND_L : B_HAND_R;
         const n = 12;
         const cb = new Float32Array(n * 3);
         const co = new Float32Array(n * 3);
@@ -550,33 +781,33 @@ export function buildFur(scene) {
         for (let c = 0; c < n; c++) {
             const ang = (c / n) * Math.PI * 2;
             const rx = Math.sin(ang), rz = Math.cos(ang);
-            // Sits on the sleeve at the wrist, just above the loose cuff rows,
-            // where the garment is pinned hard enough that a bone-bound band
-            // cannot visibly separate from it.
-            cb[c * 3] = s * 0.240 + rx * 0.066;
-            cb[c * 3 + 1] = 0.900;
-            cb[c * 3 + 2] = 0.012 + rz * 0.064;
+            // Just below the wrist bearing, on the glove side of it, where the
+            // blanket is clamped hard enough that a bone-bound band cannot
+            // visibly separate from what it is meant to be attached to.
+            cb[c * 3] = s * 0.244 + rx * 0.058;
+            cb[c * 3 + 1] = 0.848;
+            cb[c * 3 + 2] = 0.018 + rz * 0.058;
             co[c * 3] = rx; co[c * 3 + 1] = 0; co[c * 3 + 2] = rz;
         }
-        emitFurBand(B, n, cb, co, 0.015, 0.032, CUFF_SHELLS, bone, 0.52);
+        emitFurBand(B, n, cb, co, 0.010, 0.016, CUFF_SHELLS, bone, 0.60);
     }
 
     return finishSkinned(scene, "charFur", B, true);
 }
 
-/** Cross-section steps across a fur band, and the arc they cover. */
+/** Cross-section steps across a nap band, and the arc they cover. */
 const FUR_ARC_STEPS = 4;
 const FUR_ARC = 2.1; // radians, centred on the outward direction
 
 /**
- * One fur band.
+ * One nap band.
  *
  * @param {Builder} B
  * @param {number} cols positions around the ring
  * @param {Float32Array} bases ring positions, 3 floats each
  * @param {Float32Array} outs unit outward direction per ring position
  * @param {number} r0 radius of the band's core, metres
- * @param {number} len strand length beyond the core, metres
+ * @param {number} len fibre length beyond the core, metres
  * @param {number} shells
  * @param {number} bone
  * @param {number} ao
@@ -611,10 +842,10 @@ function emitFurBand(B, cols, bases, outs, r0, len, shells, bone, ao) {
         }
     }
 
-    // Arc length around the ring, so the strand field has a uniform pitch in
+    // Arc length around the ring, so the fibre field has a uniform pitch in
     // metres regardless of how big the band is. The shader multiplies this by a
-    // density in cells per metre; anything else makes hood fur and cuff fur
-    // come out at different scales.
+    // density in cells per metre; anything else makes the neck seam and the
+    // cuffs come out at different scales.
     const arc = new Float32Array(cols + 1);
     for (let c = 1; c <= cols; c++) {
         const a = ((c - 1) % cols) * 3;
@@ -693,13 +924,13 @@ function finishSkinned(scene, name, B, isFur) {
 // -----------------------------------------------------------------------------
 
 /**
- * The render mesh for the simulated garments.
+ * The render mesh for the simulated soft goods.
  *
  * It carries no positions of its own — `position` is `(u, v, panelIndex)` and
  * the vertex shader reconstructs the surface by Catmull-Rom interpolation of the
  * panel's simulated node grid. That decoupling is what lets a 24x14 verlet solve
  * render as a smooth 48x28 surface, and it means the sim cost is independent of
- * how finely the garment is tessellated.
+ * how finely the panel is tessellated.
  *
  * @param {import("./cloth.js").ClothPanel[]} panels
  */
@@ -721,8 +952,8 @@ export function buildClothMesh(scene, panels) {
                 const u = i / cu;
                 pos.push(u, v, pi);
                 uv.push(u * p.weaveU, v * p.weaveV);
-                // (matId, ao). Garments darken toward the hem, where they sit in
-                // their own folds and close to the ground.
+                // (matId, ao). Panels darken toward their free edge, where they
+                // sit in their own folds.
                 aux.push(p.matId, p.aoTop + (p.aoBottom - p.aoTop) * v);
             }
         }
