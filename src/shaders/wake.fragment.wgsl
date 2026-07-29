@@ -1,20 +1,29 @@
 // -----------------------------------------------------------------------------
-// The snow-surf wake — shading.
+// The stardust wake — shading.
 //
-// This is snow that has just left the ground, and it is a different material from
-// the field it came out of even though it is the same substance. Freshly broken
-// snow is looser, brighter and rougher than the pack, and — the part that matters
-// most here — it is *thin*. A wave crest is centimetres of powder held up in the
-// air, so it transmits: with the sun low and behind it, the lip should light up
-// from the inside rather than going to silhouette.
+// This is dust that has just left the ground, and it is a different material from
+// the field it came out of even though it is the same substance. Three things
+// separate it, and each one drives a term below.
 //
-// So the subsurface term is driven off the section parameter rather than off a
-// constant: thick and opaque at the base where the wall meets the trench, thin
-// and glowing at the lip. That single gradient is most of what separates this
-// from a white ribbon.
+//   it is loose     Freshly broken grains scatter more than packed ones, so the
+//                   wall sits at the albedo the terrain's own deformation berm
+//                   resolves to rather than at the packed value beside it.
+//   it is thin      A wave crest is centimetres of grains held up in the air, so
+//                   it transmits: with the star low and behind it, the lip lights
+//                   up from the inside rather than going to silhouette. The
+//                   subsurface term is therefore driven off the section parameter
+//                   — thick and opaque at the base where the wall meets the
+//                   trench, thin and glowing at the lip.
+//   it is hot       This is the part that carries the frame. Broken grains have
+//                   far more surface per unit volume than packed ones and shed
+//                   their accumulated charge at once, which is why the terrain
+//                   material burns brightest along a fresh carve. The wake is
+//                   that same event held in the air, so it emits, and it cools as
+//                   it falls. At an albedo of twelve percent under a distant
+//                   star, the emission is most of what the eye is looking at.
 //
 // Everything else — the cascades, the SH ambient, the glints, the aerial
-// perspective — is the same code the snow field runs, out of the same includes.
+// perspective — is the same code the dust field runs, out of the same includes.
 // The wake has to sit in the frame as part of the same world.
 // -----------------------------------------------------------------------------
 
@@ -63,7 +72,22 @@ uniform sssStrength: f32;
 uniform glintIntensity: f32;
 uniform glintGrazing: f32;
 uniform wakeTime: f32;
-/// Per-term diagnostic. See the switch at the bottom; `SNOWFLOW.wake.debug`.
+
+/// The discharge ramp, straight off the brand palette and matching the terrain's
+/// own pair. `wakeBodyColor` is the nebula violet the whole wall wells with;
+/// `wakeLipColor` is the warm gold only the hottest, freshest mass reaches. Both
+/// arrive with their radiance gains already folded in — see `surfWake.js`.
+uniform wakeBodyColor: vec3f;
+uniform wakeLipColor: vec3f;
+/// Global emission scale, shared with the dust field so the wall and the berm it
+/// grows out of can never drift apart.
+uniform wakeEmissive: f32;
+/// Peak wall height a full-speed carve can raise, metres. The only thing this is
+/// for is turning the per-column amplitude back into a 0..1 measure of how much
+/// mass is actually in the air.
+uniform wakeAmpRef: f32;
+
+/// Per-term diagnostic. See the switch at the bottom; `STARSURFER.wake.debug`.
 uniform wakeDebug: f32;
 
 uniform spellLightPos: array<vec4f, 4>;
@@ -84,7 +108,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // The wake is an open sheet with a curl in it, so both faces are visible and
     // winding says nothing useful. Turning the normal toward the eye is right for
-    // a sheet of powder a few centimetres thick — light gets through it either
+    // a sheet of grains a few centimetres thick — light gets through it either
     // way, and the alternative is a black inside face on the barrel.
     let Ng = normalize(input.vNormal);
     let facing = select(-1.0, 1.0, dot(Ng, V) >= 0.0);
@@ -94,13 +118,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // `Ng` is built by the sweep pointing to the *concave* side, so this is true
     // exactly when the eye is inside the curl. That is the one thing the shading
     // needs to know that the normal alone cannot say: the inside of a barrel of
-    // snow is a cave, and it has to go dark and blue or the whole wall reads as a
+    // dust is a cave, and it has to lose the star or the whole wall reads as a
     // cut-out lit from nowhere.
     let inside = facing > 0.0;
 
-    // Broken snow grain. Cheap, and without it the wall is the one surface in
-    // frame with no detail on it, which is instantly legible next to a snow
-    // field carrying three scales of it.
+    // Broken grain. Cheap, and without it the wall is the one surface in frame
+    // with no detail on it, which is instantly legible next to a dust field
+    // carrying three scales of it.
     let ddxW = dpdx(world);
     let ddyW = dpdy(world);
     let footprint = max(length(vec2f(length(ddxW.xz), length(ddyW.xz))), 1e-4);
@@ -108,14 +132,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // The wave face is close to vertical over most of its height, so a planar XZ
     // lookup barely moves across it and the grain comes out as horizontal
     // banding — the one pattern that reads as a rendering error rather than as
-    // snow. Slicing 2D noise along two non-axis-aligned directions gives a field
+    // grain. Slicing 2D noise along two non-axis-aligned directions gives a field
     // that varies at the same rate whichever way the surface is facing, for the
     // cost of two dot products.
     let gp = vec2f(
         dot(world, vec3f(0.91, 0.23, -0.35)),
         dot(world, vec3f(0.28, 0.84, 0.46))
     );
-    // Two scales, each faded out by pixel footprint, mirroring what the snow
+    // Two scales, each faded out by pixel footprint, mirroring what the dust
     // material does over three. One scale alone gives the wall a single
     // characteristic grain size, which is exactly how it reads as a different
     // substance from the field it was thrown out of.
@@ -135,20 +159,29 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     // ------------------------------------------------------------- material
-    // Freshly displaced snow: brighter and rougher than the pack it came out of.
-    let albedo = vec3f(0.895, 0.920, 0.965);
-    let roughness = 0.80;
-    let f0 = vec3f(0.026);
+    // Freshly displaced dust: looser, rougher and a little brighter than the pack
+    // it came out of, and violet for the same reason the field is.
+    //
+    // This is not a free choice. It is exactly the value the terrain's own
+    // deformation berm resolves to — `mix(packed, loose, 0.55)` in the dust
+    // material — because the wall and the berm are one continuous body of thrown
+    // mass and the wall grows straight out of it. Any seam in albedo across that
+    // join reads as a ribbon pasted onto the ground, which is the single most
+    // artificial thing this surface can do.
+    let albedo = vec3f(0.124, 0.091, 0.216);
+    // Fully loose, so the rougher end of the field's range rather than the middle.
+    let roughness = 0.86;
+    let f0 = vec3f(0.020);
 
-    // Thin at the lip, deep at the base. This is the gradient the whole read
+    // Thin at the lip, deep at the base. This is the gradient the transmission
     // rests on — see the note at the top.
     //
-    // The lip end does not go to zero. A wall of thrown powder is ten to thirty
-    // centimetres through, not tissue: at 0.04 the transmission lobe runs at
-    // near full amplitude with a nearly white tint, and since it is multiplied by
-    // a 13-degree sun whose beam is roughly 17:13:6, the result was several times
-    // brighter than the direct diffuse and unmistakably *warm*. On white snow
-    // that reads as dirt — the outer face of the wall came out brown.
+    // The lip end does not go to zero. A wall of thrown dust is ten to thirty
+    // centimetres through, not tissue: at 0.04 the transmission lobe runs at near
+    // full amplitude with almost no tint, and since it is multiplied by a star
+    // whose beam is roughly 231:190:139, the result is several times brighter than
+    // the direct diffuse and unmistakably warm — a hot white edge all the way down
+    // a wall that is supposed to be reading violet.
     let thickness = mix(0.92, 0.32, smoothstep(0.15, 0.95, q));
 
     // ------------------------------------------------------------- lighting
@@ -163,29 +196,21 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // ---- occlusion ---------------------------------------------------------
     // Analytic, because the shadow map cannot supply it. The wake is a
     // zero-thickness sheet, so a point on it sits at exactly the depth its own
-    // caster wrote and can never self-occlude; and under a 13-degree sun the
-    // lip's cast shadow lands metres away rather than on the face beneath it.
-    // Every bit of the "inside the curl is dark" read therefore has to come from
-    // here, and its absence is what made the first version look like a white
-    // cut-out pasted over the snow.
+    // caster wrote and can never self-occlude; and under a star this low the lip's
+    // cast shadow lands metres away rather than on the face beneath it. Every bit
+    // of the "inside the curl is dark" read therefore has to come from here, and
+    // its absence is what made the first version look like a cut-out pasted over
+    // the field.
     //
-    //   base      the foot of the wall stands in the trench it came out of
     //   barrel    the concave side is enclosed by the overhang above it, and the
     //             harder the curl the less sky it sees
-    // Only the inside of the curl, and nothing else.
     //
-    // Every open face has to render at *exactly* the brightness of the snow it
-    // was thrown out of, and the reason is the tonemapper rather than the
-    // lighting. AgX desaturates hard as it approaches its shoulder, which is what
-    // makes sunlit snow read as white despite being lit by a beam that is roughly
-    // 17:13:6. Half a stop below that, the curve stops rolling the saturation off
-    // and the same warm beam on the same white albedo comes back as tan. So a
-    // broad, gentle darkening of the wall — which is what an ambient-occlusion
-    // term looks like, and what two earlier passes here applied — does not read
-    // as "slightly shaded snow". It reads as brown snow, next to white snow.
-    //
-    // The wall is therefore left at full brightness everywhere it is genuinely
-    // open, and darkened only where it is genuinely enclosed.
+    // Only the inside of the curl, and nothing else. Every open face has to render
+    // at exactly the brightness of the mass it was thrown out of: the wall and the
+    // berm at its foot are one body, and a broad gentle darkening applied to the
+    // whole sheet puts a visible join between them. The wall is therefore left
+    // untouched everywhere it is genuinely open, and darkened only where it is
+    // genuinely enclosed.
     let barrel = select(0.0, smoothstep(0.05, 0.75, q) * (0.45 + 0.55 * input.vCurl), inside);
     let occ = mix(1.0, 0.30, barrel);
 
@@ -193,15 +218,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let directTerm = albedo * INV_PI * sun * diff * shadow;
     var color = directTerm;
 
-    // Transmission, coupled much harder to the shadow term than the snow field's
-    // is. On the ground a shadowed drift is still fed by light scattering in from
-    // the lit snow a few centimetres away; a wall of powder standing in its own
-    // shadow with air on both sides has no such neighbour, and leaving it at half
-    // strength was most of why the shadowed side stayed white.
-    // Strength well under the terrain's, and a wider scattering radius so the
-    // tint reaches the blue end at a lower thickness. Together those keep the
-    // backlit glow reading as light coming *through snow* rather than as the sun
-    // reflecting off something tan.
+    // Transmission, coupled much harder to the shadow term than the dust field's
+    // is. On the ground a shadowed trough is still fed by light scattering in from
+    // the lit dust a few centimetres away; a wall of grains standing in its own
+    // shadow with vacuum on both sides has no such neighbour.
+    //
+    // Strength well under the terrain's, and a wider scattering radius so the tint
+    // reaches the far end of the ramp at a lower thickness. Multiplied by an
+    // albedo that is already violet, that keeps the backlit lip reading as
+    // starlight coming *through* a body of dust rather than as a hot rim on it.
     let sss = snowSubsurface(N, L, V, sun, thickness, uniforms.sssStrength * 0.45, 1.5);
     let sssTerm = sss * albedo * mix(0.18, 1.0, shadow);
     color += sssTerm;
@@ -216,10 +241,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
     color += specTerm;
 
-    // Ambient, plus the bounce off the enormous white surface underneath it.
+    // Ambient. One term, and only one, which is a change the sky forced.
+    //
+    // The sky LUT's lower hemisphere holds the dust sea's own radiance — reflected
+    // starlight plus its emission, solved against the LUT until it converges — and
+    // the SH is projected over the *whole* sphere of it. So a downward-facing patch
+    // on the underside of the curl already collects the sea through `shIrradiance`
+    // itself. The separate "bounce off the surface underneath" term that a snow
+    // field needs would be counting the same light twice here, and counting it
+    // through a nine-percent albedo at that, which is a rounding error beside what
+    // the sea emits.
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
-    irradiance += shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
-                * uniforms.ambientIntensity * 0.30 * clamp(-N.y * 0.5 + 0.5, 0.0, 1.0) * albedo;
     let ambientTerm = albedo * INV_PI * irradiance;
     color += ambientTerm;
 
@@ -239,29 +271,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         );
     }
 
-    // ---- occlusion, applied last and to everything ------------------------
+    // ---- occlusion, applied to everything reflected off the wall -----------
     //
-    // Two rules, both learned the hard way, and both about hue rather than
-    // brightness:
-    //
-    //  1. It scales the *finished radiance*, not the ambient. The textbook AO
-    //     scales ambient and leaves direct light alone, but in this scene the
-    //     ambient is where all the blue lives — the sky is strongly blue-shifted
-    //     by construction and the sun is a 13-degree beam at roughly 17:13:6.
-    //     Attenuating one and not the other does not darken a surface, it
-    //     re-weights a warm source against a cool one.
-    //
-    //  2. Wherever it *does* darken, it goes blue in proportion. A surface that
-    //     dims without shifting hue drops below the tonemapper's desaturating
-    //     shoulder still carrying the sun's warmth, and lands on tan. Snow does
-    //     not do that: light reaching into a fold of snow has scattered through
-    //     snow to get there, and snow absorbs red over any appreciable path,
-    //     which is why a real snow cave is blue and not grey. Tying the tint to
-    //     the darkening rather than to `barrel` directly means the two can never
-    //     drift apart.
-    let caveTint = mix(vec3f(1.0), vec3f(0.55, 0.72, 1.0), (1.0 - occ) * 0.95);
-    color *= occ * caveTint;
+    // It scales the *finished reflected radiance*, not just the ambient. The
+    // textbook AO leaves direct light alone, but the inside of a barrel is
+    // enclosed against the star exactly as much as it is against the sky — that is
+    // what being inside a barrel means — and attenuating one source and not the
+    // other does not darken a surface, it re-weights a warm source against a cool
+    // one.
+    color *= occ;
 
+    // Grains catching the star square-on. Discrete facets, not a gloss lobe: the
+    // dust sea does this too, out of the same function, and the wall has to keep
+    // doing it or it stops reading as the same substance the moment it leaves the
+    // ground.
     if (uniforms.glintIntensity > 0.001) {
         let g = snowGlints(
             world.xz, N, V, L, footprint,
@@ -269,6 +292,49 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         );
         color += sun * g * shadow * 0.5;
     }
+
+    // ------------------------------------------------------------- discharge
+    //
+    // Broken dust sheds its charge, so the wake emits, and at the moment of
+    // separation the emission is the brightest thing in the frame. Three drivers,
+    // all of them already resolved by the sweep — no new state, and nothing the
+    // geometry does not already know:
+    //
+    //   load   `vCurl`, the per-side curl the CPU resolved out of the carve. 1.0
+    //          on the outboard wall of a hard turn and 0.26 on the inboard one,
+    //          which is exactly the split in how much mass each side is being
+    //          asked to throw.
+    //   mass   the column's amplitude against the tallest wall a full-speed carve
+    //          can raise. This is what stops a slow drift glowing like a committed
+    //          turn, and it falls away as the wall collapses.
+    //   cool   age. Exponential, with a time constant near a third of the 0.88 s
+    //          life, so the two metres of wall just behind the board are visibly
+    //          hotter than the four metres behind that.
+    //
+    // The bloom knee at linear 3.0 is what sets the scale. At a full-speed carve
+    // the crest has to clear it — that is the whole read, a board throwing light —
+    // and by the time the wall has collapsed it has to be far under, because a
+    // wake that blooms evenly end to end stops reading as moving material and
+    // starts reading as a strip light bolted to the board.
+    //
+    // Added after the occlusion multiply, and deliberately exempt from it: the
+    // glow comes from grains that are already inside the cave, so a hollow that
+    // glows must not be dimmed by its own hollowness. That exemption is also what
+    // gives the barrel its colour — everything reflective drops away and the
+    // nebula violet underneath is what is left.
+    let load = clamp((input.vCurl - 0.26) / 0.74, 0.0, 1.0);
+    let mass = clamp(input.vAmp / max(uniforms.wakeAmpRef, 1e-3), 0.0, 1.0);
+    let cool = exp(-input.vAge * 3.2);
+    let lip = smoothstep(0.30, 1.0, q);
+    let heat = cool * mix(0.35, 1.0, load) * mix(0.20, 1.0, mass);
+
+    // Violet through the body, gold only where it is hottest. The gold goes as
+    // heat *squared* so it stays a lip on a loaded carve rather than washing the
+    // whole sheet warm: the accent has to be scarce to stay an accent.
+    var emissiveTerm = uniforms.wakeBodyColor * (heat * mix(0.60, 1.0, lip));
+    emissiveTerm += uniforms.wakeLipColor * (heat * heat * lip);
+    emissiveTerm *= uniforms.wakeEmissive;
+    color += emissiveTerm;
 
     color = applyAerial(
         color, uniforms.cameraPos, world, -V, L,
@@ -285,8 +351,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // shows them at the exposure they actually contribute at, and two of them
     // side by side say immediately which one is carrying the hue.
     //
-    //   1 direct  2 subsurface  3 ambient  4 sky spec  5 sun spec
+    //   1 direct  2 subsurface  3 ambient  4 sky spec  5 star spec
     //   6 occlusion (grey)      7 shadow (grey)        8 |N.L| (grey)
+    //   9 raw N.L               10 emission
     let dbg = uniforms.wakeDebug;
     if (dbg > 0.5) {
         if (dbg < 1.5) { color = directTerm; }
@@ -297,10 +364,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         else if (dbg < 6.5) { color = vec3f(occ * 12.0); }
         else if (dbg < 7.5) { color = vec3f(shadow * 12.0); }
         else if (dbg < 8.5) { color = vec3f(max(NdotL, 0.0) * 12.0); }
-        // Unscaled, to line up with the snow material's own `ndotl` view — the
+        // Unscaled, to line up with the dust material's own `ndotl` view — the
         // only way to compare the two surfaces is on one screen at one scale.
         else if (dbg < 9.5) { color = vec3f(max(NdotL, 0.0)); }
-        // 10: which side of the sheet the eye is on. Red = inside the curl,
+        // 10: the discharge alone. This is the one to read against the bloom
+        // knee — anything at or above middle grey after exposure is over it.
+        else if (dbg < 10.5) { color = emissiveTerm; }
+        // 11: which side of the sheet the eye is on. Red = inside the curl,
         // green = the open outer face. The two walls are mirror images, so this
         // is the view that says whether they agree.
         else { color = select(vec3f(0.0, 9.0, 0.0), vec3f(9.0, 0.0, 0.0), inside); }

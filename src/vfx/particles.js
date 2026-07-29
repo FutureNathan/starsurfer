@@ -1,11 +1,11 @@
 /**
- * Snow spray — a pooled, CPU-simulated, GPU-billboarded particle system.
+ * Stardust grains — a pooled, CPU-simulated, GPU-billboarded particle system.
  *
- * One system serves every source of airborne snow in the demo: footfalls now,
- * the snow-surf plume and the spell spray later. That is deliberate. A separate
- * emitter per effect means separate pipelines, separate warm-up, separate
- * sorting, and five slightly different ideas about what lit snow powder looks
- * like. There is one pipeline here and one lighting model.
+ * One system serves every source of airborne dust in the demo: footfalls, the
+ * surf plume and the spell spray. That is deliberate. A separate emitter per
+ * effect means separate pipelines, separate warm-up, separate sorting, and five
+ * slightly different ideas about what a lit grain of cosmic dust looks like.
+ * There is one pipeline here and one lighting model.
  *
  * Simulation is on the CPU because the particle count is small (a footfall is
  * eighteen grains) and the alternative — a compute pass plus indirect draw —
@@ -28,6 +28,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math";
 
 import { S } from "../core/settings.js";
+import { LIN, EMIT, emissive } from "../core/brand.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";

@@ -117,11 +117,18 @@ export const S = {
     grain: true,
     sharpen: true,
     tonemap: "agx", // "agx" | "aces" | "none"
-    // Measured, not guessed: sunlit snow here sits around 12 in linear, and at
-    // this exposure it lands near AgX normalised 0.79, where the curve's slope
-    // is 0.09 per stop. Higher exposures push it into the shoulder, where the
-    // slope collapses and every lit slope resolves to the same flat white.
-    exposure: 0.105,
+    // Measured, not guessed. Dust lit by the star sits near 5 in linear — a
+    // 0.085-albedo surface under a source scaled to compensate for exactly that
+    // — and the galactic band's core reaches about 6. This exposure puts both a
+    // little below where sunlit snow used to sit, which is the point: it is a
+    // night scene, and the brightest thing in the frame should be the galaxy
+    // rather than the ground.
+    //
+    // The ceiling is the AgX shoulder. Push much past this and the lit faces of
+    // the swells, the wake's crest and the band all arrive in the region where
+    // the curve's slope collapses, and they resolve to the same flat value —
+    // which costs exactly the separation the whole look depends on.
+    exposure: 0.16,
     contrast: 1.14,
     bloomStrength: 0.22,
     grainStrength: 0.022,

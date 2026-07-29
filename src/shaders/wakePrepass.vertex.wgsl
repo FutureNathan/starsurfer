@@ -1,6 +1,6 @@
 // Depth-prepass vertex shader for the surf wake. Same `wakePoint` as the beauty
 // pass and the shadow pass, and the fragment stage discards the same eroded
-// texels — a wall that is half powder must not occlude as if it were solid.
+// texels — a wall that has half come apart must not occlude as if it were solid.
 
 #include<snowNoise>
 #include<snowWake>

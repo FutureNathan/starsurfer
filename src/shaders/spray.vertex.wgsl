@@ -1,4 +1,4 @@
-// Snow spray billboards.
+// Stardust grain billboards.
 //
 // The mesh carries no geometry: `position` is (particle index, cornerX, cornerY)
 // and every corner is placed here from the particle data texture. That keeps the

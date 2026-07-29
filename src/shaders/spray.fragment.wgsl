@@ -1,21 +1,27 @@
 // -----------------------------------------------------------------------------
-// Snow spray.
+// Stardust grains.
 //
-// Airborne snow is not a fogged sprite. It is a cloud of ice crystals, and the
-// two things that make it read are the two things a plain alpha billboard
-// leaves out:
+// Airborne dust is not a fogged sprite. It is a cloud of grains torn out of a
+// field that glows, and three things make it read — none of which a plain alpha
+// billboard has:
 //
-//   forward scatter   Looking toward the sun through a puff, it is *brighter*
-//                     than the snow behind it and it is warm. Looking down-sun
-//                     it is a dim blue-grey. That swing is enormous — well over
-//                     a stop — and it is the entire difference between "spray
+//   forward scatter   Looking toward the star through a veil, it is *brighter*
+//                     than the field behind it and it is warm. Looking the other
+//                     way it is a dim violet. That swing is enormous — several
+//                     stops — and it is the entire difference between "grains
 //                     catching the light" and "grey smoke".
-//   shadowing         Spray thrown inside the figure's own shadow must go dark,
+//   shadowing         Grains thrown inside the figure's own shadow must go dark,
 //                     or every footfall looks self-illuminated. It reads the
 //                     same cascades everything else does.
+//   its own charge    Each grain carries a share of the discharge that freshly
+//                     broken dust sheds, and they do not all carry the same
+//                     share. A few per cent are hot enough to cross the bloom
+//                     threshold alone and the rest are nowhere near it, which is
+//                     what turns a plume into a spray of sparks inside a haze
+//                     rather than one evenly glowing cloud.
 //
 // The billboard is shaded as a sphere: the normal is reconstructed from the
-// quad's own coordinates, so a puff has a lit side and a dark side instead of
+// quad's own coordinates, so a grain has a lit side and a dark side instead of
 // being a flat disc.
 // -----------------------------------------------------------------------------
 
@@ -58,6 +64,14 @@ uniform fogStart: f32;
 uniform aerialStrength: f32;
 uniform ambientIntensity: f32;
 
+/// The grain discharge ramp, off the brand palette with its gains folded in.
+/// `grainGlowColor` is what a white-hot freshly thrown grain burns at,
+/// `grainCoolColor` the nebula violet it falls back to as it cools.
+uniform grainGlowColor: vec3f;
+uniform grainCoolColor: vec3f;
+/// Global emission scale, shared with the dust field and the wake.
+uniform grainGlow: f32;
+
 uniform spellLightPos: array<vec4f, 4>;
 uniform spellLightCol: array<vec4f, 4>;
 uniform spellLightCount: f32;
@@ -79,15 +93,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let r = sqrt(r2) / wob;
     if (r > 1.0) { discard; }
 
-    // Soft-edged for powder, harder for a clod of thrown snow.
+    // Soft-edged for a loose veil grain, harder for a dense shard.
     let edge = mix(
         pow(clamp(1.0 - r * r, 0.0, 1.0), 1.6),
         smoothstep(1.0, 0.65, r),
         kind
     );
-    // Powder is close to transparent on its own; density has to come from many
-    // grains overlapping, or a single one turns into a decal. 0.26 was low enough
-    // that even fifteen hundred live grains read as haze rather than as spray.
+    // A loose grain is close to transparent on its own; density has to come from
+    // many of them overlapping, or a single one turns into a decal. 0.26 was low
+    // enough that even fifteen hundred live grains read as haze rather than as a
+    // plume.
     var alpha = state.w * edge * mix(0.36, 0.55, kind);
     if (alpha < 0.004) { discard; }
 
@@ -106,37 +121,80 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let sun = uniforms.sunRadiance;
     const INV_PI: f32 = 0.31830988618;
 
-    // Snow crystals in air scatter almost isotropically at the surface and very
+    // Dust grains in vacuum scatter almost isotropically at the surface and very
     // strongly forward through the volume, so both terms are needed.
-    let albedo = vec3f(0.92, 0.94, 0.98);
+    //
+    // The albedo is the field's *loose* endpoint rather than the value the wake
+    // wall carries. A grain in flight has no packing at all — it is the loosest
+    // this material ever gets — and that is the honest end of the same ramp the
+    // terrain and the wake read off.
+    let albedo = vec3f(0.155, 0.115, 0.265);
     let diff = wrapDiffuse(dot(N, L), 0.75);
     var color = albedo * INV_PI * sun * diff * shadow;
 
-    // Forward scatter through the puff. `mu` is 1 looking straight into the sun.
+    // Forward scatter through the grain. `mu` is 1 looking straight into the star.
     //
-    // The coefficient is small and has to be. A phase function is normalised
-    // over the sphere, so using it as a direct multiplier on radiance — without
-    // the optical depth and scattering albedo that belong in front of it —
-    // overstates the peak by more than an order of magnitude: at 4.2 a footfall
-    // puff comes out four times brighter than sunlit snow and clips to flat
-    // white.
+    // The coefficient is small and has to be. A phase function is normalised over
+    // the sphere, so using it as a direct multiplier on radiance — without the
+    // optical depth and scattering albedo that belong in front of it — overstates
+    // the peak by more than an order of magnitude. At 0.55 a fully backlit veil
+    // lands a little over the bloom knee: a grain with the star behind it flares,
+    // which is the whole point of carrying the term, and one with the star behind
+    // *the camera* is four stops down and does not.
     let mu = dot(-V, L);
-    let fwd = phaseMie(mu, 0.55) * 0.85;
+    let fwd = phaseMie(mu, 0.55) * 0.55;
     color += sun * albedo * fwd * mix(0.25, 1.0, shadow) * (1.0 - kind * 0.5);
 
-    // Sky, which is what fills the shadowed side and keeps it blue.
+    // Sky, which is what fills the shadowed side and keeps it violet.
     color += albedo * INV_PI * shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
-    // Spell light. Airborne snow inside a spell is the most legible thing the
-    // dynamic lights do — a mist of crystals a metre from a bright emitter picks
-    // up far more of it than the ground does, which is why a Bloom's fallout
-    // curtain reads as lit from within rather than as grey powder over a glow.
+    // Spell light. Airborne dust inside a power is the most legible thing the
+    // dynamic lights do — a mist of grains a metre from a bright emitter picks up
+    // far more of it than the ground does, which is why a fallout curtain reads as
+    // lit from within rather than as grey dust over a glow.
     if (uniforms.spellLightCount > 0.5) {
         color += spellLightingParticle(
             world, N, albedo,
             uniforms.spellLightPos, uniforms.spellLightCol, uniforms.spellLightCount
         );
     }
+
+    // ---- the grain's own charge --------------------------------------------
+    //
+    // Every grain left the field carrying a share of the discharge that freshly
+    // broken dust sheds, and the shares are deliberately not equal. A sixth power
+    // on a uniform hash leaves the great majority an order of magnitude under the
+    // bloom knee and lifts a few per cent clear over it. A plume in which every
+    // grain blooms is a cloud of light with no grain left in it; a plume in which
+    // none do is grey powder. What sells it is the handful that do, seen against
+    // the many that do not.
+    //
+    // Shards run hotter, and not arbitrarily: they are the dense fragments, so
+    // they carry more mass and more freshly broken surface behind the same
+    // projected area than a loose grain of the same size.
+    let h = fract(sin(state.y * 217.3 + 11.7) * 43758.5453);
+    let flare = (0.05 + 0.95 * pow(h, 6.0)) * mix(1.0, 2.2, kind);
+
+    // Cooling, on the same square law the alpha envelope fades on, so a grain can
+    // never outlive its own glow. White-hot at separation, falling back through
+    // the ramp to the nebula violet of the field it came out of.
+    let cool = (1.0 - state.x) * (1.0 - state.x);
+    let heat = flare * cool;
+    // Tight radial core: the emission comes from the body of the grain rather
+    // than from its dispersed edge. A flat disc of light is a sprite again.
+    let core = pow(clamp(1.0 - r * r, 0.0, 1.0), 3.0);
+
+    // The billboard is composited with an over operator, so what actually reaches
+    // the framebuffer is `color * alpha`. Emission is not scattering: it does not
+    // get weaker because the grain is thin, it simply adds. Stating the radiance
+    // at the level it should *arrive* at and dividing back out by the coverage it
+    // is about to be multiplied by is how that is written through an over
+    // operator. The floor keeps the quotient finite at the edge of the disc, and
+    // doubles as the fade-in — under it the grain has not developed enough
+    // coverage to be glowing at full strength yet.
+    let coverage = max(alpha, 0.12);
+    let emitCol = mix(uniforms.grainCoolColor, uniforms.grainGlowColor, clamp(heat, 0.0, 1.0));
+    color += emitCol * (heat * core * uniforms.grainGlow / coverage);
 
     color = applyAerial(
         color, uniforms.cameraPos, world, -V, L,

@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowWake — the shape of the snow-surf wake.
+// snowWake — the shape of the stardust wake.
 //
 // Shared by the beauty pass, the depth pass and the fragment erosion, for the
 // same reason `snowDeform` is shared: three copies of a surface definition will
@@ -56,7 +56,7 @@ const WAKE_LATERAL: f32 = 0.70;
 ///
 /// The 1.65 exponent puts most of the arc length into the face and compresses the
 /// hook into the last fifth. A linear sweep gives a circle, which reads as a
-/// rolled tube of snow rather than as something thrown.
+/// rolled tube of dust rather than as something thrown.
 fn wakeSection(q: f32, curl: f32) -> vec2f {
     let th0 = -0.24;                     // base flares outward and slightly down
     let th1 = 1.65 + curl * 3.30;        // 95 deg (heap) .. 284 deg (plunging)
@@ -149,7 +149,7 @@ fn wakePoint(tex: texture_2d<f32>, count: f32, u: f32, q: f32, side: f32, t: f32
     // it is buried.
     let l0 = 0.24 + 0.44 * smoothstep(0.3, 2.6, sc.z);
 
-    // Thrown snow is not a ruled surface. A lump field displaced along the
+    // Thrown dust is not a ruled surface. A lump field displaced along the
     // section's own normal breaks the sweep up into gathered mass, and because it
     // is applied *here* rather than in the fragment shader, the vertex normal —
     // which is differenced out of this function — picks it up for free, and so
@@ -173,7 +173,7 @@ fn wakePoint(tex: texture_2d<f32>, count: f32, u: f32, q: f32, side: f32, t: f32
 
     let lat = l0 + (sec.x + secN.x * WAKE_LATERAL * lump) * sc.x;
 
-    // Thrown snow lags the thing that threw it, so the lip trails backward along
+    // Thrown mass lags the thing that threw it, so the lip trails backward along
     // the spine. Shear rather than offset: the surface stays connected.
     let along = -q * q * 0.34 * sc.x;
 
@@ -185,20 +185,20 @@ fn wakePoint(tex: texture_2d<f32>, count: f32, u: f32, q: f32, side: f32, t: f32
         + fwd * along;
 }
 
-/// True where the wake has broken up into airborne powder and there is no
+/// True where the wake has broken up into airborne grains and there is no
 /// surface left to draw.
 ///
 /// Two jobs, and only two:
 ///
 ///   1. Soften the very top edge, so the lip is not a clean cut across a tube.
 ///      A narrow band — the top sixth of the section — and lightly.
-///   2. Dissolve the whole wall at the end of its life, so it goes to powder
+///   2. Dissolve the whole wall at the end of its life, so it goes to loose dust
 ///      rather than shrinking back into the ground or popping out.
 ///
 /// Deliberately not a third: tearing the top *half* of the wall into chunks
 /// reads as a breaking wave in a still frame and as a mesh with holes in it in
-/// motion. Breakup is the plume's job — snow leaving a crest is airborne, and
-/// airborne snow is particles, not geometry with bites out of it.
+/// motion. Breakup is the plume's job — dust leaving a crest is airborne, and
+/// airborne dust is particles, not geometry with bites out of it.
 ///
 /// Called identically from the depth pass, or the wake would cast the shadow of
 /// a surface it is not drawing.

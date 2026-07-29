@@ -3,8 +3,8 @@
 // Runs the identical `wakePoint` out of the shared include, so the surface in the
 // depth map is the surface being drawn. The erosion has to travel with it — the
 // fragment stage below discards the same texels — or the wake would cast the
-// shadow of a solid wall it is not actually rendering, which on a crest that is
-// half powder is the difference between a shadow and a stripe.
+// shadow of a solid wall it is not actually rendering, which on a crest that has
+// half come apart is the difference between a shadow and a stripe.
 
 #include<snowNoise>
 #include<snowWake>

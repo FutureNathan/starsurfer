@@ -1,4 +1,4 @@
-// The snow-surf wake.
+// The stardust wake.
 //
 // The mesh carries no geometry: `position` is (column, row, side) and every
 // vertex is placed here from the spine data texture, exactly as the spray

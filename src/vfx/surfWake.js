@@ -1,16 +1,16 @@
 /**
- * The snow-surf wake — the centrepiece.
+ * The stardust wake — the centrepiece.
  *
  * Three things come out of this module and they are deliberately one system:
  *
  *   the wave    a swept mesh built from the path the board has taken, shaped as
  *               a breaking wave that rises just behind the bow, curls over, and
- *               collapses into powder about nine tenths of a second later.
- *   the plume   spray thrown off the lip of that wave, emitted from the crest
+ *               collapses into loose dust about nine tenths of a second later.
+ *   the plume   grains thrown off the lip of that wave, emitted from the crest
  *               position the mesh is actually drawing rather than from the
- *               player's feet.
+ *               rider's feet.
  *   the crest   the bow. The two walls converge just ahead of the boots, so the
- *               pair reads as snow splitting around something moving through it.
+ *               pair reads as dust splitting around something moving through it.
  *
  * They are one system because they share one spine. A plume emitted from an
  * independent guess at where the wave is will drift out of register with it the
@@ -33,8 +33,10 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { S } from "../core/settings.js";
+import { LIN, EMIT, emissive } from "../core/brand.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
@@ -45,7 +47,7 @@ const SPINE_MAX = 96;
 const SPINE_STEP = 0.30;
 
 /**
- * Seconds a thrown wall of snow stays up.
+ * Seconds a thrown wall of dust stays up.
  *
  * This is the number that sets how long the wake is, because length is just
  * `LIFE * speed` — 16 m at the controller's top speed, four metres at a jog.
@@ -61,11 +63,40 @@ const BOW_LEAD = 0.55;
  * Peak wall height at a full-speed hard carve, metres.
  *
  * Taller than the character, deliberately. A physically plausible 1.45 m — what
- * a real snowboard carve throws — reads as a ripple at this framing, nine metres
- * back and slightly above, beside the 0.9 m of relief the trench and its berms
- * already have.
+ * a real board carving a granular medium throws — reads as a ripple at this
+ * framing, nine metres back and slightly above, beside the 0.9 m of relief the
+ * trench and its berms already have.
  */
 const MAX_HEIGHT = 2.4;
+
+/**
+ * Radiance gain on the gold at the lip.
+ *
+ * Derived from the bloom knee rather than dialled in. The bright pass thresholds
+ * at linear 3.0 and lit dust sits near 5, so a gain of 5 on an accent whose red
+ * channel is exactly 1.0 in linear puts the crest's own emission at the
+ * brightness of the field it was thrown out of, with nothing reflected in it at
+ * all. Add the violet body underneath and a full-speed carve clears the knee by
+ * better than a stop — and nothing short of a full-speed carve does, which is the
+ * half of the requirement that is easy to lose.
+ */
+const LIP_GAIN = 5.0;
+
+/**
+ * The discharge ramp. Same pair the dust material carries, same reason: the wall
+ * and the berm at its foot are one body of thrown mass and must glow as one.
+ *
+ * `_wakeBody` is the nebula violet the whole wall wells with, at the wake's own
+ * brand gain; `_wakeLip` is the warm gold only the hottest, freshest mass
+ * reaches. Both are linear radiances with their gains already folded in, so the
+ * shader multiplies by nothing but its own heat term.
+ */
+const _wakeBody = new Color3(...emissive(EMIT.wake));
+const _wakeLip = new Color3(
+    LIN.accent[0] * LIP_GAIN,
+    LIN.accent[1] * LIP_GAIN,
+    LIN.accent[2] * LIP_GAIN
+);
 
 // Mesh lattice. Columns are along the spine, rows across the wave section.
 const COLS = 128;
@@ -153,7 +184,7 @@ export class SurfWake {
 
         /**
          * Per-term diagnostic, settable from the console as
-         * `SNOWFLOW.wake.debug = n`. See the switch at the bottom of
+         * `STARSURFER.wake.debug = n`. See the switch at the bottom of
          * `wake.fragment.wgsl` for the modes.
          */
         this.debug = 0;
@@ -173,6 +204,7 @@ export class SurfWake {
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity", "sssStrength",
                     "glintIntensity", "glintGrazing", "wakeTime", "wakeDebug",
+                    "wakeBodyColor", "wakeLipColor", "wakeEmissive", "wakeAmpRef",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
                 samplers: ["wakeTex", "skyLUT", "cascade0", "cascade1", "cascade2"],
@@ -182,6 +214,8 @@ export class SurfWake {
         // An open curled sheet: both faces are seen, often in the same frame
         // through the holes torn in the lip.
         mat.backFaceCulling = false;
+        mat.setColor3("wakeBodyColor", _wakeBody);
+        mat.setColor3("wakeLipColor", _wakeLip);
         mat.setTexture("wakeTex", this.dataTex);
         mat.setTexture("skyLUT", this.sky.lut);
         for (let i = 0; i < CASCADE_COUNT; i++) {
@@ -222,13 +256,14 @@ export class SurfWake {
      *
      * The wake belongs in the prepass for two separate reasons: it is the largest
      * moving object in the frame, so the temporal resolve needs its depth to
-     * reproject anything in front of it, and a two-metre wall of snow standing on
+     * reproject anything in front of it, and a two-metre wall of dust standing on
      * the field ought to occlude the trench beside it.
      *
-     * It does not *receive* occlusion: a broad, gentle darkening of a wall of
-     * white powder does not read as shading, it reads as brown snow beside white
-     * snow. The wall's own analytic barrel term is the only occlusion it is
-     * allowed, and it is confined to the inside of the curl.
+     * It does not *receive* occlusion. The wall is thrown mass continuous with the
+     * berm at its foot, and a broad screen-space darkening puts a seam across that
+     * join wherever the sampling happens to fall. The wall's own analytic barrel
+     * term is the only occlusion it is allowed, and it is confined to the inside
+     * of the curl, where the geometry genuinely encloses itself.
      *
      * @param {import("../render/depthPass.js").DepthPass} depth
      */
@@ -303,7 +338,7 @@ export class SurfWake {
     /**
      * A new run starts a new spine rather than continuing the last one.
      *
-     * Reconnecting would sweep a wall of snow across whatever ground lies between
+     * Reconnecting would sweep a wall of dust across whatever ground lies between
      * where the player stopped and where they started again — which, if they
      * turned around, is a wave running backwards through the field.
      */
@@ -330,7 +365,7 @@ export class SurfWake {
         this._rz[i] = -Math.sin(ch.facing);
         this._travel[i] = this._odo;
         this._laid[i] = this._clock;
-        // Speed sets how much snow there is to throw; the surf blend eases the
+        // Speed sets how much mass there is to throw; the surf blend eases the
         // whole thing in and out so entering and leaving are never a switch.
         this._strength[i] = ch.surf * clamp01((ch.speed - 2.2) / 9.0);
         this._carve[i] = ch.carve;
@@ -401,7 +436,7 @@ export class SurfWake {
             const env = (1 - a01) * (1 - a01);
             const base = heightScale * this._strength[i] * shape * env;
 
-            // Outside of the turn takes the snow. `carve` is positive turning
+            // Outside of the turn takes the mass. `carve` is positive turning
             // right, and the outside of a right turn is the left-hand side.
             const c = this._carve[i];
             const biasL = c < -1 ? -1 : c > 1 ? 1 : c;
@@ -412,10 +447,10 @@ export class SurfWake {
             // between those two is the whole reason to steer.
             const ampL = base * clampRange(0.45 + 0.55 * biasL, 0.05, 1.0);
             const ampR = base * clampRange(0.45 + 0.55 * biasR, 0.05, 1.0);
-            // A wall that is barely there does not curl; a hard carve throws snow
-            // far enough over that the lip hangs back across its own face.
-            // A wall that is barely there does not curl; a hard carve throws snow
-            // far enough over that the lip hangs back across its own face.
+            // A wall that is barely there does not curl; a hard carve throws mass
+            // far enough over that the lip hangs back across its own face. The
+            // shader reads the same number as its measure of carve load, so this
+            // is also what decides which wall burns gold.
             const curlL = clampRange(0.42 + 0.58 * biasL, 0.26, 1.0);
             const curlR = clampRange(0.42 + 0.58 * biasR, 0.26, 1.0);
 
@@ -437,7 +472,7 @@ export class SurfWake {
     }
 
     /**
-     * Spray off the lip.
+     * Grains off the lip.
      *
      * Emitted from the crest position the mesh is drawing — same spine, same
      * amplitude, same side weighting — so the plume leaves the wave rather than
@@ -457,16 +492,19 @@ export class SurfWake {
         this._plumeOwed += travelled;
         this._driftOwed += travelled;
 
-        // Two populations, because spray off a carve is two things and trying to
-        // get both out of one emitter gets neither.
+        // Two populations, because what comes off a carve is two things and
+        // trying to get both out of one emitter gets neither.
         //
-        //   curtain   a dense, slow, short-lived sheet hugging the crest. This
-        //             is the mass of it, and it is what makes the wave look like
-        //             it is disintegrating rather than sliding.
-        //   throw     ballistic grains flung clear, which give the plume its
-        //             reach and its silhouette against the sky.
+        //   curtain   a dense, slow, short-lived veil hugging the crest. This is
+        //             the mass of it, and it is what makes the wave look like it
+        //             is disintegrating rather than sliding.
+        //   throw     ballistic grains flung clear. These give the plume its
+        //             reach and its silhouette against the stars, and they are
+        //             the population the spray shader lets burn: a grain thrown
+        //             far enough to be seen on its own against the void is a
+        //             point of light, not a smudge.
         //
-        // Sizing is set by the curtain: at ten metres a six-centimetre puff is
+        // Sizing is set by the curtain: at ten metres a six-centimetre grain is
         // six pixels, and a thousand six-pixel dots at low opacity spread over
         // twenty metres of trail is a faint haze rather than a plume.
         const perMetre = 88 * S.wakeSpray;
@@ -533,8 +571,8 @@ export class SurfWake {
                 const py = sy + (0.30 + 0.82 * Math.sqrt(Math.random())) * amp;
 
                 // ---- curtain ------------------------------------------------
-                // Big, slow, short-lived, high drag. A puff of blown snow is a
-                // cloud rather than a crystal, and at the distance this is framed
+                // Big, slow, short-lived, high drag. A veil of blown dust is a
+                // cloud rather than a grain, and at the distance this is framed
                 // from it has to be twenty to forty centimetres across to be a
                 // shape at all. It dies before it can drift far enough for the
                 // size to look wrong.
@@ -553,28 +591,32 @@ export class SurfWake {
                 }
 
                 // ---- throw --------------------------------------------------
+                // A fifth of the thrown grains come away as shards: small, dense,
+                // slow to disperse. They are the population that carries the
+                // brightest charge, so they are also the handful the eye picks out
+                // as individual points of light arcing away from the crest.
+                const shard = Math.random() < 0.18 ? 1 : 0;
                 const out = 1.2 + Math.random() * 2.6;
                 const back = 0.4 + Math.random() * 2.2;
-                const clod = Math.random() < 0.18 ? 1 : 0;
 
                 sp.emit(
                     px, py, pz,
                     rx * side * out - fx * back + ch.velocity.x * 0.30,
                     1.6 + Math.random() * 3.4 + amp * 1.5,
                     rz * side * out - fz * back + ch.velocity.z * 0.30,
-                    clod ? 0.020 + Math.random() * 0.022 : 0.045 + Math.random() * 0.055,
-                    clod ? 0.7 + Math.random() * 0.5 : 0.9 + Math.random() * 1.3,
-                    clod,
-                    // Ballistic. This is a mass of snow leaving a wave, and it
+                    shard ? 0.020 + Math.random() * 0.022 : 0.045 + Math.random() * 0.055,
+                    shard ? 0.7 + Math.random() * 0.5 : 0.9 + Math.random() * 1.3,
+                    shard,
+                    // Ballistic. This is a mass of dust leaving a wave, and it
                     // has to actually clear the wave — see `drag` in particles.js.
-                    clod ? 0.7 : 1.0 + Math.random() * 0.8
+                    shard ? 0.7 : 1.0 + Math.random() * 0.8
                 );
             }
         }
 
-        // A separate, slower stream of fine powder hanging low over the trench.
-        // The lip spray is all ballistic and gone in a second; this is the part
-        // that leaves the trail looking like it is still smoking.
+        // A separate, slower stream of fine grains hanging low over the trench.
+        // The lip throw is all ballistic and gone in a second; this is the part
+        // that leaves the trail looking like it is still burning off.
         const driftPerMetre = 7 * S.wakeSpray;
         let drift = (this._driftOwed * driftPerMetre) | 0;
         if (drift > 0) {
@@ -639,6 +681,16 @@ export class SurfWake {
         m.setFloat("sssStrength", S.sssStrength);
         m.setFloat("glintIntensity", S.glintIntensity);
         m.setFloat("glintGrazing", S.glintGrazing);
+
+        // Emission. Both re-sent every frame because both track a live slider:
+        // the glow scale is shared with the dust field, and the amplitude
+        // reference has to stay equal to the `heightScale` `_resolve` divides
+        // the same amplitudes out of, or the shader's idea of "a full wall"
+        // drifts away from the geometry's.
+        m.setColor3("wakeBodyColor", _wakeBody);
+        m.setColor3("wakeLipColor", _wakeLip);
+        m.setFloat("wakeEmissive", S.dustGlow);
+        m.setFloat("wakeAmpRef", MAX_HEIGHT * S.wakeHeight);
 
         for (let i = 0; i < this._depthMats.length; i++) {
             this._depthMats[i].setFloat("wakeCount", this._count);
