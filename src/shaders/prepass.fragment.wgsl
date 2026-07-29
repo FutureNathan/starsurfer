@@ -7,7 +7,8 @@
 // had.
 
 varying vViewZ: f32;
-/// 0 matte snow, 1 mirror ice. Only the reflection pass reads it.
+/// Reflectivity: 0 matte, 1 mirror. Only the screen-space reflection pass reads
+/// it, and it gates on anything at or above 0.02.
 varying vMask: f32;
 
 @fragment

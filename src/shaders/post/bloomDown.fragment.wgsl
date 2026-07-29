@@ -4,21 +4,32 @@
 // centre box plus four corner boxes, which behaves like a proper low-pass at a
 // 2x reduction and does not fall apart at 4x the way a naive bilinear chain does.
 //
-// The Karis average on the prefilter level is not optional on this content. The
-// snow material emits *discrete glints* — single pixels at many times the
-// surrounding radiance, by design — and a plain mean of a 2x2 group lets one of
-// them dominate the whole group. The result is a bloom that flickers as the glint
-// field turns over, which is precisely the "crawling sparkle" the acceptance
-// criteria rule out, arriving by the back door after TAA has already stabilised
-// the glints themselves. Weighting each group by 1/(1+luma) before averaging
-// keeps the energy and drops the flicker.
+// The Karis average on the prefilter level is not optional on this content, and
+// it is what makes the effect affordable on a *dark* frame in particular. The
+// dust material emits discrete glints and the wake throws individual grains —
+// single pixels at many times the surrounding radiance, by design, against a
+// background that is very close to nothing — and a plain mean of a 2x2 group
+// lets one of them dominate the whole group. The result is a bloom that flickers
+// as the glint field turns over, which is precisely the "crawling sparkle" the
+// acceptance criteria rule out, arriving by the back door after TAA has already
+// stabilised the glints themselves. Weighting each group by 1/(1+luma) before
+// averaging keeps the energy and drops the flicker.
+//
+// The point-star field is kept out of the bloom by the knee rather than by any
+// of this: a star runs from 0.015 to 0.16 in linear radiance, one to two orders
+// below the threshold, and the 4x reduction into this level divides it down
+// again before the threshold ever sees it. That is the right answer — the stars
+// are drawn about two pixels across specifically so they resolve as points, and
+// giving each of them a halo would fog the void they are meant to sit in.
 
-#include<snowPostCommon>
+#include<starPostCommon>
 
 varying vUV: vec2f;
 
 /// The source. On the prefilter level this is the resolved scene, bound
-/// explicitly; on later levels it is the previous bloom level.
+/// explicitly and still in *scene radiance* — exposure has not been applied
+/// anywhere upstream, and the composite applies it to this pass's result along
+/// with everything else.
 var sourceTex: texture_2d<f32>;
 var sourceTexSampler: sampler;
 
@@ -26,7 +37,8 @@ var sourceTexSampler: sampler;
 uniform srcTexel: vec2f;
 /// 1 on the first level: threshold and Karis-average. 0 on the rest.
 uniform prefilter: f32;
-/// Knee curve: (threshold, threshold - knee, 2*knee, 0.25/knee).
+/// Knee curve: (threshold, threshold - knee, 2*knee, 0.25/knee), in linear
+/// scene radiance. Built in postChain.js, where the reference values are.
 uniform curve: vec4f;
 
 fn tap(uv: vec2f) -> vec3f {
@@ -34,7 +46,9 @@ fn tap(uv: vec2f) -> vec3f {
 }
 
 /// Soft-knee threshold. A hard cut puts a visible contour through any smooth
-/// gradient that crosses it, and on a snow field almost every gradient does.
+/// gradient that crosses it, and here the gradient that crosses it is the lit
+/// flank of a dust swell — a contour drawn across that is a hard line down the
+/// middle of the ground.
 fn brightPass(c: vec3f, curve: vec4f) -> vec3f {
     let br = max(c.r, max(c.g, c.b));
     let rq = clamp(br - curve.y, 0.0, curve.z);

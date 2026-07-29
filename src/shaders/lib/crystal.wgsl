@@ -1,12 +1,12 @@
 // -----------------------------------------------------------------------------
-// snowCrystal — the shape of a grown ice formation.
+// starCrystal — the shape of a grown lattice.
 //
 // One crystal is a six-sided tapered prism with a point on it: a base ring
-// sitting in the snow, a shoulder ring where the taper starts, and an apex. That
+// sitting in the dust, a shoulder ring where the taper starts, and an apex. That
 // is the whole model, and it is deliberately the whole model — the read comes
-// from the *cluster*, from the light through it, and from the fact that it grows.
-// A more elaborate single crystal costs vertices and buys nothing at the range
-// this is seen from.
+// from the *cluster*, from the light through it and the light out of it, and from
+// the fact that it grows. A more elaborate single crystal costs vertices and buys
+// nothing at the range this is seen from.
 //
 // Shared by the beauty pass and the shadow pass, for the same reason everything
 // else here is: a formation whose shadow is a different shape from the formation
@@ -16,10 +16,10 @@
 //
 //   row 0   (x, y, z, height m)
 //   row 1   (axisX, axisY, axisZ, base radius m)
-//   row 2   (growth 0..1, seed, tint, spare)
+//   row 2   (growth 0..1, seed, glow scale, heat 0..1)
 //
-// `growth` is not a uniform scale. A crystal shoots up first and thickens after,
-// the way real freezing does along the fastest-growing axis, so height and radius
+// `growth` is not a uniform scale. A crystal spears up first and thickens after,
+// the way ordering really does run fastest along one axis, so height and radius
 // run on two different curves off the one parameter.
 // -----------------------------------------------------------------------------
 
@@ -58,8 +58,8 @@ fn crystalPoint(tex: texture_2d<f32>, i: i32, v: i32) -> vec3f {
 
     let g = clamp(c.x, 0.0, 1.0);
     // Height leads, girth follows. A crystal that scales uniformly reads as a
-    // model being lerped in; one that spears up and then thickens reads as ice
-    // forming, because that is what ice does.
+    // model being lerped in; one that spears up and then thickens reads as a
+    // lattice ordering itself, because that is the axis ordering runs along.
     let gh = g * g * (3.0 - 2.0 * g);
     let gr = smoothstep(0.25, 1.0, g);
     let height = a.w * gh;

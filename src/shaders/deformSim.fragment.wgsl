@@ -12,7 +12,7 @@
 //               obviously there a minute later.
 //   3. splat    every brush written this frame — footfalls, the surf wake, every
 //               spell — accumulated additively.
-//   4. clamp    depression bottoms out (you hit packed snow), berms cap.
+//   4. clamp    depression bottoms out (you reach packed dust), berms cap.
 //
 // Channels:
 //   R  depression depth, metres, positive = pushed down
@@ -27,7 +27,7 @@
 // is not resolvable.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
+#include<starNoise>
 
 varying vUV: vec2f;
 
@@ -112,7 +112,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // sqrt(2*D*t): at D = 0.05/s a footprint's rim softens by about 2.5
         // texels (8 cm) over a minute, which is the whole budget.
         //
-        // Loose piled snow slumps faster than a compacted trench floor, so the
+        // Loose piled dust slumps faster than a compacted trench floor, so the
         // berm channel gets three times the depression's rate. That difference is
         // what makes a trail soften from its edges inward.
         let k = clamp(uniforms.refillRate * dt, 0.0, 1.0);
@@ -230,7 +230,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     // ----------------------------------------------------------------- clamp
-    // Depression bottoms out: below about half a metre you are on packed snow
+    // Depression bottoms out: below about half a metre you are on packed dust
     // and nothing more moves. Without this, standing still while surfing would
     // dig an unbounded pit.
     dep = clamp(dep, 0.0, uniforms.maxDepth);

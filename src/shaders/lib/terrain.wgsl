@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowTerrain — the landform.
+// starTerrain — the landform.
 //
 // Split into two halves that live in different places at runtime:
 //
@@ -55,9 +55,9 @@ fn terrainMacro(p: vec2f, w: f32, amp: f32) -> f32 {
     var h = broad.x * 15.5;
 
     // A second, much larger and gentler swell so the field never reads as one
-    // repeating wavelength. Longer and taller than the snow version: this is
-    // what gives the horizon its slow roll, and out here the horizon is a much
-    // bigger part of the frame because there is no haze to hide it.
+    // repeating wavelength. Long and tall, because this is what gives the horizon
+    // its slow roll — and the horizon is a large part of the frame here, with no
+    // atmosphere to hide it behind.
     let m0 = windMat(w, 1.1, 1.0, 340.0);
     let swell = fbmDamped(m0 * p, 3, 2.11, 0.55, 0.3);
     h += swell.x * 34.0;
@@ -146,10 +146,9 @@ fn rockField(p: vec2f, w: f32) -> vec2f {
 /// ~80 m, are enough to destroy the uniformity completely while leaving the
 /// prevailing direction obvious.
 ///
-/// The stretch base is much higher here than it was for wind-carved snow. The
-/// macro layer gave up its anisotropy to stop reading as dunes; the fine layer
-/// takes it on instead, and the result is long drawn-out threads streaming
-/// across broad isotropic swells — which is what a nebula does and a snow field
+/// The stretch base is high, and deliberately so. The macro layer holds almost
+/// no anisotropy, so all of it lands here: long drawn-out threads streaming
+/// across broad isotropic swells, which is what a nebula does and a snow field
 /// never does.
 ///
 /// Both fine layers below read this, and so does the *filtered* twin further
@@ -238,7 +237,7 @@ fn terrainFineFiltered(p: vec2f, w: f32, exposure: f32, amp: f32, fp: f32) -> ve
         let sas = ridgedd(m3 * p, 3, 2.11, 0.52);
         // Modulated by a slow field so the field has scoured patches and smooth
         // patches rather than one uniform corduroy everywhere — which is what
-        // makes it read as woven fabric instead of as snow.
+        // makes it read as woven fabric instead of as settled grains.
         // `scour`, not `patch` — the latter is a reserved keyword in WGSL.
         let scour = 0.45 + 0.55 * smoothstep(-0.25, 0.35, noise2(p * 0.021));
         let a = 0.125 * amp * mix(0.45, 1.0, exposure) * scour * fadeS;

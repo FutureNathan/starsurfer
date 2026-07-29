@@ -1,15 +1,16 @@
 // -----------------------------------------------------------------------------
 // Temporal anti-aliasing.
 //
-// The one post-process this content genuinely cannot do without. The snow
-// material's whole detail budget is spent on
-// things that live at or below the pixel: two octaves of discrete crystal glints,
-// three tiled grain scales, sastrugi at a decimetre, a rotated Poisson shadow
-// filter dithered per pixel, and a plume of two-centimetre grains. Every one of
-// those is built to be *resolved* by an accumulation rather than to survive on
-// its own — the glint hash is nailed to world space and the shadow rotation is
-// interleaved-gradient noise precisely so that a temporal filter can integrate
-// them. Without one, the field crawls.
+// The one post-process this content genuinely cannot do without. The dust
+// material's whole detail budget is spent on things that live at or below the
+// pixel: two octaves of discrete glints, three tiled grain scales, a decimetre
+// ripple field, a rotated Poisson shadow filter dithered per pixel, and a plume
+// of two-centimetre grains — and above all of it a sky whose stars are drawn at
+// about two pixels each. Every one of those is built to be *resolved* by an
+// accumulation rather than to survive on its own: the glint hash is nailed to
+// world space and the shadow rotation is interleaved-gradient noise precisely so
+// that a temporal filter can integrate them. Without one, the field crawls and
+// the star field boils.
 //
 // The reprojection is depth-based rather than motion-vector based, which is a
 // deliberate trade. Almost everything on screen is static world geometry, so the
@@ -20,7 +21,7 @@
 // programs, to improve the one part of the frame that already refuses history.
 // -----------------------------------------------------------------------------
 
-#include<snowPostCommon>
+#include<starPostCommon>
 
 varying vUV: vec2f;
 
@@ -55,7 +56,8 @@ uniform feedback: f32;
 /// kernel again and again. Standing still with a 0.9 feedback that is roughly ten
 /// applications of it, and the result is a frame visibly softer than the one the
 /// renderer produced — which on a field whose entire detail budget is
-/// subpixel-scale is the difference between snow and a grey slope.
+/// subpixel-scale is the difference between glittering dust and a grey slope,
+/// and above it the difference between a star field and a faint smear.
 ///
 /// A bicubic B-spline fetch has negative lobes that undo most of that. Five
 /// bilinear taps rather than sixteen point fetches, by folding each pair of
@@ -127,7 +129,7 @@ fn resolve(uv: vec2f) -> vec3f {
 
     // ---- neighbourhood statistics -----------------------------------------
     // Variance clipping rather than a min/max box. A box built from nine taps of
-    // a field that *contains* discrete glints is enormous — one lit crystal in
+    // a field that *contains* discrete glints is enormous — one lit grain in
     // the corner of the neighbourhood opens the box wide enough to admit any
     // ghost at all, which is the failure that makes naive TAA smear moving
     // objects across the frame. Clipping to the local distribution instead
@@ -146,15 +148,30 @@ fn resolve(uv: vec2f) -> vec3f {
     }
     let mu = m1 / 9.0;
     let sigma = sqrt(max(vec3f(0.0), m2 / 9.0 - mu * mu));
-    let lo = mu - sigma * 1.35;
-    let hi = mu + sigma * 1.35;
+    let curW = tonemapWeight(cur);
+
+    // The box is widened to contain the current sample, and that one line is
+    // what keeps the star field alive.
+    //
+    // A star is a bright point on an all but black background, so the local
+    // distribution at a star is dominated by the star itself: mu lands well
+    // below it and 1.35 sigma does not reach back up. Clipping the history to
+    // that box and then blending drags the resolved value *below* the sample the
+    // renderer just produced, every frame, and the fixed point of that loop is a
+    // star at a fraction of its own brightness — a field that dims the moment
+    // TAA is switched on and brightens the moment it is switched off.
+    //
+    // Admitting `curW` cannot cause a ghost. A ghost is history far from the
+    // current sample; everything this widening admits lies *between* the box
+    // edge and the current sample, and is therefore closer to the truth than the
+    // edge it replaces. Rejection is unaffected in the direction that matters.
+    let lo = min(mu - sigma * 1.35, curW);
+    let hi = max(mu + sigma * 1.35, curW);
 
     var raw = tonemapWeight(historyCatmullRom(prevUV, 1.0 / uniforms.invRes));
     // Guard the uninitialised-history case a second time. A NaN survives a clamp.
     if (any(raw != raw)) { raw = mu; }
     let hist = clamp(raw, lo, hi);
-
-    let curW = tonemapWeight(cur);
 
     // ---- feedback ---------------------------------------------------------
     // Two things pull it down. Fast screen-space motion, because a long

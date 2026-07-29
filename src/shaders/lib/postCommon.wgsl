@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowPostCommon — the conventions every screen-space pass shares.
+// starPostCommon — the conventions every screen-space pass shares.
 //
 // One place for the coordinate agreement, because getting it wrong is silent:
 // a vertically mirrored depth lookup still produces plausible-looking occlusion,
@@ -56,7 +56,7 @@ fn lumaPost(c: vec3f) -> f32 {
 }
 
 /// Karis' tonemap/inverse pair. Averaging HDR samples with a linear weight lets
-/// one 200-nit firefly dominate sixteen taps of ordinary snow; averaging in this
+/// one 200-nit firefly dominate sixteen taps of ordinary ground; averaging in this
 /// compressed space and expanding afterwards keeps the mean where the eye expects
 /// it. Used by the temporal resolve and the bloom prefilter.
 fn tonemapWeight(c: vec3f) -> vec3f {

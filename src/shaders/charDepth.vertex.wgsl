@@ -4,7 +4,7 @@
 // include, so the surface in the depth map is the surface being drawn. The only
 // difference is which matrix it is projected by.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;
 attribute boneIdx: vec4f;

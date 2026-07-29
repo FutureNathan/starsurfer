@@ -7,8 +7,8 @@
 // Re-implementing the noise in JS would drift the moment f32 and f64 rounding
 // diverged, and the character would float or sink by centimetres.
 
-#include<snowNoise>
-#include<snowTerrain>
+#include<starNoise>
+#include<starTerrain>
 
 varying vUV: vec2f;
 
@@ -23,8 +23,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     var h = terrainMacro(p, uniforms.windAngle, uniforms.heightAmp);
 
-    // Rock displaces snow upward; snow then re-accumulates on the flatter faces,
-    // which the snow material resolves from the mask in the aux bake.
+    // A shard displaces the dust upward; dust then re-settles on the flatter
+    // faces, which the material resolves from the mask in the aux bake.
     let rock = rockField(p, uniforms.windAngle);
     h += rock.x;
 

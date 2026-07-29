@@ -10,8 +10,8 @@
 // `sky.fragment.wgsl`, which is screen-only and gets `time` every frame; only
 // smooth, low-frequency emission belongs in here, where it can light the scene.
 
-#include<snowNoise>
-#include<snowAtmosphere>
+#include<starNoise>
+#include<starAtmosphere>
 
 varying vUV: vec2f;
 

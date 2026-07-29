@@ -1,17 +1,17 @@
 // Depth-prepass vertex shader for the terrain.
 //
 // Byte-for-byte the same clipmap placement, the same fine layer and the same
-// band-limited deformation as snow.vertex.wgsl and terrainDepth.vertex.wgsl,
+// band-limited deformation as dust.vertex.wgsl and terrainDepth.vertex.wgsl,
 // from the same includes. If this pass placed a vertex anywhere else, every
 // screen-space effect downstream would be integrating against a surface that is
 // not the one on screen — and the symptom of that is an ambient-occlusion halo
 // that follows the camera, which reads as a rendering bug rather than as a
 // mismatch.
 
-#include<snowNoise>
-#include<snowTerrain>
-#include<snowDeform>
-#include<snowClipmap>
+#include<starNoise>
+#include<starTerrain>
+#include<starDeform>
+#include<starClipmap>
 
 attribute position: vec3f;
 
@@ -65,7 +65,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
     }
 
     // Same gate, same fade, same filter width as the beauty pass. See the long
-    // note in snow.vertex.wgsl.
+    // note in dust.vertex.wgsl.
     var mask = 0.0;
     if (cv.spacing < 1.0) {
         let dfade = 1.0 - smoothstep(0.5, 1.0, cv.spacing);

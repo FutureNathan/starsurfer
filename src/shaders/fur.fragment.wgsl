@@ -17,9 +17,9 @@
 // the thing white insulation does, which is glow around its edges.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
-#include<snowShading>
-#include<snowAtmosphere>
+#include<starNoise>
+#include<starShading>
+#include<starAtmosphere>
 
 varying vWorld: vec3f;
 varying vNormal: vec3f;
@@ -58,7 +58,7 @@ uniform ambientIntensity: f32;
 uniform furDensity: f32;
 uniform furColor: vec3f;
 
-#include<snowShadowLookup>
+#include<starShadowLookup>
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
@@ -121,10 +121,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         color += sun * ds * 0.05 * NdotL * shadow * selfAO;
     }
 
-    // The ambient term does most of the work here. A daylight sky delivers an
-    // order of magnitude more irradiance than a galactic band does, so the
-    // multiplier has to make up the difference or the nap goes black wherever
-    // the sun is not on it — which, at thirteen degrees, is most of the figure.
+    // The ambient term does most of the work here, and it is scaled well past
+    // one on purpose. White insulation is a near-lossless multiple scatterer:
+    // a photon entering the nap bounces between fibres several times before it
+    // leaves, and almost none of it is absorbed. A shell stack samples each
+    // fibre exactly once, so it captures the first bounce and throws the rest
+    // away. The multiplier puts that energy back.
+    //
+    // It rides the ambient rather than the sun because that is where multiple
+    // scattering dominates — a fibre lit from every direction at once has many
+    // paths out, a fibre lit by a single low star has one.
     let irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
     color += uniforms.furColor * INV_PI * irradiance * selfAO * input.vAux.y * 2.2;
 

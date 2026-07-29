@@ -1,8 +1,8 @@
 /**
- * Character locomotion + snow-surf physics.
+ * Character locomotion + board physics.
  *
- * This owns motion only — the visual rig, cloth and fur read the state this
- * produces. Two modes share one integrator:
+ * This owns motion only — the rig, the board, the soft goods and the contact
+ * brushes all read the state this produces. Two modes share one integrator:
  *
  *  - WALK: camera-relative desired velocity, eased facing, distance-driven gait
  *    phase so footfalls land where the feet actually are (no sliding).

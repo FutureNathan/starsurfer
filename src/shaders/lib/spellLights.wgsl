@@ -1,18 +1,17 @@
 // -----------------------------------------------------------------------------
-// snowSpellLights — the light a spell puts into the snow.
+// starSpellLights — the light a power puts into the dust.
 //
 // A small pool of tight-radius dynamic lights with one behaviour an ordinary
-// point light does not give you: a spell lights the snow *from inside* the drift
+// point light does not give you: a power lights the sea *from inside* the mass
 // it is touching. That is not a diffuse term with a falloff on it — it is the
-// same transmission lobe the sun drives, fed by a light that is two metres away
-// instead of 150 million kilometres.
+// same transmission lobe the star drives, fed by a light that is two metres away
+// instead of light-years.
 //
-// So every light here runs the identical `snowSubsurface` the sun runs. Stand a
-// glowing ribbon of water on a berm and the near face goes bright while the
-// *far* side of the crest glows through, because the light entered the snow and
-// came back out. Dropping that
-// term and keeping only the diffuse is the difference between a spell that lights
-// the snow and a spell that has a decal of light under it.
+// So every light here runs the identical `dustSubsurface` the star runs. Stand a
+// burning crescent on a berm and the near face goes bright while the *far* side
+// of the crest glows through, because the light entered the dust and came back
+// out. Dropping that term and keeping only the diffuse is the difference between
+// a power that lights the sea and a power that has a decal of light under it.
 //
 // Contract — a material including this must declare:
 //
@@ -20,12 +19,14 @@
 //   uniform spellLightCol: array<vec4f, 4>    (rgb colour, w intensity)
 //   uniform spellLightCount: f32
 //
-// and must include <snowShading> first, for `wrapDiffuse` and `snowSubsurface`.
+// and must include <starShading> first, for `wrapDiffuse` and `dustSubsurface`.
 //
-// Four lights, not six. Only two spells are ever up at once in practice, and a
-// loop the whole snow field pays for on every pixel is not the place to buy
-// headroom that nothing spends. The `count` gate skips the loop outright on the
-// overwhelming majority of frames, where nothing is cast at all.
+// Four lights, not six. A loop the whole dust field pays for on every pixel is
+// not the place to buy headroom, and past four slots the pool is arbitrating
+// between emitters that are all within a few metres of each other anyway — so
+// the CPU side ranks the declarations on peak radiance and keeps the brightest
+// four rather than the first four. The `count` gate skips the loop outright on
+// the overwhelming majority of frames, where nothing is cast at all.
 // -----------------------------------------------------------------------------
 
 const SPELL_LIGHT_MAX: i32 = 4;
@@ -34,13 +35,13 @@ const SPELL_LIGHT_MAX: i32 = 4;
 ///
 /// Pure 1/d² never reaches zero, so a light with any reach at all keeps writing
 /// a faint wash across the entire clipmap — which reads as the fog density
-/// changing whenever a spell is cast. The window forces it to exactly zero at
+/// changing whenever a power is cast. The window forces it to exactly zero at
 /// `radius`, and the fourth power keeps the falloff physical everywhere except
 /// the last fifth of the way out.
 ///
 /// The 0.25 in the denominator is a soft core: without it the term runs away at
-/// the light's own position, and every spell that puts its emitter on the snow —
-/// which is most of them — burns a clipped white disc into the ground.
+/// the light's own position, and every power that puts its emitter on the ground
+/// — which is most of them — burns a clipped white disc into it.
 fn spellAttenuation(dist2: f32, radius: f32) -> f32 {
     let t2 = dist2 / max(radius * radius, 1e-4);
     if (t2 >= 1.0) { return 0.0; }
@@ -48,10 +49,10 @@ fn spellAttenuation(dist2: f32, radius: f32) -> f32 {
     return win * win / (dist2 + 0.25);
 }
 
-/// Snow's full response to the spell lights: wrapped diffuse plus transmission.
+/// Dust's full response to the power lights: wrapped diffuse plus transmission.
 ///
-/// `thickness` and `sssRadius` are the same numbers the sun's term uses, so a
-/// compressed trench answers a spell exactly as it answers the sun — tighter,
+/// `thickness` and `sssRadius` are the same numbers the star's term uses, so a
+/// compressed trench answers a power exactly as it answers the star — tighter,
 /// darker, less scattering — without any of that being restated here.
 fn spellLighting(
     world: vec3f,
@@ -81,17 +82,18 @@ fn spellLighting(
         let radiance = lightCol[i].rgb * lightCol[i].w * att;
 
         acc += albedo * (1.0 / PI) * wrapDiffuse(dot(N, L), 0.66) * radiance;
-        acc += snowSubsurface(N, L, V, radiance, thickness, sssStrength, sssRadius) * albedo;
+        acc += dustSubsurface(N, L, V, radiance, thickness, sssStrength, sssRadius) * albedo;
     }
 
     return acc;
 }
 
-/// The same lights, for a surface that is not snow — fabric, fur, water, ice.
+/// The same lights, for a surface that is not loose dust — suit fabric, a
+/// plasma body, a grown lattice.
 ///
-/// Diffuse plus a GGX lobe, with a wrap term that the caller sizes: wool wraps a
-/// long way, wet ice barely at all. No transmission, because the materials that
-/// want it (the robe's thin under-layer, the water body itself) already have
+/// Diffuse plus a GGX lobe, with a wrap term that the caller sizes: soft goods
+/// wrap a long way, a facet barely at all. No transmission, because the materials
+/// that want it (the suit's thin under-layer, a power's own body) already have
 /// their own and would double-count.
 fn spellLightingSurface(
     world: vec3f,
@@ -136,8 +138,8 @@ fn spellLightingSurface(
     return acc;
 }
 
-/// Lights on airborne snow: a billboarded grain has no thickness worth
-/// modelling, so this is a single wide-wrap term. Cheap, because the spray is
+/// Lights on airborne dust: a billboarded grain has no thickness worth
+/// modelling, so this is a single wide-wrap term. Cheap, because the grains are
 /// the one system here that can have three thousand alpha-blended instances of
 /// itself in flight.
 fn spellLightingParticle(

@@ -6,7 +6,7 @@
 //
 // Emits the same varyings as char.vertex.wgsl so both share one fragment shader.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;   // (u, v, panel index)
 attribute uv: vec2f;         // weave coordinates

@@ -124,8 +124,9 @@ function curve(table, t) {
 /**
  * The safety tether.
  *
- * A flattened tube — eight columns around a ring six millimetres thick and
- * ninety wide — anchored to the life-support pack and left otherwise free. It
+ * A flattened tube — eight columns around a section ninety millimetres wide and
+ * twelve thick at the clamp, tapering to two thirds of that at the free end —
+ * anchored to the life-support pack and left otherwise free. It
  * has to be a tube and not an open sheet: `clothNode` in charSkin.wgsl wraps `u`
  * and every panel builder sweeps a full turn, so opening the topology would mean
  * changing the wrap to a clamp for *every* panel at once.
@@ -141,7 +142,11 @@ function makeTether() {
     const p = new ClothPanel({
         name: "tether", cols: 8, rows: 20, matId: M_TRIM,
         renderCols: 16, renderRows: 48,
-        // Metres of surface, so the shader's slub scale stays physical.
+        // Metres of surface, the same physical UV convention every other panel
+        // uses. The trim slot carries no weave depth, so nothing samples these
+        // today; they are here so the strap keeps its own scale if it is ever
+        // moved onto a woven slot, rather than inheriting whatever the sleeves
+        // happen to be set to.
         weaveU: 0.20, weaveV: 2.4,
         aoTop: 0.9, aoBottom: 1.0,
         collide: C_TORSO,
@@ -152,10 +157,14 @@ function makeTether() {
     // tether that cannot whip.
     const RATE = [Infinity, 40, 8, 2, 0.8, 0.4];
 
-    // Anchored on the back of the pack and falling away behind. One and a
-    // half metres, not the two and a half it would like to be: the figure casts
-    // into only the near two shadow cascades, and a tether long enough to cross
-    // the second split loses its shadow half way along itself.
+    // Anchored on the back of the pack and falling away behind. The centreline
+    // is 1.72 m, and that number is set by the standstill case rather than by
+    // the run: with the anchor at 1.30 m in bind, less the four centimetres the
+    // figure settles into the dust, this hangs to eight centimetres above the
+    // surface. `groundRows` is 0, so a longer one would simply lie through the
+    // dust — there is nothing here to stop it. Streamed out behind a full-speed
+    // run it reaches about two and a half metres back, which is still deep
+    // inside the near cascade's 26 m and keeps its shadow the whole way.
     const AX = 0, AY = 1.300, AZ = -0.330;
     const EX = 0, EY = 0.620, EZ = -1.900;
 

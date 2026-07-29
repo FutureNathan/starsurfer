@@ -133,7 +133,7 @@ async function boot() {
     onChange("showCharacter", (v) => figure.setVisible(v));
     figure.registerPrepass(depthPass);
 
-    // Airborne snow: footfall kick now, the surf plume and spell spray later.
+    // Airborne dust: footfall kick now, the surf plume and power ejecta later.
     const spray = new SprayField(scene, terrain, sky, shadows);
 
     // Feet and the surf groove write into the terrain state buffer through here.
@@ -146,7 +146,7 @@ async function boot() {
 
     // The five spells, the water body they bend and the ice they leave. Every
     // one of them writes into the same terrain state buffer the feet and the
-    // wake do, and lights the snow through the same four-slot pool.
+    // wake do, and lights the field through the same four-slot pool.
     const spells = new SpellSystem(
         scene, sky, shadows, terrain, character, figure.figure, rig, spray
     );
@@ -157,7 +157,7 @@ async function boot() {
     );
     spells.registerPrepass(depthPass);
 
-    // The rig needs ground heights to keep the spring arm above the snow.
+    // The rig needs ground heights to keep the spring arm above the dust.
     rig.groundAt = (x, z) => terrain.heightAt(x, z);
 
     const post = new PostChain(scene, rig.camera, depthPass, sky);

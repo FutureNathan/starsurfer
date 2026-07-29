@@ -104,7 +104,7 @@ export class Terrain {
 
         this.mesh = buildClipmapMesh(scene);
 
-        this.material = this._makeSnowMaterial();
+        this.material = this._makeDustMaterial();
         this.mesh.material = this.material;
 
         // One depth material per cascade, so each can carry its own matrix
@@ -114,11 +114,11 @@ export class Terrain {
         this.setDeformTexture(this.deform.texture);
     }
 
-    _makeSnowMaterial() {
+    _makeDustMaterial() {
         const mat = new ShaderMaterial(
-            "snow",
+            "dust",
             this.scene,
-            { vertex: "snow", fragment: "snow" },
+            { vertex: "dust", fragment: "dust" },
             {
                 attributes: ["position"],
                 uniforms: [
@@ -210,7 +210,7 @@ export class Terrain {
                 shaderLanguage: ShaderLanguage.WGSL,
                 // Forces a distinct Effect per cascade, so each can carry its
                 // own light matrix without mid-frame uniform swapping.
-                defines: ["SNOW_CASCADE " + cascade],
+                defines: ["DEPTH_CASCADE " + cascade],
             }
         );
         mat.backFaceCulling = false;
@@ -244,13 +244,13 @@ export class Terrain {
      * so the first rendered frame never pays a compile.
      */
     async warmUp() {
-        // Before the snow material, because its first compile binds whatever is
+        // Before the dust material, because its first compile binds whatever is
         // in the deformation target and reading uninitialised VRAM as a height
         // can put NaN into a vertex position.
         await this.deform.warmUp();
         this.setDeformTexture(this.deform.texture);
 
-        await whenReady(this.material, "snow material", [this.mesh, false]);
+        await whenReady(this.material, "dust material", [this.mesh, false]);
         if (this.prepassMat) {
             await whenReady(this.prepassMat, "terrain prepass", [this.mesh, false]);
         }
@@ -304,7 +304,7 @@ export class Terrain {
         const deformSize = this.deform.size;
 
         // Clipmap rings follow the player, not the viewer — see the note on
-        // `lodCenter` in snow.vertex.wgsl. No extra snapping here;
+        // `lodCenter` in dust.vertex.wgsl. No extra snapping here;
         // `placeClipmapVertex` snaps per ring already.
         _lod.set(focus.x, focus.z);
 

@@ -1,6 +1,6 @@
 // The body: linear blend skinning straight out of the transform texture.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;   // bind-pose world position
 attribute normal: vec3f;     // bind-pose world normal

@@ -113,7 +113,8 @@ export class DustContact {
                 // the print read as displaced dust rather than as a dark decal.
                 0.10 + 0.08 * impact,
                 0.9,                    // compression: trodden dust packs hard
-                0,                      // no ice
+                0,                      // nothing fused: a boot packs, it does
+                                        // not sinter
                 ch.facing,
                 BOOT_ELONG,
                 1.0                     // full rim roughness — boots tear edges

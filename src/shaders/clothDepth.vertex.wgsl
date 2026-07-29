@@ -1,10 +1,10 @@
-// Shadow-pass vertex shader for the garments.
+// Shadow-pass vertex shader for the soft goods.
 //
 // Same Catmull-Rom reconstruction as cloth.vertex.wgsl, from the same include.
-// A robe that casts the shape of its bind pose while drawing the shape of its
+// A tether that casts the shape of its bind pose while drawing the shape of its
 // simulation is worse than no shadow at all.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;   // (u, v, panel index)
 

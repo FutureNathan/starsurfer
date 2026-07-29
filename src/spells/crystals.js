@@ -1,17 +1,24 @@
 /**
- * The ice formations Crystallise grows.
+ * The lattices Star Crystal grows.
  *
  * A fixed pool of prisms in one data-driven mesh: one draw, one 3 x 96 upload,
  * and no geometry generated at any point. A crystal that is not alive has zero
  * height, which collapses every one of its triangles onto its base point.
  *
- * Lifetime is deliberately long. This spell alters the surface semi-permanently
- * through the ice channel of the terrain state buffer, which decays on a
- * fifteen-minute constant, so a patch of glazed snow is still there long after
- * the geometry has gone. The prisms themselves sublimate over
- * about forty seconds, which is long enough that the player can walk around a
- * formation and look at it, and short enough that a session does not silently
- * fill up with ice.
+ * Lifetime is deliberately long. This power alters the surface semi-permanently
+ * through the charge channel of the terrain state buffer, which decays on a
+ * fifteen-minute constant, so a burning patch of sea is still there long after
+ * the geometry has gone. The prisms themselves come apart over about forty
+ * seconds, which is long enough that the player can walk around a formation and
+ * look at it, and short enough that a session does not silently fill up with
+ * lattice.
+ *
+ * They are also the only mirror standing on the ground out here. Everything
+ * else in frame is dust at nine percent albedo and a plasma boundary with no
+ * coherent reflection at all; a grown facet is a real dielectric interface, so
+ * this is the one caster that writes the screen-space reflection mask at full
+ * strength rather than at a weight — and the pass costs nothing on every frame
+ * where nobody has cast, because then nothing on the ground writes it at all.
  *
  * Allocation per frame: none.
  */
@@ -23,11 +30,13 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { S } from "../core/settings.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "./spellLights.js";
+import { POWERS } from "./powers.js";
 
 /** Pool size. Two full formations' worth. */
 export const CRYSTAL_MAX = 96;
@@ -39,7 +48,50 @@ const RING = 6;
 /** How many cascades a 40 cm prism is worth drawing into. */
 const CRYSTAL_CASCADES = 2;
 
+/**
+ * Seconds for a finished crystal's emission to fall most of the way to its
+ * resting ember.
+ *
+ * The charge is shed as the lattice *orders itself*, so the light is a property
+ * of the growth rather than of the object. A crystal that kept blazing for the
+ * thirty-four seconds it stands would turn a formation into a light fitting the
+ * player has to walk around; one that went dark the instant it finished would
+ * make the growth read as a flash with a prop left behind. A few seconds is the
+ * window where it still reads as the same event settling down.
+ */
+const HEAT_TAU = 3.5;
+
+/**
+ * What a finished crystal settles to, as a fraction of its peak.
+ *
+ * Not zero. A standing formation has to stay findable from across a field whose
+ * ground reflects nine percent of what lands on it, and at this fraction the
+ * ember sits just under the bloom threshold — present, and not asserting
+ * itself.
+ */
+const HEAT_EMBER = 0.18;
+
 const _splits = new Vector4();
+
+/**
+ * What a grown lattice emits, with its radiance already folded into the hue.
+ *
+ * A crystal is not a lamp — most of what it shows is the galaxy behind it, bent,
+ * and the dust sea reflected off its facets. But an ordered lattice is shedding
+ * the charge the loose grains it grew out of were carrying, and out here that is
+ * the difference between a formation the player can see from across the field
+ * and one that only exists where the star happens to rake it. The gain is
+ * Star Crystal's own, so the prisms, the light they cast and the patch they
+ * leave in the ground are all one colour.
+ *
+ * Constant, so it is set once at material construction rather than restated
+ * every frame; the per-crystal variation rides in the data texture instead.
+ */
+const _crystalGlow = new Color3(
+    POWERS.lattice.hue[0] * POWERS.lattice.body,
+    POWERS.lattice.hue[1] * POWERS.lattice.body,
+    POWERS.lattice.hue[2] * POWERS.lattice.body
+);
 
 export class CrystalField {
     /**
@@ -54,7 +106,7 @@ export class CrystalField {
         this.shadows = shadows;
         this.lights = lights;
 
-        // Rows: (x,y,z,height) / (axis,radius) / (growth, seed, tint, -)
+        // Rows: (x,y,z,height) / (axis,radius) / (growth, seed, glow scale, heat)
         this._texData = new Float32Array(CRYSTAL_MAX * 3 * 4);
         this.dataTex = RawTexture.CreateRGBATexture(
             this._texData, CRYSTAL_MAX, 3, scene,
@@ -78,9 +130,9 @@ export class CrystalField {
         this.mesh = buildMesh(scene);
         this.material = this._makeMaterial();
         this.mesh.material = this.material;
-        // Opaque, with the terrain. See the note at the top of the fragment
-        // shader: the refracted lookup already carries what is behind the ice, so
-        // blending buys nothing and costs correct depth.
+        // With the terrain. See the note at the top of the fragment shader: the
+        // refracted lookup already carries what is behind the lattice, so what
+        // the blend is for is the join to the ground rather than the backdrop.
         this.mesh.renderingGroupId = 1;
         this.mesh.isVisible = false;
 
@@ -96,7 +148,7 @@ export class CrystalField {
 
     _makeMaterial() {
         const mat = new ShaderMaterial(
-            "iceCrystal", this.scene, { vertex: "crystal", fragment: "crystal" },
+            "starCrystal", this.scene, { vertex: "crystal", fragment: "crystal" },
             {
                 attributes: ["position"],
                 uniforms: [
@@ -106,7 +158,7 @@ export class CrystalField {
                     "shadowTexel", "shadowSoftness", "shadowBias",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity", "sssStrength",
-                    "glintIntensity", "glintGrazing",
+                    "glintIntensity", "glintGrazing", "crystalGlowColor",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
                 samplers: ["crystalTex", "skyLUT", "cascade0", "cascade1", "cascade2"],
@@ -120,7 +172,7 @@ export class CrystalField {
         mat.backFaceCulling = false;
         // Blended *and* depth-writing. See the note at the top of
         // `crystal.fragment.wgsl`: this is what gives transparency against the
-        // snow without letting forty prisms blend over each other.
+        // dust without letting forty prisms blend over each other.
         mat.alphaMode = Constants.ALPHA_COMBINE;
         mat.needAlphaBlending = () => true;
         mat.disableDepthWrite = false;
@@ -130,6 +182,7 @@ export class CrystalField {
         for (let i = 0; i < CASCADE_COUNT; i++) {
             mat.setTexture("cascade" + i, this.shadows.maps[i]);
         }
+        mat.setColor3("crystalGlowColor", _crystalGlow);
         return mat;
     }
 
@@ -154,10 +207,13 @@ export class CrystalField {
     /**
      * The camera-space depth prepass material.
      *
-     * This is the one caster that writes a non-zero specular mask, and the only
-     * reason the mask channel exists: ice is the sole mirror in a field of matte
-     * snow, so the reflection pass can early-out on it and cost nothing on every
-     * frame where nobody has cast Crystallise.
+     * The lattice writes the reflection mask at full strength, which nothing
+     * else standing on the ground does: the dust sea writes a weight
+     * proportional to how far a Star Crystal patch has vitrified it, and a
+     * plasma body writes nothing at all. A prism is a mirror over the whole of
+     * itself, so there is nothing to weight it by — and the mask is zero
+     * everywhere on every frame where nobody has cast, so the reflection pass
+     * costs nothing then.
      *
      * @param {import("../render/depthPass.js").DepthPass} depth
      */
@@ -186,7 +242,7 @@ export class CrystalField {
      * @param {number} height metres at full growth
      * @param {number} radius metres at full growth
      * @param {number} growSeconds time from nothing to full size
-     * @param {number} life seconds before it starts sublimating
+     * @param {number} life seconds before it starts coming apart
      */
     plant(x, y, z, ax, ay, az, height, radius, growSeconds, life) {
         let i = this._next;
@@ -208,8 +264,18 @@ export class CrystalField {
         o += w;
         d[o] = ax; d[o + 1] = ay; d[o + 2] = az; d[o + 3] = radius;
         o += w;
+        // Per-crystal emission scale. A cluster where every prism burns at
+        // exactly the same radiance reads as forty copies of one object, and the
+        // silhouette variation `seed` already gives them is not enough on its
+        // own once they are all generating light. Hashed off the index and the
+        // position so it is stable for the crystal's whole life and does not
+        // repeat between formations.
+        const gh = (i * 0.7548777 + x * 0.271 + z * 0.577) % 1;
         d[o] = 0; d[o + 1] = (i * 0.618034 + x * 0.137 + z * 0.311) % 1;
-        d[o + 2] = 0; d[o + 3] = 0;
+        d[o + 2] = 0.55 + 0.70 * (gh < 0 ? gh + 1 : gh); d[o + 3] = 0;
+        // `heat` starts at zero and `update` writes it on the first frame this
+        // crystal is aged, so a prism planted mid-frame never appears at full
+        // brightness with no geometry under it.
 
         this.age[i] = 0;
         this.life[i] = life;
@@ -243,19 +309,26 @@ export class CrystalField {
             } else if (a < life) {
                 g = 1;
             } else {
-                // Sublimation: the prism retreats rather than fading, so it goes
-                // back into the drift it came out of. Nothing here pops.
+                // The prism retreats rather than fading, so it goes back into the
+                // sea it came out of. Nothing here pops.
                 const t = (a - life) / 6.0;
                 if (t >= 1) {
                     this.alive[i] = 0;
                     d[growRow + i * 4] = 0;
+                    d[growRow + i * 4 + 3] = 0;
                     this._dirty = true;
                     continue;
                 }
                 g = 1 - t;
             }
 
+            // Temperature, on its own clock. Full while the lattice is ordering
+            // itself, settling to an ember over the next few seconds, and scaled
+            // by the growth at both ends so a crystal that is barely there or
+            // half retreated does not emit as though it were whole.
+            const settle = Math.exp(-Math.max(a - this.grow[i], 0) / HEAT_TAU);
             d[growRow + i * 4] = g;
+            d[growRow + i * 4 + 3] = (HEAT_EMBER + (1 - HEAT_EMBER) * settle) * g;
             live++;
         }
 
@@ -378,7 +451,7 @@ function buildMesh(scene) {
         }
     }
 
-    const mesh = new Mesh("iceCrystals", scene);
+    const mesh = new Mesh("starCrystals", scene);
     const vd = new VertexData();
     vd.positions = pos;
     vd.indices = idx;

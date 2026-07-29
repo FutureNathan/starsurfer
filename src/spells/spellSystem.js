@@ -1,17 +1,17 @@
 /**
- * The spell system — dispatch, shared context, and the casting pose.
+ * The powers — dispatch, shared context, and the casting pose.
  *
- * Owns the five spells, the water body they draw into, the ice they leave, and
- * the light pool every material reads. One `update()` per frame, in this order,
- * and the order is load-bearing:
+ * Owns the five powers, the plasma bodies they draw into, the lattices they
+ * leave, and the light pool every material reads. One `update()` per frame, in
+ * this order, and the order is load-bearing:
  *
  *   1. clear the light pool
  *   2. dispatch input
- *   3. update every spell — they declare lights and write brushes here
- *   4. upload the water and the crystals
+ *   3. update every power — they declare lights and write brushes here
+ *   4. upload the bodies and the crystals
  *
- * The lights have to be cleared before the spells run and uploaded after, or a
- * spell that ended last frame keeps lighting the snow. The brushes have to be
+ * The lights have to be cleared before the powers run and uploaded after, or a
+ * power that ended last frame keeps lighting the sea. The brushes have to be
  * written before `terrain.update()` runs the simulation pass, which is why this
  * is called from `main` alongside the character contact rather than after the
  * terrain.
@@ -95,12 +95,12 @@ export class SpellSystem {
         this.spells = [this.sweep, this.ribbon, this.bloom, this.crystallize, this.vortex];
 
         /**
-         * Materials outside the spell system that shade with the spell lights.
+         * Materials outside this system that shade with the power lights.
          *
          * They are pushed rather than pulled because the pool is only complete
-         * once every spell has declared, and that is later in the frame than any
+         * once every power has declared, and that is later in the frame than any
          * of these systems runs. Registering them here keeps "who is lit by a
-         * spell" a single list in one file instead of a `lights.apply()` call
+         * power" a single list in one file instead of a `lights.apply()` call
          * scattered across five unrelated `_pushUniforms`.
          *
          * @type {import("@babylonjs/core/Materials/shaderMaterial").ShaderMaterial[]}
@@ -118,7 +118,7 @@ export class SpellSystem {
     }
 
     /**
-     * Declare a material that reads `snowSpellLights`.
+     * Declare a material that reads `starSpellLights`.
      * @param {...import("@babylonjs/core/Materials/shaderMaterial").ShaderMaterial} mats
      */
     addConsumers(...mats) {
@@ -131,7 +131,7 @@ export class SpellSystem {
      * Where a hand is, in world space.
      *
      * Falls back to a point in front of the chest when the figure is hidden, so
-     * a spell cast with the character switched off still comes from somewhere
+     * a power cast with the astronaut switched off still comes from somewhere
      * sensible rather than from the origin.
      */
     _handPosition(which, out, off) {
@@ -182,8 +182,8 @@ export class SpellSystem {
         ch.castAimY = this.aim.y;
         ch.castAimZ = this.aim.z;
 
-        // Everything outside the spell system that answers a spell light, after
-        // the last declaration and before anything renders.
+        // Everything outside this system that answers a power's light, after the
+        // last declaration and before anything renders.
         for (let i = 0; i < this._consumers.length; i++) {
             this.lights.apply(this._consumers[i]);
         }
@@ -202,10 +202,10 @@ export class SpellSystem {
     }
 
     /**
-     * Fire one spell, by key.
+     * Fire one power, by key.
      *
      * Separated from the input poll so the console or a future rebind can cast
-     * without synthesising a key event. `SNOWFLOW.spells` is the console handle.
+     * without synthesising a key event. `STARSURFER.spells` is the console handle.
      *
      * @param {number} key 1..5
      */
@@ -231,16 +231,16 @@ export class SpellSystem {
 
         if (key === 3 || key === 4) {
             // Both are placed where the player is looking. The ray starts at the
-            // eye, so what the spell hits is exactly what is under the centre of
+            // eye, so what the power hits is exactly what is under the centre of
             // the screen — which is the only targeting rule that needs no
             // explanation and no reticle.
             //
             // Capped at 22 m of ray, not the 40 the terrain could answer for.
-            // Looking out across a dune field the first surface the ray meets is
-            // often forty metres away on the next ridge, and a Bloom that goes
-            // off over there is an effect the player has to squint at. Beyond the
-            // cap the spell lands at the cap distance instead, which is always
-            // in front of them and always at a size worth looking at.
+            // Looking out across the sea the first surface the ray meets is often
+            // forty metres away on the next swell, and a Supernova that goes off
+            // over there is an event the player has to squint at. Beyond the cap
+            // the power lands at the cap distance instead, which is always in
+            // front of them and always at a size worth looking at.
             const eye = rig.camera.position;
             aimPoint(
                 _aim, ctx.terrain,
@@ -275,7 +275,7 @@ export class SpellSystem {
         for (let i = 0; i < this.spells.length; i++) this.spells[i].cancel();
     }
 
-    /** Live spell count, for the overlay. */
+    /** Live power count, for the overlay. */
     get activeCount() {
         let n = 0;
         for (let i = 0; i < this.spells.length; i++) if (this.spells[i].active) n++;
@@ -283,11 +283,12 @@ export class SpellSystem {
     }
 
     /**
-     * Register the ice formations with the depth prepass.
+     * Register the lattices with the depth prepass.
      *
-     * Only the crystals: the water body is translucent and refractive, so a
-     * depth for it would tell every screen-space consumer that the snow behind it
-     * is not there — which is exactly wrong for a medium you can see through.
+     * Only the crystals: a plasma body is translucent and emissive, so a depth
+     * for it would tell every screen-space consumer that the sea behind it is not
+     * there — which is exactly wrong for a medium you can see through and which
+     * is putting light *into* what is behind it.
      *
      * @param {import("../render/depthPass.js").DepthPass} depth
      */
@@ -300,11 +301,11 @@ export class SpellSystem {
     }
 
     /**
-     * Compile every spell pipeline behind the loading screen.
+     * Compile every power's pipeline behind the loading screen.
      *
-     * The first cast of any spell must not hitch, and this is the only thing
+     * The first cast of any power must not hitch, and this is the only thing
      * standing between that and a multi-hundred-millisecond freeze the first
-     * time somebody presses 3. Both water profiles and the ice material are
+     * time somebody presses 3. Both body profiles and the lattice material are
      * exercised with real geometry — a pipeline compiled against an empty draw
      * is a warm-up that quietly covers nothing.
      */

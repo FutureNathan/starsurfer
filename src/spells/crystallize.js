@@ -1,33 +1,35 @@
 /**
- * Spell 4 — Crystallise.
+ * Power 4 — Star Crystal.
  *
- * Water snaps to ice. A formation grows out of the drift at the aim point, and
- * the patch it grew from stays glazed long after the prisms have gone.
+ * Loose dust snaps into a lattice. A formation grows out of the sea at the aim
+ * point, and the patch it grew from stays charged long after the prisms have
+ * gone.
  *
  * Two mechanisms, and the split matters:
  *
  *   the formation   geometry, in `crystals.js`. It grows over about a second and
- *                   a half, stands for half a minute, and sublimates back into
- *                   the drift. This is the thing the player looks at.
- *   the glaze       the ice channel of the terrain state buffer, which decays on
- *                   a fifteen-minute constant. This is the thing that satisfies
- *                   "permanently altering the surface": the snow shader answers
- *                   it with a roughness of 0.07 and a genuinely reflective
- *                   surface, so a Crystallise patch stays visible from across the
- *                   field as a slick of ice.
+ *                   a half, stands for half a minute, and comes apart back into
+ *                   the sea. This is the thing the player looks at.
+ *   the patch       the charge channel of the terrain state buffer, which decays
+ *                   on a fifteen-minute constant. This is the thing that
+ *                   satisfies "permanently altering the surface": the dust shader
+ *                   answers it with a roughness of 0.07, a vitrified violet
+ *                   albedo and a gold emission, so a Star Crystal patch stays
+ *                   visible from across the field as a burning slick.
  *
  * The prisms are planted along a short *spiral* rather than in a disc. A random
  * scatter reads as scattered; a spiral with the crystals getting shorter as they
  * go out reads as something that grew from a centre, which is what it is.
  */
 
+import { POWERS } from "./powers.js";
 import { clamp01, smooth01 } from "./bending.js";
 
 /** Seconds the whole cast takes to finish planting. */
 const PLANT_TIME = 0.85;
 /** Crystals in one formation. */
 const COUNT = 34;
-/** Seconds the formation stands at full size before sublimating. */
+/** Seconds the formation stands at full size before it comes apart. */
 const STAND = 34;
 
 export class Crystallize {
@@ -53,19 +55,27 @@ export class Crystallize {
         this._seed = Math.random() * 1000;
         this.active = true;
 
-        // The glaze goes down immediately, under where the formation will be, so
+        // The patch goes down immediately, under where the formation will be, so
         // the ground has already changed material by the time the first prism is
-        // tall enough to see. Doing it as the crystals land instead leaves a
-        // beat where ice is standing on ordinary snow.
+        // tall enough to see. Doing it as the crystals land instead leaves a beat
+        // where a lattice is standing on undisturbed sea.
+        //
+        // Charge, not displacement: this power barely moves the ground. The
+        // channel is taken as a max rather than accumulated, so these are plain
+        // measures of how far the lattice ordered the dust under it, and they are
+        // deliberately short of the ceiling — a patch at 1.0 burns at three and a
+        // half times the lit ground and stays there for a quarter of an hour,
+        // which turns a formation into a floodlight the player then has to stand
+        // next to.
         const f = this.ctx.deform;
-        f.brush(x, z, 1.55, 0.10, 0.16, 0.85, 1.0, Math.random() * Math.PI, 1.2, 0.85);
+        f.brush(x, z, 1.55, 0.10, 0.16, 0.85, 0.55, Math.random() * Math.PI, 1.2, 0.85);
         for (let i = 0; i < 3; i++) {
             const a = Math.random() * Math.PI * 2;
             const d = 1.1 + Math.random() * 1.3;
             f.brush(
                 x + Math.cos(a) * d, z + Math.sin(a) * d,
                 0.55 + Math.random() * 0.5,
-                0.04, 0.10, 0.5, 0.75, a, 1.5, 1.0
+                0.04, 0.10, 0.5, 0.40, a, 1.5, 1.0
             );
         }
     }
@@ -86,20 +96,24 @@ export class Crystallize {
         }
 
         // ---- light ---------------------------------------------------------
-        // Bright and tight while it is forming, then a low ember that lasts as
-        // long as the formation does. Ice does not emit, but the snow around a
-        // cluster of refracting prisms under a low sun genuinely does pick up
-        // caustic light, and a small amount of it here is what stops the
-        // formation looking like it was pasted on.
+        // Bright and tight while the lattice is ordering itself, then a low
+        // breathing ember for as long as the formation stands. Both halves are
+        // the same mechanism: ordering dust into a lattice sheds the charge the
+        // loose grains were carrying, fastest while it is forming and slowly
+        // afterwards as the structure relaxes.
+        const lattice = POWERS.lattice;
         const form = 1 - smooth01((this.t - PLANT_TIME) / 0.9);
         const ember = 0.10 + 0.06 * Math.sin(this.t * 1.7);
-        const k = 0.35 + 12.0 * form;
-        ctx.lights.add(this.x, this.y + 0.55, this.z, 7.5, 0.52, 0.80, 1.0, k * (1 + ember));
+        const k = lattice.light * (0.03 + 0.97 * form);
+        ctx.lights.add(
+            this.x, this.y + 0.55, this.z, 7.5,
+            lattice.hue[0], lattice.hue[1], lattice.hue[2], k * (1 + ember)
+        );
 
-        // ---- frost spray ---------------------------------------------------
-        if (this.t < PLANT_TIME + 0.4) this._frost(dt);
+        // ---- shed grains ---------------------------------------------------
+        if (this.t < PLANT_TIME + 0.4) this._shedGrains(dt);
 
-        // The spell itself is done once the last prism is in; the crystals age
+        // The power itself is done once the last prism is in; the crystals age
         // on their own clock from there.
         if (this.t > PLANT_TIME + 1.6) this.active = false;
     }
@@ -125,7 +139,7 @@ export class Crystallize {
         // Tall in the middle, low at the edges, with enough scatter that the
         // envelope is not a readable cone.
         //
-        // The centre crystals are chest height on the character, deliberately —
+        // The centre crystals are chest height on the astronaut, deliberately —
         // a knee-height cluster is something the player walks past. Scale is the
         // cheapest drama there is.
         const scale = (1 - n01 * 0.58) * (0.6 + Math.random() * 0.8);
@@ -145,17 +159,18 @@ export class Crystallize {
             STAND + Math.random() * 8
         );
 
-        // A little snow pushed aside where each one broke the surface.
+        // A little dust pushed aside, and charged, where each one broke the
+        // surface.
         if ((i & 1) === 0) {
             ctx.deform.brush(
                 x, z, radius * 3.2,
-                0.05, 0.09, 0.4, 0.9, ang, 1.2, 1.0
+                0.05, 0.09, 0.4, 0.50, ang, 1.2, 1.0
             );
         }
     }
 
-    /** Frost thrown off as the ice breaks the surface. */
-    _frost(dt) {
+    /** Grains thrown clear as the lattice breaks the surface. */
+    _shedGrains(dt) {
         const ctx = this.ctx;
         const sp = ctx.spray;
         if (!sp) return;

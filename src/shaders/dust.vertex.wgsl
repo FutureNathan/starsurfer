@@ -1,7 +1,7 @@
-#include<snowNoise>
-#include<snowTerrain>
-#include<snowDeform>
-#include<snowClipmap>
+#include<starNoise>
+#include<starTerrain>
+#include<starDeform>
+#include<starClipmap>
 
 // position packs the clipmap addressing: (gridI, ringLevel, gridJ).
 attribute position: vec3f;
@@ -11,9 +11,9 @@ uniform cameraPos: vec3f;
 
 /// Where the clipmap rings are centred — the *character*, not the camera.
 ///
-/// This is the whole reason carved snow holds still while you orbit. Ring 0 is
+/// This is the whole reason a carved trail holds still while you orbit. Ring 0 is
 /// 6.8 m of half-extent and the spring arm sits 3-11 m behind the character, so
-/// centring on the camera put the snow directly under the player right on the
+/// centring on the camera put the ground directly under the player right on the
 /// ring 0 / ring 1 boundary: swinging the camera round re-sampled it between
 /// 0.085 m and 0.17 m spacing and the trail visibly changed shape. Centring on
 /// the character makes vertex placement a function of world position and player

@@ -6,7 +6,7 @@
 // entire cost of screen-space reflections on the one surface here that is
 // actually reflective: one attribute and one comparison.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;
 attribute aux: vec2f;        // (material id, baked occlusion)

@@ -442,14 +442,14 @@ const _dustEmit = new Color3(0, 0, 0);
 /**
  * Cosmic dust reflects very little of what hits it, and what it does reflect is
  * violet. These are the same numbers the dust material carries in
- * `snow.fragment.wgsl`, lifted a little because the bounce integrates over a
+ * `dust.fragment.wgsl`, lifted a little because the bounce integrates over a
  * whole hemisphere of field including its brighter disturbed patches.
  */
 const DUST_ALBEDO = [0.10, 0.075, 0.18];
 
 /**
  * The dust field's own average emission, per unit of `S.dustGlow`. Derived from
- * the emissive block in `snow.fragment.wgsl`: the nebula-violet base colour
+ * the emissive block in `dust.fragment.wgsl`: the nebula-violet base colour
  * times the mean of its drift and welling weights, times the emissive scale the
  * terrain publishes. If that block is retuned, this has to move with it or the
  * horizon separates.

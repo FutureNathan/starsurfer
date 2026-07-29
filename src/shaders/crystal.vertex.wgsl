@@ -1,16 +1,17 @@
-// Crystallise — ice formation, vertex placement.
+// Star Crystal — lattice placement.
 //
 // `position` is (crystalIndex, vertexIndex, 0) and carries no geometry, exactly
 // as every other data-driven mesh here. Ninety-six crystals are one draw and a
 // 3 x 96 upload.
 //
 // No normal is emitted. The fragment shader takes it from the derivatives of the
-// world position, which gives exact flat facets for free — and a facet is what an
-// ice crystal is. Interpolated vertex normals would round the edges off and turn
-// a crystal into a lumpy cone, which is the one thing it must not look like.
+// world position, which gives exact flat facets for free — and a facet is what a
+// grown lattice is. Interpolated vertex normals would round the edges off and
+// turn a crystal into a lumpy cone, which is the one thing it must not look
+// like.
 
-#include<snowNoise>
-#include<snowCrystal>
+#include<starNoise>
+#include<starCrystal>
 
 attribute position: vec3f;   // (crystal, vertex, unused)
 
@@ -25,6 +26,7 @@ varying vBase: vec3f;
 varying vHeight01: f32;
 varying vSeed: f32;
 varying vGrowth: f32;
+varying vGlow: f32;
 varying vViewDist: f32;
 
 @vertex
@@ -39,12 +41,17 @@ fn main(input: VertexInputs) -> FragmentInputs {
 
     vertexOutputs.vWorld = P;
     vertexOutputs.vBase = a.xyz;
-    // Fraction of the way up the crystal, which is what the frost and the
-    // absorption path are both keyed to: the base is buried in the drift and
-    // milky, the tip is clear and lit through.
+    // Fraction of the way up the crystal, which is what the packed skirt and the
+    // absorption path are both keyed to: the base is buried in the sea and full
+    // of the dust it grew through, the tip is clear and lit through.
     vertexOutputs.vHeight01 = clamp((P.y - a.y) / max(a.w, 1e-3), 0.0, 1.0);
     vertexOutputs.vSeed = c.y;
     vertexOutputs.vGrowth = c.x;
+    // Emission scale: the per-crystal variation and the CPU's cooling curve
+    // multiplied here rather than carried as two interpolants, since nothing
+    // downstream ever wants one without the other. A cluster therefore reads as
+    // forty lattices at forty temperatures rather than as one drawn forty times.
+    vertexOutputs.vGlow = c.z * c.w;
     vertexOutputs.vViewDist = distance(P, uniforms.cameraPos);
     vertexOutputs.position = uniforms.viewProjection * vec4f(P, 1.0);
 }

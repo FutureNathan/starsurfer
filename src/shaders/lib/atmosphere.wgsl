@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowAtmosphere — sky model and aerial perspective.
+// starAtmosphere — sky model and aerial perspective.
 //
 // (The include keeps its old name. It is `#include`d by nine shaders and read by
 // the shader registry under that key; renaming it buys nothing and costs a

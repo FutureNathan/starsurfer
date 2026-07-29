@@ -3,31 +3,38 @@
 //
 // Everything that has to happen in one place happens here, because each of these
 // is defined relative to the one before it. Shafts are radiance and go in before
-// exposure; bloom is thresholded in *exposed* units so its knee means something
-// fixed; contrast is applied in linear so it pushes into the tone curve's
-// shoulder rather than clipping after it; grain goes on after the encode so it
-// reads evenly across the range instead of vanishing in the shadows.
+// exposure; bloom arrives already thresholded on *scene* radiance, so the mix
+// here is the only place its weight is decided; contrast is applied in linear so
+// it pushes into the tone curve's shoulder rather than clipping after it; grain
+// goes on after the encode so it reads evenly across the range instead of
+// vanishing in the shadows.
 //
-// Snow renders die at the tonemapper. The scene is a huge, bright, low-contrast
-// surface, so any curve that saturates early turns the whole field into a flat
-// white sheet with no form — the single most common failure in snow rendering.
+// A space render dies at the tonemapper, and it dies at both ends at once. The
+// frame is mostly void — a near-black field with a handful of very bright, very
+// *saturated* emitters standing in it — so the range the curve has to cover runs
+// from empty sky at a thousandth of middle grey to a star disc three orders of
+// magnitude above it. A curve with a short shoulder clips the star, the wake and
+// the galactic band to the same white, and every one of them is a different
+// colour; a curve with a short toe swallows the nebula whole.
 //
-// AgX is the default here rather than ACES for exactly that reason: it desaturates
-// toward white as it approaches the shoulder instead of hue-shifting, and its
-// shoulder is long enough that a sunlit drift at 6x middle grey still has legible
-// gradation instead of clipping to 1.0. ACES is offered for comparison and does
-// visibly worse on this content — it pushes bright snow toward a warm cast and
-// crushes the last stop.
+// AgX is the default here rather than ACES for exactly that reason: its shoulder
+// is long enough that dust lit to five times its own resting glow, a wake crest
+// at twice that again, and the star above both still resolve as three separate
+// values. What it costs is chroma — AgX desaturates toward white as it climbs —
+// and in this scene the chroma lives *in* the highlights rather than below them,
+// which is why the saturation is pushed back up harder here than a daylight
+// scene would want. ACES is offered for comparison and does visibly worse: its
+// notorious hue skew turns the nebula's magenta orange well before it clips.
 // -----------------------------------------------------------------------------
 
 varying vUV: vec2f;
 
 var textureSampler: texture_2d<f32>;
 var textureSamplerSampler: sampler;
-/// Quarter-resolution bright pass — the tight glow around a glint or the sun.
+/// Quarter-resolution bright pass — the tight halo around a grain or the star.
 var bloomNear: texture_2d<f32>;
 var bloomNearSampler: sampler;
-/// Sixteenth-resolution, blurred — the broad halo that reads as atmosphere.
+/// Sixteenth-resolution, blurred — the broad lobe of the same glare.
 var bloomFar: texture_2d<f32>;
 var bloomFarSampler: sampler;
 var shaftsTex: texture_2d<f32>;
@@ -81,9 +88,9 @@ fn agx(color: vec3f) -> vec3f {
     return agxContrast(v);
 }
 
-/// Gentle saturation recovery. AgX deliberately desaturates highlights; without
-/// a little of it back, the cool shadow / warm light split the whole look rests
-/// on gets flattened out along with the clipping it was there to prevent.
+/// Saturation recovery. AgX deliberately desaturates highlights; without some of
+/// it back, the violet-shadow / gold-light split the whole look rests on gets
+/// flattened out along with the clipping it was there to prevent.
 fn agxLook(color: vec3f, sat: f32) -> vec3f {
     let lw = vec3f(0.2126, 0.7152, 0.0722);
     let l = dot(color, lw);
@@ -118,12 +125,28 @@ fn linearToSrgb(c: vec3f) -> vec3f {
 //   radial smear    six taps drawn toward the focus. This is the one that does
 //                   the work — it is the only thing in the chain that makes the
 //                   *scene* look fast rather than decorating it.
-//   spindrift       sparse radial strands of blown snow tearing past the lens,
+//   stardust        sparse radial strands of lit dust tearing past the faceplate,
 //                   phase-advanced with time so they stream outward.
 //
 // Both are applied before the tonemapper so its shoulder rolls the strands off
 // rather than letting them clip, and both cost nothing at all when the player is
 // not moving — `speedStreak` is zero and the whole block is skipped.
+
+/// Starlight white, linear. `LIN.star` in src/core/brand.js — the same hue the
+/// wake's thrown grains carry, because this is the same material passing closer.
+const STRAND_TINT = vec3f(1.0, 0.921582, 0.745404);
+
+/// Peak radiance of a strand, on the scene's own linear scale.
+///
+/// Derived from the grains rather than dialled in. A grain thrown clear of the
+/// wake carries `EMIT.grain` — fourteen times starlight white — and a strand is
+/// one of those smeared along the path it crosses the frame on. A smear
+/// conserves energy, so the peak drops by the ratio of the dash to the grain,
+/// and the dashes here run about ten grain-widths, which lands at 1.4. Just over
+/// middle grey once exposed: bright enough to read as something lit rather than
+/// as grey lint on the periphery, far enough below the wake it came off that the
+/// shoulder still has room for both.
+const STRAND_RADIANCE: f32 = 1.4;
 
 fn streakStrands(d: vec2f, r: f32, t: f32) -> f32 {
     let ang = atan2(d.y, d.x);
@@ -131,14 +154,14 @@ fn streakStrands(d: vec2f, r: f32, t: f32) -> f32 {
     let cell = floor(a);
     let rnd = fract(sin(cell * 12.9898 + 4.1) * 43758.5453);
     // Only a fraction of the angular cells carry a strand; a strand in every one
-    // reads as a zoom-blur artefact rather than as blowing snow.
+    // reads as a zoom-blur artefact rather than as passing dust.
     if (rnd > 0.34) { return 0.0; }
 
     let across = abs(fract(a) - 0.5) * 2.0;
     // The radial frequency is the number that decides whether this reads as
-    // blowing snow or as scratches on the lens. At one cycle across the frame a
-    // strand is a straight line from the centre to the corner; at fourteen it is
-    // a two-centimetre dash, which is what a grain of spindrift crossing the
+    // dust going past or as scratches on the faceplate. At one cycle across the
+    // frame a strand is a straight line from the centre to the corner; at
+    // fourteen it is a two-centimetre dash, which is what a grain crossing the
     // frame in a fifteenth of a second actually looks like.
     let phase = fract(r * (11.0 + rnd * 24.0) - t * (7.0 + rnd * 22.0));
     let seg = smoothstep(0.55, 0.86, phase) * (1.0 - smoothstep(0.86, 1.0, phase));
@@ -176,22 +199,30 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     c *= uniforms.exposure;
 
-    // Bloom. Both levels are already in exposed units — the prefilter applied the
-    // same exposure before thresholding, which is what lets the knee sit at a
-    // fixed 1.0 instead of chasing the exposure slider.
+    // Bloom. Both levels were thresholded on *scene* radiance, before exposure —
+    // see the knee in postChain.js — so they arrive on the same scale `c` was on
+    // a line ago and have to be exposed with it. Multiplying by the exposure
+    // here rather than in the prefilter is what lets the threshold be stated
+    // against measured scene values instead of chasing the exposure slider.
     if (uniforms.bloomAmount > 0.0001) {
         let near = textureSampleLevel(bloomNear, bloomNearSampler, input.vUV, 0.0).rgb;
         let far = textureSampleLevel(bloomFar, bloomFarSampler, input.vUV, 0.0).rgb;
-        // Weighted toward the wide level: a tight halo on a snow field reads as a
-        // rendering artefact, a broad one reads as glare in the air.
-        c += (near * 0.35 + far * 0.65) * uniforms.bloomAmount;
+        // Weighted toward the *tight* level, which is the opposite of what an
+        // atmosphere wants. The broad lobe of a glare pattern is forward
+        // scattering off aerosols, and there are none out here; the nebula the
+        // field drifts through is thin enough to be the minority term. What is
+        // left is the instrument's own point spread, whose energy sits in the
+        // core. A star that reads as a point with a hard little halo is a star;
+        // the same star under a wide veil is a smudge.
+        c += (near * 0.60 + far * 0.40) * uniforms.bloomAmount * uniforms.exposure;
     }
 
-    // Blown snow, added in exposed linear so its brightness is stated relative
-    // to middle grey rather than to whatever the scene happens to be sitting at.
+    // Stardust strands. Stated as a radiance and exposed like everything else,
+    // so a grain going past the faceplate sits on the same scale as the grains
+    // the wake is throwing three metres away — which is what they are.
     if (streak > 0.002) {
         let s = streakStrands(dFocus, radius, uniforms.time);
-        c += vec3f(0.88, 0.94, 1.06) * s * streak * 0.16;
+        c += STRAND_TINT * (s * streak * STRAND_RADIANCE * uniforms.exposure);
     }
 
     // Contrast about middle grey, applied in linear before the curve so it
@@ -207,9 +238,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // needs its EOTF (the 2.2 power) applied before the shared sRGB encode
         // at the bottom. Skipping that double-encodes the image: everything
         // lifts toward mid grey and the whole frame goes flat and milky —
-        // which on snow is indistinguishable from "the shader is wrong".
+        // which on a void is indistinguishable from "the shader is wrong".
         var v = agx(c);
-        v = agxLook(v, 1.14);
+        // Saturation is pushed further than a daylight grade would want, and for
+        // a specific reason: AgX sheds chroma as it climbs toward the shoulder,
+        // and everything coloured in this scene — the nebula's magenta, the
+        // gold on the wake and the visor, the violet welling out of the dust —
+        // is *above* middle grey rather than below it. Left at unity the band
+        // resolves as a grey smear and the palette only survives in the
+        // shadows, which is exactly backwards.
+        v = agxLook(v, 1.28);
         mapped = pow(max(AGX_OUT * v, vec3f(0.0)), vec3f(2.2));
     } else if (uniforms.mode < 1.5) {
         // The Narkowicz fit is already display-linear.
@@ -228,7 +266,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     var outCol = linearToSrgb(mapped);
 
     // Grain, added after the encode so it reads evenly across the range instead
-    // of vanishing in the shadows.
+    // of vanishing in the shadows. It has a second job here that it did not have
+    // on a bright field: the chain ends in an eight-bit buffer, and the void is a
+    // very long, very shallow gradient from the galactic band down to nothing —
+    // exactly the content that steps. This noise is the dither that keeps those
+    // steps off the lattice, which is why it is not simply turned down to
+    // nothing on a frame that is mostly black.
     if (uniforms.grainAmount > 0.0001) {
         let n = fract(sin(dot(input.vUV * vec2f(1920.0, 1080.0)
                 + vec2f(uniforms.time * 91.7, uniforms.time * 43.3),

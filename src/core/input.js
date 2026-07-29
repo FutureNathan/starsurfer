@@ -2,7 +2,7 @@
  * Raw input state. Everything lands in one mutable struct that systems poll —
  * no events fired into game code, no per-frame allocation.
  *
- * Mouse look uses pointer lock, which frees the right button for snow-surf.
+ * Mouse look uses pointer lock, which frees the right button for star-surf.
  */
 
 export const input = {

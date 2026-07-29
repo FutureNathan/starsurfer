@@ -1,25 +1,32 @@
 /**
- * Spell 2 — Ribbon.
+ * Power 2 — Ion Stream.
  *
- * A held, continuous stream of water tracking the hand and the camera aim,
- * describing arcs and figure-eights in the air, and scoring thin curved lines in
- * the snow it passes over.
+ * A held, continuous stream of ionised dust tracking the hand and the camera
+ * aim, describing arcs and figure-eights in the air, and scoring thin glowing
+ * lines into the sea it passes over.
  *
- * The whole character of this spell is in one decision: the ribbon is a *record
+ * The whole character of this power is in one decision: the stream is a *record
  * of where its tip has been*, not a shape recomputed each frame from the current
- * aim. That is what gives it momentum. Swing the camera and the water does not
+ * aim. That is what gives it momentum. Swing the camera and the stream does not
  * swing with it — the tip goes, and the body follows a fraction of a second
  * later, trailing through the arc the tip drew. It is also why letting go does
  * not despawn anything: the tip stops being driven, the tail keeps retiring, and
- * the ribbon eats itself from behind over about three quarters of a second.
+ * the stream eats itself from behind over about three quarters of a second.
  *
- * The figure-eight is not decoration either. Bent water reads as bent when it
+ * The figure-eight is not decoration either. A tether reads as a tether when it
  * doubles back on itself, and a tip driven only by the aim draws a straight
  * line. A slow Lissajous in the camera's own right/up plane means the pattern
  * is always broadside to the viewer however the player is standing.
+ *
+ * It is the only power that is *held*, which is what decides almost everything
+ * about how bright it is allowed to be: it is the one thing here that can sit on
+ * screen for ten seconds, so it runs at the lowest radiance of the five and
+ * declares the dimmest light. A tether at detonation brightness stops being an
+ * event and becomes the exposure.
  */
 
 import { PROFILE_TUBE, STRAND_COLS } from "./waterBody.js";
+import { POWERS } from "./powers.js";
 import { clamp01, clampRange, smooth01, expDamp, transport } from "./bending.js";
 
 /** Live spine samples. Capped by the strand table's width. */
@@ -43,7 +50,7 @@ const THROW_SPEED = 21;
  *
  * Deliberately unhurried. Snapping the velocity onto the aim makes the body a
  * straight line immediately, and a straight line pointing at the horizon is the
- * least legible thing this spell could do. At 5.5 the head takes about a fifth
+ * least legible thing this power could do. At 5.5 the head takes about a fifth
  * of a second to come round, so it leaves on a curve and the tail carries the
  * swing it was in on its way out.
  */
@@ -54,16 +61,16 @@ const RADIUS = 0.205;
 /**
  * How much wider the section is than it is thick.
  *
- * A body of bent water is not a hose. It is a *ribbon* — flattened, twisting as
- * it goes, catching the light on the broad face and vanishing to an edge when
- * it turns side-on. A circular section cannot do any of that: it presents the
- * same silhouette from every direction, which is what makes it read as a
- * cylinder.
+ * A stream of charged dust is not a hose. It is a *ribbon* — flattened along the
+ * field confining it, twisting as it goes, presenting its broad face and then
+ * vanishing to an edge as it turns side-on. A circular section cannot do any of
+ * that: it presents the same silhouette from every direction, which is what
+ * makes it read as a cylinder.
  *
  * The ellipse rolls with the section twist, so the broad face turns over as it
- * travels down the body. That twist is what a stream of water under lateral
- * acceleration actually does, and it is most of the difference between "a tube"
- * and "water being bent".
+ * travels down the body. That roll is what a current under lateral acceleration
+ * actually does, and it is most of the difference between "a tube" and "matter
+ * being steered".
  */
 const SECTION_ASPECT = 1.55;
 
@@ -87,8 +94,8 @@ export class Ribbon {
          * How fast the tip was moving when each sample was laid.
          *
          * This is what gives the body its thickness variation, and it is the one
-         * source of it that is neither periodic nor random. A stream of water
-         * conserves mass: where it was moving fast it is stretched thin, and
+         * source of it that is neither periodic nor random. A current conserves
+         * mass: where it was moving fast it is stretched thin, and
          * where it slowed at the end of a swing it bunches up. Recording the
          * speed at commit time and reading it back as a radius means the ribbon
          * is thick and thin in the places the *motion* put it, so no two passes
@@ -138,7 +145,7 @@ export class Ribbon {
      *
      * That is the difference between throwing the ribbon and the ribbon being
      * thrown. Translating the body rigidly moves a shape; steering the head and
-     * letting the body follow means the water *arcs onto* the target — it leaves
+     * letting the body follow means the stream *arcs onto* the target — it leaves
      * the swing it was in, turns over about a fifth of a second, straightens, and
      * goes. The bend it had when you let go is still in the tail on its way out,
      * because the tail is literally the path the head took.
@@ -162,7 +169,7 @@ export class Ribbon {
         this._burst();
     }
 
-    /** A shear of droplets off the whole body at the moment of release. */
+    /** A shear of grains off the whole body at the moment of release. */
     _burst() {
         const ctx = this.ctx;
         const sp = ctx.spray;
@@ -229,6 +236,7 @@ export class Ribbon {
         }
 
         this._writeStrand();
+        this._light();
         this._score(dt);
         this._shed(dt);
     }
@@ -237,7 +245,7 @@ export class Ribbon {
      * Move the tip.
      *
      * A critically-damped spring toward a target that is itself moving on a slow
-     * figure-eight. The spring is what makes the water heavy: at these rates the
+     * figure-eight. The spring is what makes the stream heavy: at these rates the
      * tip overshoots a fast camera swing and comes back, which is exactly the
      * behaviour a mass on the end of an arc has and exactly what a direct
      * assignment would throw away.
@@ -256,7 +264,7 @@ export class Ribbon {
         // rather than as a shape seen edge-on.
         //
         // The pattern sits high enough that the bottom lobe only *occasionally*
-        // reaches the snow rather than dragging through it every cycle. Scoring
+        // reaches the ground rather than dragging through it every cycle. Scoring
         // on every pass turns a trace into a ploughed furrow, and a ribbon
         // permanently in contact with the surface stops reading as something
         // held in the air.
@@ -383,13 +391,12 @@ export class Ribbon {
             this.tipZ += this._vz * h;
 
             // ---- impact ----------------------------------------------------
-            // A thrown body of water that meets the ground does not keep going.
-            // The first version clamped the head to the surface and let it carry
-            // on, which made a released ribbon slither across the snow like a
-            // snake — the one reading it must not have. It bursts instead: the
-            // head stops dead where it hit, and the rest of the body pours into
-            // that point over the next third of a second while the spray does
-            // the work.
+            // A thrown current that meets the ground does not keep going. The
+            // first version clamped the head to the surface and let it carry on,
+            // which made a released stream slither across the sea like a snake —
+            // the one reading it must not have. It bursts instead: the head stops
+            // dead where it hit, and the rest of the body pours into that point
+            // over the next third of a second while the grains do the work.
             const g = this.ctx.terrain.heightAt(this.tipX, this.tipZ) + 0.05;
             if (!this._splashed && this.tipY < g) {
                 this.tipY = g;
@@ -412,7 +419,7 @@ export class Ribbon {
         // committing samples this only holds the body to a fixed length; once
         // the head slows, the drain outruns it and eats the ribbon.
         //
-        // The rate climbs with time so the spell always terminates: a head that
+        // The rate climbs with time so the power always terminates: a head that
         // coasted for ever would keep feeding the spine for ever.
         this._retireOwed = (this._retireOwed || 0) + dt;
         const rate = this._splashed ? 7.0 : 1 + this._throwT * 0.9;
@@ -426,15 +433,15 @@ export class Ribbon {
     /**
      * The body meets the ground.
      *
-     * Three things at once, and they are all the same event: a fan of droplets
-     * thrown outward and up from the point of contact, a mark in the snow, and
-     * a hard acceleration of the tail drain so the remaining body visibly pours
+     * Three things at once, and they are all the same event: a fan of grains
+     * thrown outward and up from the point of contact, a mark in the sea, and a
+     * hard acceleration of the tail drain so the remaining body visibly pours
      * into the impact rather than hanging in the air above it.
      *
-     * The droplet fan is deliberately *wide and low*. A vertical burst reads as
-     * an explosion; water hitting a surface at a shallow angle mostly goes
-     * sideways, and the ring of it skating outward across the snow is the thing
-     * that says "liquid" rather than "impact effect".
+     * The fan is deliberately *wide and low*. A vertical burst reads as an
+     * explosion; a current meeting a surface at a shallow angle mostly goes
+     * sideways, and the ring of it skating outward across the dust is the thing
+     * that says "this was moving" rather than "impact effect".
      */
     _splash() {
         const ctx = this.ctx;
@@ -459,7 +466,7 @@ export class Ribbon {
                 const a = Math.random() * Math.PI * 2;
                 const ca = Math.cos(a);
                 const sa = Math.sin(a);
-                // Biased downrange: the water keeps most of its momentum.
+                // Biased downrange: the stream keeps most of its momentum.
                 const out = (1.8 + Math.random() * 5.5) * (0.45 + 0.85 * (1 - steep));
                 const vx = ca * out + ix * sp * 0.32;
                 const vz = sa * out + iz * sp * 0.32;
@@ -477,11 +484,20 @@ export class Ribbon {
             }
         }
 
-        // The mark. Shallower than a Bloom crater and much wetter: this is water
-        // landing, so it packs and glazes far more than it displaces.
+        // The mark. Shallower than a Supernova crater and hot for its size: this
+        // is a whole body of charge landing at once, so it packs and burns far
+        // more than it displaces.
+        //
+        // Short of the crater all the same, and that ordering is the only thing
+        // that decides these two numbers. The dust field turns the charge channel
+        // into emission at roughly eighteen linear units per unit of charge, so a
+        // patch is legible from across the field anywhere above about 0.3 and
+        // burns brighter than lit dust above 0.28. A tether touching down must
+        // not leave a brighter scar than a detonation does, so the Supernova's
+        // 0.70 is the ceiling and this sits a third of the way under it.
         ctx.deform.brush(
             x, z, 0.62,
-            0.16, 0.13, 1.0, 0.85,
+            0.16, 0.13, 1.0, 0.58,
             Math.atan2(iz, ix), 1.35, 1.0
         );
         for (let i = 0; i < 3; i++) {
@@ -490,7 +506,7 @@ export class Ribbon {
             ctx.deform.brush(
                 x + Math.cos(a) * d, z + Math.sin(a) * d,
                 0.30 + Math.random() * 0.22,
-                0.05, 0.07, 0.6, 0.5, a, 1.3, 1.0
+                0.05, 0.07, 0.6, 0.34, a, 1.3, 1.0
             );
         }
 
@@ -511,7 +527,7 @@ export class Ribbon {
      * still a record of where it has been.
      *
      * `u` therefore means "distance behind the tip", which is what the radius
-     * profile, the foam and the relief field all key off.
+     * profile, the ignition front and the relief field all key off.
      */
     _writeStrand() {
         const ctx = this.ctx;
@@ -591,17 +607,18 @@ export class Ribbon {
             const stretch = clampRange(1.35 - this._spd[i] * 0.055, 0.55, 1.35);
             const rad = RADIUS * profile * stretch * this.blend;
 
-            // Section aspect. Flattened where it is skimming the snow, on top of
-            // the ribbon's own ellipse: water running over a surface spreads
-            // across it rather than staying round.
+            // Section aspect. Flattened where it is skimming the ground, on top
+            // of the stream's own ellipse: a current running over a surface
+            // spreads across it rather than staying round.
             const clear = y - ctx.terrain.heightAt(x, z);
             const ground = 1 - clamp01((clear - 0.06) / 0.35);
             const flat = SECTION_ASPECT * (1 - 0.72 * ground);
 
-            // Foam at the head, where it is tearing through the air; again
-            // wherever it is dragging on the ground; and again wherever the body
-            // is stretched thin, because that is where a stream tears.
-            const foam = clamp01(
+            // Ignition at the head, where the current is tearing through the
+            // dust; again wherever it is dragging on the ground; and again
+            // wherever the body is stretched thin, because that is where a
+            // current pinches and arcs.
+            const front = clamp01(
                 (1 - smooth01(u / 0.16)) * 0.55 +
                 ground * 0.5 +
                 (1 - stretch) * 0.45
@@ -609,34 +626,64 @@ export class Ribbon {
 
             // The section rolls as it goes. With an elliptical section that
             // turns the broad face over along the body, which is what makes it
-            // read as a ribbon of water rather than as an extruded shape.
+            // read as a steered current rather than as an extruded shape.
             water.column(
                 s, j, x, y, z, rad,
                 rx, ry, rz, twist + dist * 1.35,
-                dist, u, foam, flat
+                dist, u, front, flat
             );
 
             px = x; py = y; pz = z;
         }
 
+        // Very little unignited mass: this is a confined current, not something
+        // torn out of the ground, so almost all of it is light. That is also
+        // what keeps it thin enough to see the galaxy through.
         water.setParams(s, PROFILE_TUBE, 0.14, clamp01(this.blend * 1.3), n);
+
+        // Flat gain, and deliberately. The head is already hotter than the tail
+        // because the ignition-front channel peaks there and the material runs
+        // that whiter and brighter; the tail already dims because there is less
+        // of it to emit. Modulating the gain on top of both would be the same
+        // gradient applied three times.
+        const ion = POWERS.ion;
+        water.setEmissive(s, ion.hue[0], ion.hue[1], ion.hue[2], ion.body);
     }
 
-    // No light, unlike the other four spells. Those are all *events* — a wave
-    // breaking, a charge detonating, ice crystallising, a column of snow torn
-    // off the ground — and light coming out of them reads as the energy doing
-    // the work. Bent water is just water being moved; a blue glow under it says
-    // the water is luminous, which nothing about it suggests. The cost is the
-    // through-scatter demonstration on this spell; the gain is that the ribbon
-    // is lit by the same sun as everything else.
+    /**
+     * The light at the tip.
+     *
+     * A current dense enough to ionise the dust it is made of is a source, and
+     * the one thing this must not do is burn a line into the sea while leaving
+     * the sea either side of it dark. Every other power here declares a light
+     * because it is an *event*; this one declares it because it is a current.
+     *
+     * At the tip rather than at the centroid, because the tip is where the
+     * current is being driven and it is the end that skims the ground — so the
+     * light rakes across the line it is cutting instead of hanging over the
+     * middle of a figure-eight and lighting nothing in particular.
+     *
+     * The dimmest declaration of the five, which is what makes it the right one
+     * to lose: the pool ranks on peak radiance and drops the faintest, so a
+     * Supernova going off next to a held stream takes the slot, which is the
+     * order the eye would have chosen anyway.
+     */
+    _light() {
+        const ion = POWERS.ion;
+        this.ctx.lights.add(
+            this.tipX, this.tipY, this.tipZ,
+            6.5, ion.hue[0], ion.hue[1], ion.hue[2], ion.light * this.blend
+        );
+    }
 
     /**
-     * Thin curved lines scored in the snow.
+     * Thin curved lines scored into the sea.
      *
      * Only where the body is actually low enough to touch, and shallow — a
-     * score, not a trench, so the trace of a figure-eight is still legible on
-     * the ground a minute later. A little ice with it, because water on snow at
-     * this temperature does one thing.
+     * score, not a trench, so the trace of a figure-eight is still legible on the
+     * ground long after. What makes it legible is the charge rather than the
+     * displacement: a current dragged across dust leaves it lit, and the terrain
+     * answers that channel with a glow that decays over a quarter of an hour.
      */
     _score(dt) {
         const ctx = this.ctx;
@@ -662,23 +709,36 @@ export class Ribbon {
             if (clear > 0.34) continue;
 
             const w = 1 - clamp01(clear / 0.34);
+            // Displacement accumulates and so carries `k`, the seconds this
+            // brush is paying for. Charge does not — the simulation takes it as
+            // a max — so scaling it by the frame length would make the line's
+            // brightness a function of the frame rate. It is a plain measure of
+            // how hard the current is pressing on this patch.
+            //
+            // A third of the Supernova's crater. At eighteen linear units of
+            // emission per unit of charge that is still a shade over lit dust, so
+            // the trace reads as a line of light from anywhere on the field — and
+            // it has to stop there, because this is the one power that is *held*
+            // and it can lay this line continuously for ten seconds. A score at
+            // detonation brightness would leave the sea covered in permanent
+            // scribble that outshines everything drawn on top of it.
             f.brush(
                 x, z,
                 0.13,
                 1.15 * k * w * this.blend,   // shallow
-                0.55 * k * w * this.blend,   // a small lip of pushed snow
-                2.6 * k * w * this.blend,    // packed hard by running water
-                1.9 * k * w * this.blend,    // and glazed
+                0.55 * k * w * this.blend,   // a small lip of pushed dust
+                2.6 * k * w * this.blend,    // packed hard by the current
+                0.34 * w * this.blend,       // and left burning
                 0, 1, 0.65
             );
         }
     }
 
     /**
-     * Droplets shed from the trailing edge.
+     * Grains shed from the trailing edge.
      *
-     * Off the *body*, not off the tip: a stream under this much lateral
-     * acceleration loses water all the way along its outside, and emitting only
+     * Off the *body*, not off the tip: a current under this much lateral
+     * acceleration loses mass all the way along its outside, and emitting only
      * at the head puts a comet trail behind a shape that is not a comet.
      */
     _shed(dt) {
@@ -712,7 +772,9 @@ export class Ribbon {
                 vz * 0.5 + (Math.random() - 0.5) * 1.6,
                 0.022 + Math.random() * 0.034,
                 0.55 + Math.random() * 0.75,
-                // Droplets, not powder: hard-edged and ballistic.
+                // Dense shards, not a loose veil: hard-edged, ballistic, and
+                // carrying enough charge of their own to be seen against the
+                // void.
                 1,
                 0.55
             );

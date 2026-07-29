@@ -27,11 +27,11 @@
 // The wake has to sit in the frame as part of the same world.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
-#include<snowShading>
-#include<snowSpellLights>
-#include<snowAtmosphere>
-#include<snowWake>
+#include<starNoise>
+#include<starShading>
+#include<starSpellLights>
+#include<starAtmosphere>
+#include<starWake>
 
 varying vWorld: vec3f;
 varying vNormal: vec3f;
@@ -94,7 +94,7 @@ uniform spellLightPos: array<vec4f, 4>;
 uniform spellLightCol: array<vec4f, 4>;
 uniform spellLightCount: f32;
 
-#include<snowShadowLookup>
+#include<starShadowLookup>
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
@@ -227,7 +227,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // reaches the far end of the ramp at a lower thickness. Multiplied by an
     // albedo that is already violet, that keeps the backlit lip reading as
     // starlight coming *through* a body of dust rather than as a hot rim on it.
-    let sss = snowSubsurface(N, L, V, sun, thickness, uniforms.sssStrength * 0.45, 1.5);
+    let sss = dustSubsurface(N, L, V, sun, thickness, uniforms.sssStrength * 0.45, 1.5);
     let sssTerm = sss * albedo * mix(0.18, 1.0, shadow);
     color += sssTerm;
 
@@ -285,7 +285,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // doing it or it stops reading as the same substance the moment it leaves the
     // ground.
     if (uniforms.glintIntensity > 0.001) {
-        let g = snowGlints(
+        let g = dustGlints(
             world.xz, N, V, L, footprint,
             uniforms.glintIntensity, uniforms.glintGrazing
         );

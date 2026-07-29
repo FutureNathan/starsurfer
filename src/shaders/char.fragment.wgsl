@@ -34,10 +34,10 @@
 // pasted on no matter how good the material is.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
-#include<snowShading>
-#include<snowSpellLights>
-#include<snowAtmosphere>
+#include<starNoise>
+#include<starShading>
+#include<starSpellLights>
+#include<starAtmosphere>
 
 varying vWorld: vec3f;
 varying vNormal: vec3f;
@@ -88,7 +88,7 @@ uniform spellLightPos: array<vec4f, 4>;
 uniform spellLightCol: array<vec4f, 4>;
 uniform spellLightCount: f32;
 
-#include<snowShadowLookup>
+#include<starShadowLookup>
 
 /// Charlie sheen distribution. `roughness` here is the fibre roughness, and it
 /// wants to be high — 0.3 or below turns the rim into a hard line.
@@ -300,14 +300,25 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // --- ambient ------------------------------------------------------------
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
-    // Bounce off the dust. The field reflects about eight per cent, so this is
-    // a tenth of what a bright ground would send back up — but it is not zero,
-    // and it must not be: a figure standing over a field that glows in its own
-    // right is genuinely lit from below, and leaving that out is what makes a
-    // character composited into a scene look cut out of it.
-    let up = clamp(-N.y * 0.5 + 0.5, 0.0, 1.0);
-    irradiance += shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
-                * uniforms.ambientIntensity * 0.12 * up;
+    // Near-field bounce off the dust the figure is standing on.
+    //
+    // The sky LUT's lower hemisphere already carries the sea's solved radiance
+    // and `shIrradiance(N)` integrates the whole sphere, so the sea is mostly
+    // accounted for above. What is not is the few metres directly underfoot —
+    // the groove the board just cut and the mass it just threw, both of which
+    // emit in their own right and neither of which nine SH coefficients can
+    // resolve. That is a real source and it is close, which is why this is not
+    // an albedo-weighted reflection: a glowing sea sends up far more than its
+    // eight per cent reflectance would.
+    //
+    // Sampled downward and weighted onto downward-facing normals, because that
+    // is where light from below actually lands: the underside of the pack, the
+    // chin of the helmet, the boots and the deck. Same direction and same
+    // coefficient as the field and the far range use, so the astronaut is lit
+    // from below by exactly what the dunes are.
+    let bounceUp = clamp(-N.y * 0.5 + 0.5, 0.0, 1.0);
+    irradiance += shIrradiance(vec3f(0.0, -1.0, 0.0), uniforms.shR)
+                * uniforms.ambientIntensity * 0.25 * bounceUp;
 
     color += albedo * INV_PI * irradiance * ao * (1.0 - metallic);
 
@@ -325,8 +336,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // A square root biases hard toward blurry — at the faceplate's roughness of
     // 0.055 it still picks mip 1.4, which smears the galactic band into a
     // gradient and throws away the only thing on the character that is supposed
-    // to be a mirror. At 0.75 the same surface lands near mip 0.7 and reflects
-    // individual stars, while a rough one is barely moved.
+    // to be a mirror. At 0.75 the same surface lands near mip 0.7, where the
+    // 512x256 LUT still resolves the band's dust lanes and the edges of the
+    // emission nebulae, while a rough one is barely moved. Point stars are not
+    // among what it can reflect — they are drawn in the skybox and never enter
+    // the bake — so what makes the faceplate read as a mirror is the structure
+    // in the band, and that structure only survives at a low mip.
     let R = reflect(-V, N);
     let mip = pow(roughness, 0.75) * 6.0;
     let skyRefl = textureSampleLevel(skyLUT, skyLUTSampler, dirToLatLong(R), mip).rgb;

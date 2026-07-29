@@ -6,8 +6,8 @@
  * character drifts forward in frame. FOV widens with speed, the rig banks into
  * carves, and everything eases. Nothing here snaps.
  *
- * Open snow field, so there is no obstacle collision solve — only the ground
- * itself pushes the arm up, which buys a rig that never pops through a drift.
+ * Open dust field, so there is no obstacle collision solve — only the surface
+ * itself pushes the arm up, which buys a rig that never pops through a swell.
  */
 
 import { Vector3, Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector";
@@ -87,7 +87,7 @@ export class CameraRig {
          * @type {((x:number, z:number) => number)|null}
          */
         this.groundAt = null;
-        /** Metres of snow the camera must keep beneath it. */
+        /** Metres of dust the camera must keep beneath it. */
         this.groundClearance = 1.35;
         /** Eased lift currently being applied to stay above the surface. */
         this.groundLift = 0;
@@ -172,14 +172,14 @@ export class CameraRig {
         _desired.addInPlace(_tmp.copyFrom(_right).scaleInPlace(this.shoulder));
         _desired.addInPlace(_tmp.copyFrom(_up).scaleInPlace(0.22));
 
-        // ---- keep the arm out of the snow --------------------------------
+        // ---- keep the arm out of the dust --------------------------------
         // The lift rises quickly and relaxes slowly: snapping down the instant a
         // crest passes under the arm reads as a jolt, while being slow to rise
-        // means a frame or two actually inside the snow.
+        // means a frame or two actually inside the dust.
         if (this.groundAt) {
             // Worst case over the whole arm, not just the eye: a crest between
             // the player and the camera can fill the view while the eye itself
-            // is legally above the snow.
+            // is legally above the surface.
             let need = 0;
             for (let i = 0; i <= ARM_SAMPLES; i++) {
                 const t = i / ARM_SAMPLES;

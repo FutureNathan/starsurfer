@@ -1,7 +1,7 @@
 /**
- * Shared bending primitives.
+ * Shared motion primitives.
  *
- * The five spells differ in what they do and agree on how they move. This is the
+ * The five powers differ in what they do and agree on how they move. This is the
  * "how": easing that never snaps, a frame that never flips, and the two queries
  * against the world every one of them needs.
  *
@@ -27,7 +27,7 @@ export function smooth01(t) {
  * A bell that is zero at both ends and one in the middle, with zero slope
  * everywhere it matters.
  *
- * Used for every amplitude envelope in the spells. A linear ramp leaves a
+ * Used for every amplitude envelope in the powers. A linear ramp leaves a
  * visible corner at both ends of every arc, and the grammar here is "no instant
  * spawns, no instant despawns".
  */
@@ -46,7 +46,7 @@ export function expDamp(cur, target, rate, dt) {
  * Rotate a reference vector by the minimal rotation taking `t0` to `t1`.
  *
  * This is what keeps a swept section from spinning as its spine curves. The
- * obvious alternatives both fail on the shapes these spells draw:
+ * obvious alternatives both fail on the shapes these powers draw:
  *
  *   Frenet frame       undefined wherever the spine is momentarily straight,
  *                      and it flips through 180 degrees at every inflection —
@@ -98,15 +98,15 @@ export function transport(out, o, rx, ry, rz, t0x, t0y, t0z, t1x, t1y, t1z) {
 }
 
 /**
- * Where a ray meets the snow.
+ * Where a ray meets the sea.
  *
  * A coarse march followed by a bisection refine, against the CPU height mirror.
  * Eight refinement steps put the hit inside a centimetre, which is finer than
  * anything downstream of this can express.
  *
  * The march deliberately does not stop at the first sample below the surface if
- * the ray *starts* below it — a targeting ray fired from inside a drift should
- * come out of the drift and hit the far side, not report a hit at the origin.
+ * the ray *starts* below it — a targeting ray fired from inside a swell should
+ * come out of the swell and hit the far side, not report a hit at the origin.
  *
  * @param {{heightAt(x:number,z:number):number}} terrain
  * @returns {number} distance along the ray, or -1 for a miss

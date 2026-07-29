@@ -1,4 +1,4 @@
-// Derives everything the snow material needs to know about the macro landform
+// Derives everything the dust material needs to know about the macro landform
 // that isn't the height itself, by differentiating the *baked* height texture
 // rather than the analytic function.
 //
@@ -9,7 +9,7 @@
 //
 // Output channels:
 //   R,G  dH/dx, dH/dz in metres per metre
-//   B    rock mask, 0 = snow, 1 = bare rock
+//   B    shard mask, 0 = settled dust, 1 = bare rock
 //   A    exposure: 1 on scoured crests, 0 in sheltered hollows
 
 varying vUV: vec2f;

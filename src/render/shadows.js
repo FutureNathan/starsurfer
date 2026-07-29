@@ -13,10 +13,18 @@
  * so PCSS can run a real blocker search. A hardware comparison sampler only
  * ever returns a pre-thresholded result, which a blocker search cannot use.
  *
+ * One distant star, so one hard shadow. There is no second light and no sky
+ * dome to soften the terminator — what fills the shadowed side is the dust's
+ * own emission and a nebula an order of magnitude below the direct beam. That
+ * makes the shadow the strongest single form cue in the frame, and it is why
+ * the softness stays where it is rather than being opened up to compensate for
+ * a dark scene: blurring the one cue the geometry has does not brighten it, it
+ * just removes it.
+ *
  * Three cascades, not four. The fourth would cover 320 m and beyond, where the
- * aerial perspective has already compressed contrast to the point that no
- * shadow in it is legible — it would be four milliseconds of shadow map nobody
- * can see.
+ * nebula the field is drifting through has already compressed contrast to the
+ * point that no shadow in it is legible — it would be four milliseconds of
+ * shadow map nobody can see.
  */
 
 import { Vector3, Vector4, Matrix } from "@babylonjs/core/Maths/math.vector";
@@ -66,7 +74,7 @@ export class ShadowSystem {
         this.materials = [];
         /** @type {Matrix[]} */
         this.matrices = [];
-        /** Flat array of 16*CASCADE_COUNT floats for the snow material UBO. */
+        /** Flat array of 16*CASCADE_COUNT floats for the dust material UBO. */
         this.matrixData = new Float32Array(16 * CASCADE_COUNT);
         this.splits = new Float32Array(4);
         for (let i = 0; i < CASCADE_COUNT; i++) this.splits[i] = SPLITS[i];
@@ -141,9 +149,9 @@ export class ShadowSystem {
      * any mid-frame uniform-buffer juggling.
      *
      * `cascades` limits how far out a caster is drawn. The terrain needs all
-     * three; a two-metre character does not — cascade 2 covers 330 m at 32 cm
-     * per texel, where the whole figure is two texels wide and its shadow is a
-     * grey smudge nobody can distinguish from the dune it is standing on. Skipping
+     * three; a two-metre figure does not — cascade 2 covers 330 m at 32 cm
+     * per texel, where the whole astronaut is two texels wide and its shadow is
+     * a smudge nobody can distinguish from the swell it is standing on. Skipping
      * it saves a full re-skin and re-solve of the cloth grid per frame.
      *
      * @param {import("@babylonjs/core/Meshes/mesh").Mesh} mesh
@@ -163,9 +171,9 @@ export class ShadowSystem {
     }
 
     /**
-     * Refit every cascade to the current camera frustum and sun direction.
+     * Refit every cascade to the current camera frustum and star direction.
      * @param {import("@babylonjs/core/Cameras/camera").Camera} camera
-     * @param {Vector3} sunDir unit vector pointing *toward* the sun
+     * @param {Vector3} sunDir unit vector pointing *toward* the star
      */
     update(camera, sunDir) {
         this.lightDir.copyFrom(sunDir).scaleInPlace(-1).normalize();
@@ -247,13 +255,13 @@ export class ShadowSystem {
         const q = Math.pow(2, Math.ceil(Math.log2(radius)) - 8);
         radius = Math.ceil(radius / q) * q;
 
-        // Degenerate up-vector guard for a sun near the zenith.
+        // Degenerate up-vector guard for a star near the zenith.
         if (Math.abs(this.lightDir.y) > 0.995) _up.set(0, 0, 1);
         else _up.set(0, 1, 0);
 
         // ---- how deep the light volume actually has to be ------------------
         //
-        // Solved rather than budgeted. At a grazing sun the ground lies almost
+        // Solved rather than budgeted. At a grazing star the ground lies almost
         // *along* the light: it gains cot(elevation) metres of light-space depth
         // per metre travelled across the light's view, which at 13 degrees is
         // 4.33. Across cascade 2 that is thousands of metres of depth, so any
@@ -268,7 +276,7 @@ export class ShadowSystem {
         //
         // Rearranged for depth and evaluated at the four combinations of the
         // box's Y extent and the terrain's height extent, that gives the exact
-        // range of light-space depth the snow can occupy inside this cascade.
+        // range of light-space depth the dust can occupy inside this cascade.
         Vector3.CrossToRef(_up, this.lightDir, _right);
         _right.normalize();
         Vector3.CrossToRef(this.lightDir, _right, _lup);
@@ -277,8 +285,8 @@ export class ShadowSystem {
         // Quantise the cascade centre onto the shadow map's own texel lattice,
         // in world space, along the light's two lateral axes. Without it the map
         // resamples every frame and every shadow edge crawls — which TAA smears
-        // rather than fixes, and which on this content shows up as the sastrugi's
-        // own self-shadowing shimmering as the camera moves.
+        // rather than fixes, and which on this content shows up as the ripple
+        // field's own self-shadowing shimmering as the camera moves.
         //
         // This has to happen here, in world space, *before* the light view matrix
         // is built. Snapping afterwards by projecting `_center` through the matrix
@@ -297,7 +305,7 @@ export class ShadowSystem {
         );
 
         // Grazing enough and this runs away — cot(0.5 deg) is 114. Clamped to
-        // 2 degrees, past which the sun carries no useful energy anyway and the
+        // 2 degrees, past which the star carries no useful energy anyway and the
         // whole field is in shadow regardless.
         const fy = Math.min(this.lightDir.y, -0.0349);
         const relief = radius + this.texelWorldPad;
@@ -321,7 +329,7 @@ export class ShadowSystem {
         Matrix.LookAtLHToRef(_eye, _center, _up, _lightView);
 
         // Both ends now come from the solve above, so the whole terrain inside
-        // this cascade is inside the volume — at any sun elevation.
+        // this cascade is inside the volume — at any star elevation.
         const near = MARGIN * 0.5;
         const far = backoff + gMax + MARGIN;
 
@@ -329,7 +337,7 @@ export class ShadowSystem {
         // defaults to false, which maps view depth to NDC z in [-1, 1] — the
         // OpenGL convention. WebGPU clips at [0, 1], so everything at z < 0
         // would be thrown away by the rasteriser: half the volume, and the half
-        // nearest the sun, which is the half that casts.
+        // nearest the star, which is the half that casts.
         //
         // Centred on light-space zero, which is where `_lightView` puts the
         // (already snapped) cascade centre.

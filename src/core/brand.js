@@ -64,8 +64,17 @@ export const HEX = {
     accent: "#ffc46b",
     /** Starlight white, very slightly warm so it sits with the gold. */
     star: "#fff6e0",
-    /** EVA suit white — never pure white, or it blows out against the void. */
-    suit: "#e6e2f0",
+    /**
+     * EVA suit white, and deliberately several steps down from white.
+     *
+     * Beta cloth really is about 0.8 reflectance, and at that value the suit
+     * lands two and a half stops above the ground it stands on — a ratio no
+     * display holds, so the whole figure resolves to one flat clipped white and
+     * loses every bit of form the lofting put into it. Dropping it to ~0.55
+     * linear buys back the top of the AgX curve, and it is the honest answer
+     * anyway: a suit working a dust sea does not stay clean.
+     */
+    suit: "#c4bfd2",
     /** Muted violet-grey for secondary UI text. */
     dim: "#7a6f9e",
     /** Suit panels and soft goods, a step down from the shell. */

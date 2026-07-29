@@ -52,10 +52,12 @@ export const BONE_COUNT = 19;
 
 /**
  * Bind pose, nine floats per bone: joint position, bone direction, front
- * reference. A 1.79 m figure with the pelvis at 0.95 — deliberately a little
+ * reference. A 1.84 m figure with the pelvis at 0.95 — deliberately a little
  * long in the leg and narrow in the shoulder, because the silhouette is read at
  * fifteen metres inside a pressure suit and slightly heroic proportions survive
- * that better than accurate ones.
+ * that better than accurate ones. The overall height is not in this table: the
+ * skeleton stops at the head joint at 1.55 and the last 26 cm is the helmet
+ * bubble `build.js` hangs off it, so retuning `HELM_C` or `HELM_R` moves it.
  */
 const BIND = new Float32Array([
     /* ROOT    */ 0, 0.95, 0, 0, 1, 0, 0, 0, 1,
@@ -97,17 +99,22 @@ const HIP_HEIGHT = 0.95;
 /**
  * Board geometry the pose has to agree with, in bind metres.
  *
- * The deck's half-thickness at the stance and the drop from the ankle joint to
- * the sole of the boot are both fixed by `build.js`; restating them here is what
- * lets the surf stance put the soles *on* the deck rather than an inch through
- * it, and it is the only coupling between the two files that is not a bone.
+ * Both numbers are fixed by `build.js`; restating them here is what lets the
+ * surf stance put the soles *on* the deck rather than an inch through it, and it
+ * is the only coupling between the two files that is not a bone.
  */
+/** Half the deck's thickness at the stance — the widest ring of the board loft. */
 const BOARD_HALF_T = 0.033;
+/**
+ * How far the boot's sole hangs below the ankle *beyond* the 9 cm `_poseLeg`
+ * already allows for. The boot's lowest ring reaches 11.2 cm under the foot
+ * joint, so this is the remainder; move the boot rings and this moves with them.
+ */
 const BOOT_SOLE = 0.022;
 /**
- * How far above the dust the soles stand while surfing: the board's full
- * thickness plus the sole drop, less four millimetres so the boots bite into
- * the deck instead of hovering over it.
+ * How far above the dust the target sole height sits while surfing: the board's
+ * full thickness plus that extra sole drop, less four millimetres so the boots
+ * bite into the deck instead of hovering over it.
  */
 const BOARD_STAND = 2 * BOARD_HALF_T + BOOT_SOLE - 0.004;
 
@@ -359,10 +366,12 @@ export class Figure {
         const headX = neckX + cUx * 0.09, headY = neckY + cUy * 0.09, headZ = neckZ + cUz * 0.09;
         this._setBone(B_HEAD, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
 
-        // The helmet is bolted to a metal disconnect ring, so it does not lag
-        // the way a hood did — a rigid shell that slides around the skull during
-        // a carve reads as broken. All the bearing has is about a frame of
-        // compliance, which is what these rates come to at sixty hertz.
+        // The helmet is bolted to a metal disconnect ring, so it tracks the head
+        // essentially rigidly. Soft headwear wants a few frames of lag — that is
+        // what makes it read as fabric — but a rigid shell that slides around
+        // the skull during a carve just reads as broken. All the bearing has is
+        // about a frame of compliance, which is what these rates come to at
+        // sixty hertz, and it is enough to keep the helmet from feeling welded.
         this.helmetYaw = damp(this.helmetYaw, ch.facing + chestTwist + this.headYaw, 60, h);
         this.helmetPitch = damp(this.helmetPitch, chestPitch + this.headPitch, 60, h);
         composeBasis(this.helmetYaw, this.helmetPitch, this.roll * 0.5);
@@ -481,9 +490,10 @@ export class Figure {
         // Surfing: both feet ride the board. Blended in, never snapped.
         if (surf > 0.001) {
             for (let f = 0; f < 2; f++) {
-                // A surf stance, not a snowboard one: the feet run down the
-                // stringer, the left forward and the right back, only a hand's
-                // width apart across the board. `STANCE_ALONG` is what decides
+                // A surf stance: the feet run *down* the stringer, the left
+                // forward and the right back, only a hand's width apart across
+                // the board — not planted across it at either end the way a
+                // strapped-in board is ridden. `STANCE_ALONG` is what decides
                 // how long the deck has to be, and `STANCE_LATERAL` plus the
                 // boot's own half-width is what decides how wide.
                 const lateral = f === 0 ? -STANCE_LATERAL : STANCE_LATERAL;
@@ -615,6 +625,13 @@ export class Figure {
         // Lerped, then handed to `setFrameFromDir`, which re-normalises the
         // direction and re-orthogonalises the reference against it — so an
         // interpolated pair does not have to be orthonormal on the way through.
+        //
+        // The one thing it does have to avoid is antiparallel endpoints, which
+        // would collapse to a zero-length axis half way along the blend. The two
+        // attitudes are about a hundred and ten degrees apart, and swept over
+        // every facing, pitch, carve and slope the shortest interpolated axis
+        // comes to 0.26 — far above the degenerate case. Re-check that if the
+        // stowed attitude is ever retuned toward the direction of travel.
         this._setBone(
             B_BOARD,
             sPx + (gx - sPx) * w,
@@ -663,9 +680,9 @@ export class Figure {
 
             // ---- cast target: both hands up and out along the aim -----------
             //
-            // A wide base, the leading hand extended along the flow and the
+            // A wide base, the leading hand extended along the aim and the
             // trailing hand drawn back across the body, so the arms describe the
-            // arc the water is about to take. The right hand leads because that
+            // arc the cast is about to take. The right hand leads because that
             // is the hand the ribbon is emitted from.
             //
             // Blended, not switched, and it composes with the walk swing rather

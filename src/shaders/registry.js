@@ -2,7 +2,7 @@
  * Registers every WGSL source into Babylon's shader store.
  *
  * Shared libraries go in as `#include<...>` fragments so the height bake and the
- * runtime snow material compile literally the same text — the terrain would pull
+ * runtime dust material compile literally the same text — the terrain would pull
  * apart at the seams if they ever drifted. Whole shaders go in under the names
  * Babylon expects: `<name>VertexShader` and `<name>PixelShader`.
  *
@@ -32,8 +32,8 @@ import detailBakeFrag from "./detailBake.fragment.wgsl?raw";
 import skyBakeFrag from "./skyBake.fragment.wgsl?raw";
 import deformSimFrag from "./deformSim.fragment.wgsl?raw";
 
-import snowVert from "./snow.vertex.wgsl?raw";
-import snowFrag from "./snow.fragment.wgsl?raw";
+import dustVert from "./dust.vertex.wgsl?raw";
+import dustFrag from "./dust.fragment.wgsl?raw";
 import depthVert from "./terrainDepth.vertex.wgsl?raw";
 import depthFrag from "./terrainDepth.fragment.wgsl?raw";
 import skyVert from "./sky.vertex.wgsl?raw";
@@ -68,20 +68,20 @@ import crystalPrepassVert from "./crystalPrepass.vertex.wgsl?raw";
 
 
 const INCLUDES = {
-    snowNoise: noiseLib,
-    snowTerrain: terrainLib,
-    snowShading: shadingLib,
-    snowShadowLookup: shadowLookupLib,
-    snowAtmosphere: atmosphereLib,
-    snowClipmap: clipmapLib,
-    snowDeform: deformLib,
-    snowCharSkin: charSkinLib,
-    snowWake: wakeLib,
-    snowSpellLights: spellLightsLib,
-    snowWater: waterLib,
-    snowCrystal: crystalLib,
-    snowPostCommon: postCommonLib,
-    snowRidge: ridgeLib,
+    starNoise: noiseLib,
+    starTerrain: terrainLib,
+    starShading: shadingLib,
+    starShadowLookup: shadowLookupLib,
+    starAtmosphere: atmosphereLib,
+    starClipmap: clipmapLib,
+    starDeform: deformLib,
+    starCharSkin: charSkinLib,
+    starWake: wakeLib,
+    starSpellLights: spellLightsLib,
+    starWater: waterLib,
+    starCrystal: crystalLib,
+    starPostCommon: postCommonLib,
+    starRidge: ridgeLib,
 };
 
 const SHADERS = {
@@ -91,8 +91,8 @@ const SHADERS = {
     skyBakePixelShader: skyBakeFrag,
     deformSimPixelShader: deformSimFrag,
 
-    snowVertexShader: snowVert,
-    snowPixelShader: snowFrag,
+    dustVertexShader: dustVert,
+    dustPixelShader: dustFrag,
 
     terrainDepthVertexShader: depthVert,
     terrainDepthPixelShader: depthFrag,

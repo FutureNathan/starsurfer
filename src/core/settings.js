@@ -15,10 +15,10 @@ export const S = {
     resolutionScale: 1.0,
 
     // ------------------------------------------------------- the nearby star
-    // The scene is lit by one distant star. Its key names are unchanged from
-    // the demo this grew out of — `sunX` throughout the code and the shaders
-    // means "the star", and renaming it would touch every WGSL uniform block
-    // for no visual gain.
+    // One distant star lights the whole scene. `sun` throughout the code and the
+    // shaders means this star: it is the name every WGSL uniform block already
+    // uses for "the one directional source", and it is not worth touching all of
+    // them to say the same thing differently.
     sunAzimuth: 118, // degrees, bearing of the star
     // Low enough for long raking shadows across the dust swells. In vacuum
     // there is no air mass to redden the beam, so the elevation buys geometry
@@ -86,7 +86,7 @@ export const S = {
     refillRate: 1.0,
     deformResolution: 2048,
 
-    // ------------------------------------------------------------- snow-surf
+    // ----------------------------------------------------------- star-surf
     /** Height of the breaking wall thrown by a carve, as a multiple of 1.45 m. */
     wakeHeight: 1.0,
     /** Density of the plume shed off the wake's lip. */
@@ -95,17 +95,22 @@ export const S = {
     windStreaks: true,
     streakStrength: 1.0,
 
-    // ---------------------------------------------------------------- spells
+    // ---------------------------------------------------------------- powers
+    // `spell` in a key name means one of the five. The name is read by a dozen
+    // files and appears in no user-facing string — the overlay labels these
+    // "Powers" — so it stays.
     /** Master toggle. Off cancels everything in flight and hides both meshes. */
     showSpells: true,
-    /** Brightness of the dynamic lights the spells emit. */
+    /** Brightness of the dynamic lights the powers emit. */
     spellLight: 1.0,
-    /** Density of the spray every spell throws. */
+    /** Density of the ejecta every power throws. */
     spellSpray: 1.0,
     /**
-     * Artistic scale on the water's absorption path — glacial melt at one end,
-     * tap water at the other. The right value depends on the sun elevation, so
-     * it is a slider rather than a constant.
+     * Artistic scale on the plasma's absorption path — how much of the body's
+     * own colour a ray picks up crossing it. Thin and near-transparent at one
+     * end, dense and saturated at the other. The right value depends on how
+     * bright the backdrop behind the body is, so it is a slider rather than a
+     * constant.
      */
     waterDepthTint: 1.0,
 
@@ -117,18 +122,29 @@ export const S = {
     grain: true,
     sharpen: true,
     tonemap: "agx", // "agx" | "aces" | "none"
-    // Measured, not guessed. Dust lit by the star sits near 5 in linear — a
-    // 0.085-albedo surface under a source scaled to compensate for exactly that
-    // — and the galactic band's core reaches about 6. This exposure puts both a
-    // little below where sunlit snow used to sit, which is the point: it is a
-    // night scene, and the brightest thing in the frame should be the galaxy
-    // rather than the ground.
+    // Solved against the AgX curve rather than dialled in. The dynamic range in
+    // frame is enormous — the void between stars sits four orders of magnitude
+    // below the star's own disc — and the eye is a poor judge at that spread.
     //
-    // The ceiling is the AgX shoulder. Push much past this and the lit faces of
-    // the swells, the wake's crest and the band all arrive in the region where
-    // the curve's slope collapses, and they resolve to the same flat value —
-    // which costs exactly the separation the whole look depends on.
-    exposure: 0.16,
+    // Feeding the measured scene radiances through the whole chain (exposure,
+    // the contrast power, AgX, its EOTF, the sRGB encode) puts the frame here,
+    // in 8-bit output levels:
+    //
+    //     void between stars        0        nebula cloud            49
+    //     dust in shadow           91        dust lit by the star   175
+    //     galactic band core      184        wake crest, full carve 206
+    //     brightest thrown grain  236        sunlit suit            243
+    //
+    // Which is the ladder this scene wants: an actually-black void, a violet
+    // shadow that is dark but never crushed, and the suit as the brightest thing
+    // in frame without touching the clip.
+    //
+    // The ceiling is the AgX shoulder, and it is closer than it looks — a stop
+    // over this and the band, the wake crest and the suit all land in the region
+    // where the curve's slope collapses and resolve to the same flat white,
+    // which costs exactly the separation the whole look rests on. A stop under
+    // and the nebula stops reading as a light source.
+    exposure: 0.09,
     contrast: 1.14,
     bloomStrength: 0.22,
     grainStrength: 0.022,

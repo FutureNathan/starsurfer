@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
-// snowDeform — the read side of the terrain state buffer.
+// starDeform — the read side of the terrain state buffer.
 //
-// Three consumers sample this: the snow vertex shader (displacement), the shadow
-// depth vertex shader (so carved snow casts its own shadow), and the snow
+// Three consumers sample this: the dust vertex shader (displacement), the shadow
+// depth vertex shader (so a carved trail casts its own shadow), and the dust
 // fragment shader (normals and surface state). They must agree exactly — if the
 // depth pass placed a vertex a centimetre off the beauty pass, the trail would
 // acne against its own floor. Hence one include rather than three copies.
@@ -34,7 +34,7 @@ fn deformFalloff(worldXZ: vec2f, centre: vec2f, size: f32) -> f32 {
 /// The filter is not optional polish — without it the surf groove tears itself
 /// into a row of triangular peaks. The clipmap rings are centred on the *camera*,
 /// so orbiting or zooming slides a ring boundary across a stationary trail: the
-/// same patch of snow gets re-sampled from 0.085 m spacing to 0.34 m, and a
+/// same patch of ground gets re-sampled from 0.085 m spacing to 0.34 m, and a
 /// 0.6 m-wide groove with a narrower berm crest ends up with less than one vertex
 /// across its ridge. Each triangle then spans the whole berm and the ridge
 /// collapses into facets that swim as the camera moves. Fading the displacement

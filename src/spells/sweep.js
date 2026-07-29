@@ -1,24 +1,29 @@
 /**
- * Spell 1 — Sweep.
+ * Power 1 — Solar Flare.
  *
- * A crescent of slush rises out of the ground ahead of the player and runs
- * outward, ploughing a channel and throwing berms to either side.
+ * A crescent of ignited dust rises out of the ground ahead of the player and
+ * runs outward, ploughing a channel and throwing glowing berms to either side.
  *
  * It is the wake's cross-section on a different spine, and that is not a
- * shortcut. A carve's wall of snow and a bent wave of slush are the same
- * object — mass thrown out of the ground and held up by its own momentum — so
- * they are drawn by the same section integral out of `lib/wake.wgsl`, reached
- * through the water material's sheet profile. What differs is what the spine is:
- * the wake's is a record of where the board went, and this one is an arc that
- * grows outward from where the spell was cast.
+ * shortcut. A carve's wall of dust and a flare front are the same object — mass
+ * thrown out of the ground and held up by its own momentum — so they are drawn
+ * by the same section integral out of `lib/wake.wgsl`, reached through the body
+ * material's sheet profile. What differs is what the spine is: the wake's is a
+ * record of where the board went, and this one is an arc that grows outward from
+ * where the power was cast.
+ *
+ * It also differs in temperature, and that is the whole reskin. The board throws
+ * dust that is merely broken; this throws dust that has been lit, so it burns
+ * gold above the wake's own crest and leaves the channel behind it charged.
  *
  * The channel is not a decal chased after the fact. Each frame the live crest
  * writes brushes into the terrain state buffer at the position the mesh is
- * actually drawing, so the mark and the wave cannot disagree — the same rule the
+ * actually drawing, so the mark and the front cannot disagree — the same rule the
  * plume follows in the surf wake.
  */
 
 import { PROFILE_SHEET } from "./waterBody.js";
+import { POWERS } from "./powers.js";
 import { clamp01, smooth01, bell } from "./bending.js";
 
 /** Spine samples across the crescent. */
@@ -26,7 +31,7 @@ const COLS = 48;
 
 /**
  * Curvature radius of the crescent, metres — *fixed*, and this is the whole
- * shape of the spell.
+ * shape of the power.
  *
  * Not the distance travelled. Using that as the radius makes the wave an arc of
  * a circle centred on the caster, and ten metres out the crescent is twenty
@@ -46,7 +51,7 @@ const LIFE = 2.4;
  *
  * Taller than the character, on the same reasoning as the surf wake's 2.4 m: at
  * the distance this demo actually frames from, a crest the height of the relief
- * the terrain already has does not read as thrown mass, it reads as a dune.
+ * the terrain already has does not read as thrown mass, it reads as a swell.
  */
 const PEAK = 2.15;
 
@@ -161,33 +166,41 @@ export class Sweep {
 
             // The crest curls harder in the middle, where the mass is. Pushed
             // most of the way to the section integral's plunging limit: at the
-            // low end the sheet is a bank, and a bank lying on a dune field is
-            // indistinguishable from the dune field. It has to hook over its own
-            // face to read as a wave at all.
+            // low end the sheet is a bank, and a bank lying on the sea's own
+            // swells is indistinguishable from them. It has to hook over its own
+            // face to read as thrown mass at all.
             const curl = 0.48 + 0.47 * bell(u) * (0.45 + 0.55 * rise);
-            // Foam along the whole leading edge, heaviest at the centre.
-            const foam = 0.30 + 0.45 * bell(u);
+            // Ignition along the whole leading edge, hottest at the centre: this
+            // is the face that is doing the tearing, so it is the face where the
+            // grains are being broken and lit.
+            const front = 0.30 + 0.45 * bell(u);
 
             water.column(
                 s, c, x, y, z, amp,
                 rx, 0, rz, curl,
-                this.reach + u * 2.0, life01, foam, 1
+                this.reach + u * 2.0, life01, front, 1
             );
 
             if (c === (COLS >> 1)) { px = x; py = y; pz = z; }
         }
 
-        // Slush: mostly water, with enough entrained snow to be opaque at the
-        // crest. Below about 0.4 it stops reading as slush and starts reading as
-        // a glass sculpture; above about 0.6 the water disappears entirely and
-        // it is just a snow berm that happens to be moving.
+        // Half the crescent is still unignited mass. Below about 0.4 the front
+        // stops reading as something torn out of the ground and starts reading as
+        // a sheet of light lying on it; above about 0.6 the plasma disappears
+        // behind the dust and it is a berm that happens to be moving.
         water.setParams(s, PROFILE_SHEET, 0.48, clamp01(env * 1.4), COLS);
+
+        // Ignition tracks the envelope rather than the shape: the arc comes up
+        // burning, holds while it is being driven, and goes out as it collapses.
+        // The mesh is the same either way — what changes is the temperature.
+        const flare = POWERS.flare;
+        water.setEmissive(s, flare.hue[0], flare.hue[1], flare.hue[2], flare.body * env);
 
         // Light rides the middle of the crest, low, so it grazes the channel it
         // is cutting rather than lighting it from above.
         ctx.lights.add(
             px, py + height * 0.55, pz,
-            9.5, 0.42, 0.74, 1.0, 13.0 * env
+            9.5, flare.hue[0], flare.hue[1], flare.hue[2], flare.light * env
         );
 
         this._plough(travelled, env);
@@ -243,13 +256,19 @@ export class Sweep {
             // continuous rather than a row of round pits. Yaw is the tangent.
             const yaw = Math.atan2(rz, -rx);
 
+            // Depth, berm and compression accumulate, so they carry `k` — the
+            // metres of advance this rank is paying for. Charge does not: the
+            // simulation takes it as a *max*, so a value scaled by the frame's
+            // own length would leave a channel whose brightness depended on the
+            // frame rate. It is the one argument here that must be a plain
+            // measure of how hot this stretch of ground got.
             f.brush(
                 x, z,
                 0.34,
                 0.95 * k * env * w,   // channel
                 0.62 * k * env * w,   // berms at the rim
-                0.55 * k * env * w,   // slush packs what it runs over
-                0.16 * k * env * w,   // and refreezes a little of it
+                0.55 * k * env * w,   // the front packs what it runs over
+                0.38 * env * w,       // and leaves it burning
                 yaw,
                 2.2,
                 0.9
@@ -257,7 +276,7 @@ export class Sweep {
         }
     }
 
-    /** Spray off the crest — thrown outward and back over the top. */
+    /** Grains off the crest — thrown outward and back over the top. */
     _spray(travelled, env, height) {
         const ctx = this.ctx;
         const sp = ctx.spray;

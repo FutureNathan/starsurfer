@@ -1,18 +1,18 @@
 // -----------------------------------------------------------------------------
-// snowWater — the shape of a bent water body.
+// starWater — the shape of a power's body.
 //
-// Every spell that moves a coherent mass of water is one or more *strands*: a
-// swept surface along a spine, exactly the construction the snow-surf wake uses,
-// for exactly the same reason. Nothing is generated at runtime; the mesh is a
-// static lattice of (column, ring, strand) and the vertex shader places every
-// vertex from a small data texture. A ribbon nine metres long and a ribbon two
+// Every power that moves a coherent mass of ignited dust is one or more
+// *strands*: a swept surface along a spine, exactly the construction the wake
+// uses, for exactly the same reason. Nothing is generated at runtime; the mesh is
+// a static lattice of (column, ring, strand) and the vertex shader places every
+// vertex from a small data texture. A stream nine metres long and a stream two
 // metres long cost the same buffer and the same upload.
 //
 // Two properties this construction exists to produce:
 //
-//   * an unbroken arc with mass. Bent water is never a sheet of particles — it
-//     is a body, with a leading edge, a trailing edge and a thickness you can
-//     see through.
+//   * an unbroken arc with mass. A power's body is never a sheet of particles —
+//     it is a volume, with a leading edge, a trailing edge and a thickness the
+//     shading solves light through.
 //   * momentum. It lags the hand that threw it and keeps going after the hand
 //     stops, which falls out of the spine being a *record of where the head has
 //     been* rather than a shape recomputed each frame.
@@ -21,21 +21,22 @@
 //
 //   row 0   (x, y, z, radius m)
 //   row 1   (rightX, rightY, rightZ, twist)  reference frame, parallel-transported
-//   row 2   (distance along m, age 0..1, foam 0..1, flatten)
+//   row 2   (distance along m, age 0..1, ignition front 0..1, flatten)
 //
 // `flatten` squashes the section vertically, which is what lets one strand be a
 // round airborne tube at its head and a wide shallow sheet where it lies over the
-// snow, with no second code path.
+// ground, with no second code path.
 //
-// Per-strand constants arrive as a uniform rather than in the texture, since
-// they do not vary along the spine:
+// Per-strand constants arrive as uniforms rather than in the texture, since they
+// do not vary along the spine:
 //
-//   strandParams[s] = (profile, milkiness, alpha, column count)
+//   strandParams[s]   = (profile, entrained dust, alpha, column count)
+//   strandEmissive[s] = (normalised hue, peak radiance)
 //
 // profile 0 is a closed tube, profile 1 is an open breaking sheet borrowed whole
-// from the wake's own section integral — a crescent wave of slush and a carve's
-// wall of snow are the same object at different scales, and there is no reason
-// for two descriptions of it.
+// from the wake's own section integral — a flare front and a carve's wall of dust
+// are the same object at different temperatures, and there is no reason for two
+// descriptions of it.
 // -----------------------------------------------------------------------------
 
 /// Fetch one texel of the strand table.
@@ -78,10 +79,10 @@ fn waterRow(tex: texture_2d<f32>, row: i32, count: f32, u: f32) -> vec4f {
 
 /// Spine position, Catmull-Rom through the samples.
 ///
-/// A held ribbon is drawn as an arc through the air and read at two metres, so
+/// A held stream is drawn as an arc through the air and read at two metres, so
 /// the piecewise-linear spine a linear blend gives is not good enough: the
-/// tangent is piecewise constant, and the specular highlight running along the
-/// top of the tube bands at exactly the sample pitch.
+/// tangent is piecewise constant, and the highlight running along the top of the
+/// tube bands at exactly the sample pitch.
 fn waterSpine(tex: texture_2d<f32>, base: i32, count: f32, u: f32) -> vec3f {
     let n = max(count, 2.0);
     let f = clamp(u, 0.0, 1.0) * (n - 1.0);
@@ -137,9 +138,9 @@ fn waterSpineTangent(tex: texture_2d<f32>, base: i32, count: f32, u: f32) -> vec
     return select(vec3f(0.0, 1.0, 0.0), d / l, l > 1e-7);
 }
 
-/// Surface relief on the body of the water.
+/// Surface relief on the body.
 ///
-/// Water under this much acceleration is not smooth, and a perfectly smooth tube
+/// A mass under this much acceleration is not smooth, and a perfectly smooth tube
 /// is the single thing that gives a swept mesh away.
 ///
 /// **The frequencies are in cycles per strand, not per metre.** The lattice
@@ -160,8 +161,8 @@ fn waterSpineTangent(tex: texture_2d<f32>, base: i32, count: f32, u: f32) -> vec
 /// with a fast first coordinate and a slow second one is *nearly one-dimensional
 /// in the first* — so relief that varies quickly along the spine and slowly
 /// around the section produces a ring bulge at every cell, and a tube covered in
-/// ring bulges is a string of beads. Water varies far more across a stream than
-/// along one, so the section frequencies here are higher than the spine ones.
+/// ring bulges is a string of beads. A current varies far more across itself than
+/// along itself, so the section frequencies here are higher than the spine ones.
 ///
 /// **Sampled around a circle, not along `theta`.** A tube is closed: the first
 /// and last rings are the same point at theta and theta + 2*PI, and plain 2D

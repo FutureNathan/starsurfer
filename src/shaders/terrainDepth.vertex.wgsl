@@ -5,16 +5,16 @@
 // the beauty pass draws, or the depths will not correspond and the terrain will
 // acne against its own silhouette. Only the view-projection differs.
 
-#include<snowNoise>
-#include<snowTerrain>
-#include<snowDeform>
-#include<snowClipmap>
+#include<starNoise>
+#include<starTerrain>
+#include<starDeform>
+#include<starClipmap>
 
 attribute position: vec3f;
 
 uniform lightViewProjection: mat4x4f;
 uniform cameraPos: vec3f;
-/// Clipmap ring centre — the character, matching snow.vertex.wgsl exactly.
+/// Clipmap ring centre — the character, matching dust.vertex.wgsl exactly.
 uniform lodCenter: vec2f;
 
 uniform baseSpacing: f32;
@@ -59,11 +59,11 @@ fn main(input: VertexInputs) -> FragmentInputs {
         h += terrainFine(worldXZ, uniforms.windAngle, exposure, uniforms.sastrugiAmp).x * fade;
     }
 
-    // Carved snow must cast and receive its own shadow, so the depth pass has to
+    // A carved trail must cast and receive its own shadow, so the depth pass has to
     // see the deformation too. A trail that does not self-shadow reads as a
     // decal painted on flat ground.
     //
-    // This gate, the fade and the filter width have to match snow.vertex.wgsl
+    // This gate, the fade and the filter width have to match dust.vertex.wgsl
     // exactly. If this pass displaced on a ring the beauty pass left flat — or
     // band-limited it differently — the terrain would shadow against a surface
     // that is not the one being drawn, and every berm would acne.

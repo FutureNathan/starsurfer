@@ -57,6 +57,7 @@ import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { Matrix, Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { S } from "../core/settings.js";
+import { LIN } from "../core/brand.js";
 
 import postCommonLib from "../shaders/lib/postCommon.wgsl?raw";
 import taaFrag from "../shaders/post/taa.fragment.wgsl?raw";
@@ -71,6 +72,64 @@ import sharpenFrag from "../shaders/post/sharpen.fragment.wgsl?raw";
 const TONEMAP_MODES = { agx: 0, aces: 1, none: 2 };
 
 /**
+ * Fraction of the star's beam the nebula turns back toward the eye.
+ *
+ * The shafts pass integrates sky visibility along the ray and multiplies the
+ * result by a colour. That colour is the radiance of the *beam*, not of the
+ * star, and out here the two are nowhere near each other. `sunRadiance` is
+ * scaled ten times what a scene over a bright ground would want — sky.js says
+ * why: the dust it lights is a tenth as reflective, so the source is scaled by
+ * the factor the surface lacks and lit dust lands back in a workable range. The
+ * nebula got no such discount. Handing raw `sunRadiance` to a pass that adds it
+ * to the frame would put a beam eight times brighter than the ground it falls
+ * across straight through the middle of the image.
+ *
+ * Eight and a half per cent is the figure that lands the root of a shaft — the
+ * default `shaftStrength`, the whole sky visible, the ray pointed straight at
+ * the star — at about 3.2 in linear, against dust lit to 5 and a wake crest at
+ * 3 on a straight run. Plainly light, and plainly not brighter than the ground
+ * it is falling across. Note the shafts are composited *after* the bloom
+ * pyramid is built, so nothing here reaches the bright pass however hard it is
+ * driven; a shaft can only ever add, never glare.
+ */
+const SHAFT_SCATTER = 0.085;
+
+/**
+ * ...and the hue that goes with it: the nebula's own, pulled most of the way
+ * back toward starlight.
+ *
+ * A single scattering event off dust grains is far less selective than the line
+ * emission that gives a nebula its colour in a photograph, so a beam lit by one
+ * should read as light with a cast rather than as a coloured gel. Against the
+ * star's warm spectrum the product comes out violet-magenta — the nebula's hue
+ * carried by a warm source, which is exactly what it is. Built from brand.js
+ * rather than written out, so the shafts follow the palette.
+ */
+const SHAFT_ALBEDO = (() => {
+    const n = LIN.nebulaBright;
+    const m = Math.max(n[0], n[1], n[2]);
+    const c = new Color3(
+        LIN.star[0] * 0.4 + (n[0] / m) * 0.6,
+        LIN.star[1] * 0.4 + (n[1] / m) * 0.6,
+        LIN.star[2] * 0.4 + (n[2] / m) * 0.6
+    );
+    return c.scaleInPlace(SHAFT_SCATTER / Math.max(c.r, c.g, c.b));
+})();
+
+/**
+ * Corner darkening.
+ *
+ * Much lighter than a daylight grade wants, because there is very little in the
+ * corners of this frame that darkening improves. A vignette earns its keep by
+ * holding the eye on a bright, evenly-lit image that has no UI to anchor it; a
+ * frame that is already ninety per cent void does that on its own, and the only
+ * things a heavy vignette can actually reach are the ends of the galactic band
+ * and the outer stars — which is to say, the content. Enough left to close the
+ * frame, and no more.
+ */
+const VIGNETTE = 0.12;
+
+/**
  * Halton(2,3). Eight subpixel positions, low-discrepancy so the accumulated
  * sample pattern is even at every prefix length rather than only after all eight
  * — which matters because the history is continuously being partially rejected
@@ -82,15 +141,15 @@ let registered = false;
 function registerPostShaders() {
     if (registered) return;
     registered = true;
-    ShaderStore.IncludesShadersStoreWGSL["snowPostCommon"] = postCommonLib;
-    ShaderStore.ShadersStoreWGSL["snowTaaPixelShader"] = taaFrag;
-    ShaderStore.ShadersStoreWGSL["snowSsrPixelShader"] = ssrFrag;
-    ShaderStore.ShadersStoreWGSL["snowShaftsPixelShader"] = shaftsFrag;
-    ShaderStore.ShadersStoreWGSL["snowBloomDownPixelShader"] = bloomDownFrag;
-    ShaderStore.ShadersStoreWGSL["snowBloomBlurPixelShader"] = bloomBlurFrag;
-    ShaderStore.ShadersStoreWGSL["snowDofPixelShader"] = dofFrag;
-    ShaderStore.ShadersStoreWGSL["snowTonemapPixelShader"] = tonemapFrag;
-    ShaderStore.ShadersStoreWGSL["snowSharpenPixelShader"] = sharpenFrag;
+    ShaderStore.IncludesShadersStoreWGSL["starPostCommon"] = postCommonLib;
+    ShaderStore.ShadersStoreWGSL["starTaaPixelShader"] = taaFrag;
+    ShaderStore.ShadersStoreWGSL["starSsrPixelShader"] = ssrFrag;
+    ShaderStore.ShadersStoreWGSL["starShaftsPixelShader"] = shaftsFrag;
+    ShaderStore.ShadersStoreWGSL["starBloomDownPixelShader"] = bloomDownFrag;
+    ShaderStore.ShadersStoreWGSL["starBloomBlurPixelShader"] = bloomBlurFrag;
+    ShaderStore.ShadersStoreWGSL["starDofPixelShader"] = dofFrag;
+    ShaderStore.ShadersStoreWGSL["starTonemapPixelShader"] = tonemapFrag;
+    ShaderStore.ShadersStoreWGSL["starSharpenPixelShader"] = sharpenFrag;
 }
 
 // ------------------------------------------------------- module-scope scratch
@@ -117,7 +176,7 @@ export class PostChain {
 
         /**
          * 0..1, written each frame by the surf state. Drives the radial smear
-         * and the spindrift strands in the display transform.
+         * and the stardust strands in the display transform.
          */
         this.speedStreak = 0;
 
@@ -136,6 +195,7 @@ export class PostChain {
         this._jitterNdc = new Vector2(0, 0);
         this._sunUV = new Vector2(0.5, 0.5);
         this._sunOnScreen = 0;
+        /** Radiance of a shaft at full sky visibility. See SHAFT_ALBEDO. */
         this._sunColor = new Color3(1, 1, 1);
         this._bloomCurve = { x: 1, y: 1, z: 1, w: 1 };
 
@@ -145,31 +205,31 @@ export class PostChain {
         // ------------------------------------------------------------ passes
         // Attached in this order; see the table at the top of the file for what
         // each one's declared ratio actually controls.
-        this.ssr = this._pass("snowSsr", 1.0, ["projInfo", "invRes", "enabled", "strength"],
+        this.ssr = this._pass("starSsr", 1.0, ["projInfo", "invRes", "enabled", "strength"],
             ["depthTex"], Constants.TEXTURETYPE_HALF_FLOAT);
-        this.taa = this._pass("snowTaa", 1.0,
+        this.taa = this._pass("starTaa", 1.0,
             ["prevViewProj", "invView", "projInfo", "invRes", "jitterNdc",
              "historyValid", "enabled", "feedback"],
             ["historyTex", "depthTex"], Constants.TEXTURETYPE_HALF_FLOAT);
-        this.shafts = this._pass("snowShafts", 1.0,
+        this.shafts = this._pass("starShafts", 1.0,
             ["sunUV", "sunOnScreen", "sunColor", "enabled", "strength", "aspect"],
             ["depthTex"], Constants.TEXTURETYPE_HALF_FLOAT);
-        this.bloomA = this._pass("snowBloomDown", 0.25,
+        this.bloomA = this._pass("starBloomDown", 0.25,
             ["srcTexel", "prefilter", "curve"], ["sourceTex"],
             Constants.TEXTURETYPE_HALF_FLOAT);
-        this.bloomB = this._pass("snowBloomDown", 0.25,
+        this.bloomB = this._pass("starBloomDown", 0.25,
             ["srcTexel", "prefilter", "curve"], ["sourceTex"],
             Constants.TEXTURETYPE_HALF_FLOAT);
-        this.bloomC = this._pass("snowBloomBlur", 0.0625, ["srcTexel"], [],
+        this.bloomC = this._pass("starBloomBlur", 0.0625, ["srcTexel"], [],
             Constants.TEXTURETYPE_HALF_FLOAT);
-        this.dof = this._pass("snowDof", 0.0625,
+        this.dof = this._pass("starDof", 0.0625,
             ["invRes", "enabled", "focusDist", "maxCoc"], ["sceneTex", "depthTex"],
             Constants.TEXTURETYPE_HALF_FLOAT);
-        this.composite = this._pass("snowTonemap", 1.0,
+        this.composite = this._pass("starTonemap", 1.0,
             ["exposure", "contrast", "mode", "grainAmount", "time", "vignette",
              "speedStreak", "bloomAmount", "shaftAmount"],
             ["bloomNear", "bloomFar", "shaftsTex"], Constants.TEXTURETYPE_HALF_FLOAT);
-        this.sharpen = this._pass("snowSharpen", 1.0, ["invRes", "amount"], [],
+        this.sharpen = this._pass("starSharpen", 1.0, ["invRes", "amount"], [],
             // The last stage before the swapchain, and the only one working on
             // display-encoded values — eight bits is exactly what it needs.
             Constants.TEXTURETYPE_UNSIGNED_BYTE);
@@ -299,8 +359,9 @@ export class PostChain {
         };
 
         this.bloomC.onApply = (e) => {
-            // Spread wider than one texel: this is the level that has to read as
-            // haze in the air rather than as a ring around the sun.
+            // Spread wider than one texel: this is the level that becomes the
+            // outer lobe of the glare pattern, and a lobe that ends abruptly is
+            // a ring around the star rather than a falloff away from it.
             const t = _texelOf(this.bloomB, _tmpTexel);
             e.setFloat2("srcTexel", t.x * 2.0, t.y * 2.0);
         };
@@ -311,8 +372,14 @@ export class PostChain {
             e.setFloat("focusDist", this.focusDist);
             // Scaled to the frame height, so the look does not change with
             // resolution or with the resolution-scale slider. 0.0024 is 3.5 px
-            // at 1440p; against the pass's own 1.5 px early-out only pixels past
-            // roughly three hundred metres run a gather at all.
+            // at 1440p. Against the pass's own 1.5 px early-out, and with its
+            // far side capped at a third of the circle so the star field stays
+            // sharp, that means only pixels inside about two and a half metres
+            // run a gather at all — which is exactly the near-field softening
+            // the effect is there for. The far side crosses that early-out at
+            // around eighteen hundred lines, so a 4K frame, or the top of the
+            // resolution slider, does put a 1.8 px gather over the sky: a real
+            // cost, and still under the two pixels a star is drawn at.
             e.setFloat("maxCoc", this.engine.getRenderHeight() * 0.0024);
             e.setTexture("sceneTex", this.history[this._k]);
             e.setTexture("depthTex", depthTex);
@@ -324,7 +391,7 @@ export class PostChain {
             e.setFloat("mode", TONEMAP_MODES[S.tonemap] ?? 0);
             e.setFloat("grainAmount", S.grain ? S.grainStrength : 0);
             e.setFloat("time", this.time);
-            e.setFloat("vignette", 0.22);
+            e.setFloat("vignette", VIGNETTE);
             e.setFloat(
                 "speedStreak",
                 S.windStreaks ? this.speedStreak * S.streakStrength : 0
@@ -368,7 +435,7 @@ export class PostChain {
         const h = this.engine.getRenderHeight();
         this._invRes.set(1 / w, 1 / h);
 
-        // ---- unjittered matrices, for reprojection and for the sun ---------
+        // ---- unjittered matrices, for reprojection and for the star --------
         cam.unfreezeProjectionMatrix();
         _view.copyFrom(cam.getViewMatrix(true));
         _proj.copyFrom(cam.getProjectionMatrix(true));
@@ -378,7 +445,7 @@ export class PostChain {
         const tanHalf = Math.tan(cam.fov * 0.5);
         this._projInfo.set(tanHalf * (w / h), tanHalf);
 
-        // ---- the sun on screen, for the shafts -----------------------------
+        // ---- the star on screen, for the shafts ----------------------------
         _sunWorld.copyFrom(this.sky.sunDir).scaleInPlace(2000).addInPlace(cam.position);
         Vector3.TransformCoordinatesToRef(_sunWorld, this._curViewProj, _sunClip);
         // TransformCoordinates divides by w internally, so a point behind the
@@ -387,14 +454,43 @@ export class PostChain {
         const fwdDot = Vector3.Dot(this.sky.sunDir, _camForward(cam));
         this._sunUV.set(_sunClip.x * 0.5 + 0.5, _sunClip.y * 0.5 + 0.5);
         this._sunOnScreen = fwdDot > 0.05 ? 1 : 0;
-        this._sunColor.copyFrom(this.sky.sunRadiance);
+        // The beam, not the star: the star's spectrum through the nebula's
+        // scattering albedo. See SHAFT_ALBEDO.
+        this.sky.sunRadiance.multiplyToRef(SHAFT_ALBEDO, this._sunColor);
 
         // ---- bloom knee ----------------------------------------------------
-        // Threshold in exposed units, so it does not move when the exposure
-        // slider does. Sunlit snow here exposes to ~1.26, so anything near 1.0
-        // puts the entire lit half of the frame above the knee and the bloom
-        // becomes a uniform milky veil. At 3.0 the field sits a stop and a half
-        // below it and only the sun disc, the glints and lit spray reach it.
+        // Threshold in *linear scene radiance*, before exposure — the bright
+        // pass reads the temporal resolve's output directly, and the composite
+        // is what applies the exposure, to the scene and its bloom together. So
+        // this number is stated against measured scene values and does not move
+        // when the exposure slider does.
+        //
+        // The values it is sitting between, all measured:
+        //
+        //     dust's resting emissive glow      1        must not bloom
+        //     wake crest, straight run          3        at the knee
+        //     dust lit by the star              5        a slight veil
+        //     galactic band core                6
+        //     wake crest at a full carve       10        blooms
+        //     brightest thrown grains          26        blooms hard
+        //     the star's disc                 far above everything
+        //
+        // 3.0 is the line between the scene's *resting* radiance and its
+        // sources. Below it is the ground doing nothing in particular; above it
+        // is every emitter — the visor, the suit trim, the wake, the grains, the
+        // star — which is what the gains in brand.js were chosen against.
+        //
+        // It also lands exactly on the wake's straight-run crest, which is the
+        // nicest thing about it: cruising, the wake sits in the soft knee and
+        // barely glows; load the carve and it climbs to ten and lights up. The
+        // glow is a readout of how hard the board is being driven, and it costs
+        // nothing to have.
+        //
+        // The dust field at 5 does pass, and that is deliberate rather than
+        // tolerated: a sea that is stated to be glowing should lift the sky
+        // above its own horizon. What stops that becoming the milky veil a
+        // bright field would give is the near-weighted mix in the composite —
+        // the lift stays close to the ground instead of washing the whole void.
         const th = 3.0;
         const knee = 1.4;
         this._bloomCurve.x = th;

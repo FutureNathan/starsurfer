@@ -1,12 +1,12 @@
-// Shadow-pass vertex shader for the ice formations.
+// Shadow-pass vertex shader for the grown lattices.
 //
 // Runs the identical `crystalPoint` out of the shared include, so the shape in
 // the depth map is the shape being drawn — including the growth curve, which
 // matters because the shadow has to grow with the crystal rather than snapping
 // to full size on the frame it is planted.
 
-#include<snowNoise>
-#include<snowCrystal>
+#include<starNoise>
+#include<starCrystal>
 
 attribute position: vec3f;   // (crystal, vertex, unused)
 

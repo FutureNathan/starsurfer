@@ -1,5 +1,5 @@
 /**
- * The terrain state buffer — persistent, additive snow deformation.
+ * The terrain state buffer — persistent, additive displacement of the dust.
  *
  * Two RGBA16F targets ping-ponged by one full-screen pass per frame
  * (`deformSim.fragment.wgsl`). The pass scrolls, relaxes and splats in a single
@@ -10,9 +10,9 @@
  *   snapped to texel boundaries so the field does not swim under the surface.
  *   Addressing is toroidal, so following the player costs nothing.
  *
- * Everything that touches the snow writes here through `brush()` — feet, the
- * surf wake, every spell. That shared write path is what makes the effects part
- * of the snow rather than decals floating above it.
+ * Everything that touches the field writes here through `brush()` — feet, the
+ * board, every power. That shared write path is what makes the effects part of
+ * the surface rather than decals floating above it.
  *
  * Allocation: none per frame. The brush staging array is sized once at
  * construction and written in place.

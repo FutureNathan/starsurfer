@@ -1,17 +1,17 @@
-// Bakes the tileable snow detail map used at three world scales by the snow
-// material.
+// Bakes the tileable grain map the dust material reads at three world scales.
 //
-// Generated rather than sourced from a scan. Snow grain is statistically
-// uniform — there is no hand-authored structure a photograph would bring — and
-// generating it means it tiles *exactly*, has no baked-in lighting to fight, and
-// is authored directly in the units the shader wants.
+// Generated rather than sourced from a scan, and not only because there is no
+// photograph of this. Grain at this scale is statistically uniform — there is no
+// hand-authored structure a capture would bring — and generating it means it
+// tiles *exactly*, carries no baked-in lighting to fight, and is authored
+// directly in the units the shader wants.
 //
 // Output channels:
 //   R,G  tangent-space normal XY (Z reconstructed in the shader)
 //   B    cavity / crevice occlusion
 //   A    height, for the contact-detail parallax at trail edges
 
-#include<snowNoise>
+#include<starNoise>
 
 varying vUV: vec2f;
 
@@ -24,9 +24,10 @@ fn hashTile(id: vec2f, period: f32) -> vec2f {
     return hash22(w);
 }
 
-/// Packed-grain height field. Snow at close range is a jam of rounded crystals
-/// with deep, dark crevices between them — spheres, not noise bumps, and the
-/// crevices matter as much as the grains.
+/// Packed-grain height field. Settled dust at close range is a jam of rounded
+/// grains with deep, dark crevices between them — spheres, not noise bumps, and
+/// the crevices matter as much as the grains, because the crevices are where the
+/// emission wells up from.
 fn grainHeight(p: vec2f, cells: f32, period: f32) -> vec2f {
     let gp = p * cells;
     let gi = floor(gp);

@@ -25,10 +25,10 @@
 // being a flat disc.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
-#include<snowShading>
-#include<snowSpellLights>
-#include<snowAtmosphere>
+#include<starNoise>
+#include<starShading>
+#include<starSpellLights>
+#include<starAtmosphere>
 
 varying vWorld: vec3f;
 varying vCorner: vec2f;
@@ -76,7 +76,7 @@ uniform spellLightPos: array<vec4f, 4>;
 uniform spellLightCol: array<vec4f, 4>;
 uniform spellLightCount: f32;
 
-#include<snowShadowLookup>
+#include<starShadowLookup>
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {

@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowRidge — the far-field mountains.
+// starRidge — the far-field mountains.
 //
 // The constraint is that the range must never read as flat, and that is what
 // rules out the two cheap answers. A silhouette cut out of the sky reads as a

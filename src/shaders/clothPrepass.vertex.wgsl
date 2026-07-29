@@ -1,7 +1,7 @@
 // Depth-prepass vertex shader for the garments. Same Catmull-Rom reconstruction
 // over the simulated node grid as cloth.vertex.wgsl, from the same include.
 
-#include<snowCharSkin>
+#include<starCharSkin>
 
 attribute position: vec3f;   // (u, v, panel index)
 

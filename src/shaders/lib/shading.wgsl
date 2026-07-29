@@ -1,20 +1,25 @@
 // -----------------------------------------------------------------------------
-// snowShading — the BRDF, the subsurface term, the glints and the shadow filter.
+// starShading — the BRDF, the subsurface term, the glints and the shadow filter.
 //
-// Snow is not a dielectric with a white albedo. It is a densely packed scatterer
-// with a mean free path of a few millimetres, which means:
+// Cosmic dust is not a dielectric with a flat albedo. It is a densely packed
+// scatterer — ice and silicate grains with a mean free path of a few
+// millimetres — which means:
 //
-//   * light wraps well past the terminator, so shadow edges are soft in a way
-//     no amount of shadow-map filtering reproduces;
-//   * thin drift edges glow from behind;
-//   * shadowed snow is lit almost entirely by the sky, so it goes *blue*, never
-//     grey and never black;
-//   * individual surface crystals catch the sun as discrete sparkles at grazing
-//     angles, and only at grazing angles.
+//   * light wraps well past the terminator, so the soft edge on a swell is a
+//     property of the material and not of the shadow filter — and it is the
+//     only thing softening anything, because there is one hard star out here and
+//     no sky dome behind it.
+//   * thin crests glow from behind;
+//   * a face the star cannot reach is lit almost entirely by the nebula above
+//     and the sea's own glow below, so it goes *violet*, never grey and never
+//     black;
+//   * individual grains catch the star as discrete sparkles at grazing angles,
+//     and only at grazing angles.
 //
-// The subsurface term below is doing most of the work of making this read as
-// snow at all. If you disable exactly one thing in this file to see what it was
-// worth, disable that.
+// The surface also emits, which is what carries the frame at this albedo — and
+// that is exactly why this file matters. Emission alone is a flat wash; every
+// term here exists to keep the star's contribution reading as a *material* laid
+// over that glow rather than as a light switched on behind it.
 // -----------------------------------------------------------------------------
 
 // ---------------------------------------------------------------- microfacet
@@ -46,8 +51,8 @@ fn fresnelSchlickRough(u: f32, f0: vec3f, roughness: f32) -> vec3f {
 
 // ---------------------------------------------------------------- subsurface
 
-/// Wrapped diffuse. `w` = 0 is Lambert; snow wants 0.5-0.7, which pushes the
-/// terminator most of the way around the back of a drift.
+/// Wrapped diffuse. `w` = 0 is Lambert; a densely packed scatterer wants 0.5-0.7,
+/// which pushes the terminator most of the way around the back of a swell.
 fn wrapDiffuse(NdotL: f32, w: f32) -> f32 {
     let denom = (1.0 + w) * (1.0 + w);
     return max(0.0, (NdotL + w) / denom);
@@ -55,24 +60,24 @@ fn wrapDiffuse(NdotL: f32, w: f32) -> f32 {
 
 /// Back-scatter transmission — light that entered the surface, scattered, and
 /// left toward the eye. Peaks looking into the light through a thin edge, which
-/// is what lights up drift lips and the far walls of footprints.
+/// is what lights up crests and the far walls of a carve.
 ///
 /// `L` points from the surface *toward* the sun, which fixes the sign of the
 /// transmission vector: it is `L + N*distortion`, and the lobe is measured
 /// against its negation — the direction the scattered light continues in after
 /// passing through. Building it from `-L` instead inverts the whole term, so it
 /// peaks with the sun behind the camera and switches off looking into it, which
-/// is the exact opposite of what translucency does. That reads as snow going
-/// flat and dead in the one direction where it should be at its most alive.
+/// is the exact opposite of what translucency does. That reads as the field
+/// going flat and dead in the one direction where it should be most alive.
 fn backScatter(N: vec3f, L: vec3f, V: vec3f, distortion: f32, power: f32, thickness: f32) -> f32 {
     let H = normalize(L + N * distortion);
     let vh = pow(clamp(dot(V, -H), 0.0, 1.0), power);
     return vh * thickness;
 }
 
-/// Combined snow subsurface response for one light.
+/// Combined subsurface response for one light.
 /// Returns the RGB radiance contribution to add to the diffuse lobe.
-fn snowSubsurface(
+fn dustSubsurface(
     N: vec3f,
     L: vec3f,
     V: vec3f,
@@ -81,20 +86,24 @@ fn snowSubsurface(
     strength: f32,
     radius: f32
 ) -> vec3f {
-    // Deeper snow scatters longer and comes back bluer, because red is absorbed
-    // first over any appreciable path length. This is the entire reason snow
-    // shadows are blue rather than merely dark.
-    let shallowTint = vec3f(0.94, 0.965, 1.0);
-    let deepTint = vec3f(0.55, 0.72, 1.0);
+    // A longer path through the grains comes back more violet, because the dust
+    // absorbs red first over any appreciable path length — the same mechanism
+    // that makes a deep snow cave blue, running on a medium whose own colour is
+    // violet rather than white. It is the entire reason a hollow in this field
+    // reads as coloured rather than merely dark, and the deep tint here is held
+    // to the same hue as the cavity tint in the dust material so the two cannot
+    // disagree about what a shadowed pocket looks like.
+    let shallowTint = vec3f(0.97, 0.93, 1.0);
+    let deepTint = vec3f(0.58, 0.42, 1.0);
     let tint = mix(shallowTint, deepTint, clamp(thickness * radius, 0.0, 1.0));
 
     // Lobe width and amplitude both key off thickness, and both run the
-    // opposite way to how they read at first glance: a *thin* edge — a drift
-    // lip, a berm crest, the far wall of a footprint — transmits brightly and
+    // opposite way to how they read at first glance: a *thin* edge — a swell
+    // crest, a berm, the far wall of a footprint — transmits brightly and
     // over a wide range of angles, because the path through it is short from
-    // almost anywhere. Deep snow transmits little, and only close to
+    // almost anywhere. Deep dust transmits little, and only close to
     // straight-through, because anything else is a longer path than the light
-    // survives. Having deep snow carry the broader lobe lights the whole open
+    // survives. Having the deep case carry the broader lobe lights the whole open
     // field evenly and reads as haze rather than as translucency.
     let back = backScatter(
         N, L, V, 0.28 * radius,
@@ -150,10 +159,10 @@ fn glintOctave(
 /// pixels — that keeps them from aliasing into a shimmering carpet in the
 /// mid-distance while never resizing a cell (which would make them crawl).
 ///
-/// Gated hard on grazing view angle: snow sparkles when you look *across* it
-/// into the sun, and stays matte when you look down at it. Losing that gate is
-/// what turns this effect into glitter.
-fn snowGlints(
+/// Gated hard on grazing view angle: a grain field sparkles when you look
+/// *across* it into the light, and stays matte when you look down at it. Losing
+/// that gate is what turns this effect into glitter.
+fn dustGlints(
     worldXZ: vec2f,
     N: vec3f,
     V: vec3f,
@@ -248,10 +257,10 @@ fn pcssShadow(
     // have to decide whether what they found is an occluder. Comparing against
     // the shading point's own depth is only valid if the surface is flat in
     // light space, and under a 13-degree sun it is nothing of the sort: the
-    // light meets level snow at 77 degrees from the normal, so the surface's own
+    // light meets level ground at 77 degrees from the normal, so the surface's own
     // depth falls 1.8 * tan(77) = 7.8 m across the 1.8 m blocker search radius,
     // against a bias measured in centimetres. Every offset sample then reports
-    // the snow as its own occluder and the cascade floods solid black.
+    // the ground as its own occluder and the cascade floods solid black.
     //
     // That flood is also why the artefact looked camera-driven: the search
     // radius is capped in metres, so it only exceeds the bias in the coarser
@@ -294,10 +303,11 @@ fn pcssShadow(
     if (blockerCount < 0.5) { return 1.0; }
 
     // ---- penumbra estimate ------------------------------------------------
-    // Similar triangles, in metres. The sun subtends about half a degree, so a
-    // blocker d metres in front of the receiver casts a penumbra of roughly
+    // Similar triangles, in metres. The star subtends about a third of a degree,
+    // so a blocker d metres in front of the receiver casts a penumbra of roughly
     // 0.0093*d — `softness` opens that up, because pure geometric penumbra is
-    // tighter than snow actually looks once sky light fills the shadow.
+    // tighter than the surface actually looks once the material's own
+    // through-scatter has softened the terminator.
     let blockerDist = (blockerDepthSum / blockerCount) * depthRange;
     let penumbraWorld = blockerDist * 0.0093 * softness;
     let filterR = clamp(penumbraWorld / orthoWidth, texelSize, maxPenumbraUV);

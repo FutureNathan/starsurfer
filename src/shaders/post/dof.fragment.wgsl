@@ -1,25 +1,29 @@
 // -----------------------------------------------------------------------------
 // Depth of field — very restrained.
 //
-// The focal plane tracks the character, because the character is what the player
+// The focal plane tracks the astronaut, because the astronaut is what the player
 // is looking at and the spring arm already knows how far away it is. Everything
-// nearer than about half that distance and everything past roughly twice it
-// picks up a circle of confusion, capped at a few pixels.
+// nearer than about half that distance picks up a circle of confusion capped at
+// a few pixels; everything far away picks up a third of one.
 //
-// The restraint is not timidity. This scene's depth cue is aerial perspective —
-// contrast compression and a hue pull toward the sky — and that is a *physical*
-// cue that survives at any focal length. A heavy defocus competes with it and
-// wins, which trades a snow field that recedes for a snow field that is out of
-// focus. What a light one adds is the last thing missing from the near field:
-// the berm the camera is almost sitting on stops being as crisp as the ridge two
-// hundred metres away, which is the read that makes a frame look photographed.
+// The restraint is not timidity. This scene's depth cue is the nebula it is
+// drifting through — contrast compression and a hue pull toward the violet the
+// void is full of — and that is a *physical* cue that survives at any focal
+// length. A heavy defocus competes with it and wins, which trades a dust field
+// that recedes for a dust field that is out of focus. What a light one adds is
+// the last thing missing from the near field: the berm the camera is almost
+// sitting on stops being as crisp as the ridge two hundred metres away, which is
+// the read that makes a frame look photographed.
+//
+// The far side is capped well below the near side here, and the star field is
+// why — see `FAR_COC`.
 //
 // Sample weighting is by the *sample's own* circle of confusion, so a blurred
 // background cannot bleed onto a sharp foreground — the artefact that makes cheap
 // depth of field look like a smeared decal around every silhouette.
 // -----------------------------------------------------------------------------
 
-#include<snowPostCommon>
+#include<starPostCommon>
 
 varying vUV: vec2f;
 
@@ -46,23 +50,38 @@ const GOLDEN: f32 = 2.39996323;
 /// whole of a bug this pass shipped with. Keying the far ramp to `focus * 14`
 /// sounds distant and is not: the focal plane is the spring arm, about six
 /// metres, so the ramp saturated at eighty-seven metres — the near-middle of a
-/// field that runs to eight hundred and seventy. Every dune past the one the
+/// field that runs to eight hundred and seventy. Every swell past the one the
 /// player is standing on sat at the full circle of confusion. The scene does not
 /// rescale when the player zooms the camera in, so neither can this.
 ///
 /// The values are also far more conservative than a naive thin-lens model would
 /// give, and deliberately. A third-person camera focused at six metres is a wide
-/// lens at a small aperture; its hyperfocal distance is a few metres, so
-/// physically *nothing* past about twelve metres defocuses at all. What is left
-/// here is a cosmetic softening of the last ridge, where aerial perspective has
-/// already taken three quarters of the contrast.
+/// lens at a small aperture; its hyperfocal distance is a couple of metres, so
+/// infinity is already inside its depth of field and physically *nothing* far
+/// away defocuses at all. What is left here is a cosmetic softening of the last
+/// ridge, where the nebula has already taken three quarters of the contrast.
 const FAR_START: f32 = 130.0;
 const FAR_FULL: f32 = 620.0;
 
-/// Signed circle of confusion, -1 (near) .. +1 (far), before the pixel scale.
+/// The far side's share of the maximum circle of confusion.
+///
+/// The near side runs to the whole circle; the far side gets a third of it, and
+/// that asymmetry is the hyperfocal argument above turned into a number. It also
+/// costs nothing and buys a great deal on this content in particular: past the
+/// horizon the frame is star field, and the sky shader draws its stars about two
+/// pixels across for precisely the reason a two-pixel gather would erase them.
+/// At 1440p a third of the circle is 1.2 px, under this pass's own 1.5 px
+/// early-out — so the galaxy, which is most of the frame, is rendered sharp and
+/// costs a single depth fetch.
+const FAR_COC: f32 = 0.35;
+
+/// Signed circle of confusion, -1 (near) .. +FAR_COC (far), before the pixel scale.
 fn cocOf(z: f32, focus: f32) -> f32 {
-    if (isBackground(z)) { return 1.0; }
-    let far = smoothstep(FAR_START, FAR_FULL, z);
+    // Background takes the far ramp's saturated value rather than a full circle
+    // of its own, so no step in blur is drawn along the horizon where the dust
+    // field ends and the sky starts.
+    if (isBackground(z)) { return FAR_COC; }
+    let far = smoothstep(FAR_START, FAR_FULL, z) * FAR_COC;
     // Near side stays keyed to the focal distance, because that *is* the right
     // anchor for it: the near limit is a property of the subject distance, and it
     // is the one place this effect earns its keep — a berm the camera is almost

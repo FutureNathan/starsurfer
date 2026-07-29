@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
-// snowNoise — shared procedural noise library.
+// starNoise — shared procedural noise library.
 //
-// Registered into Babylon's WGSL include store as <snowNoise>, so both the
-// offline height bake and the runtime snow material evaluate byte-identical
+// Registered into Babylon's WGSL include store as <starNoise>, so both the
+// offline height bake and the runtime dust material evaluate byte-identical
 // functions. Everything that shapes the surface lives here.
 //
 // The gradient noise carries analytic derivatives (Inigo Quilez's formulation).

@@ -1,7 +1,7 @@
-// Spell water — vertex placement.
+// The powers' plasma bodies — vertex placement.
 //
 // The mesh carries no geometry. `position` is (column, ring, strand) and every
-// vertex is placed here from the strand table, exactly as the wake and the spray
+// vertex is placed here from the strand table, exactly as the wake and the grain
 // billboards are. Eight strands share one static buffer and one draw.
 //
 // Normals are differenced out of `waterPoint` rather than derived analytically.
@@ -13,12 +13,12 @@
 // A strand that is not in use is switched off by having its table zeroed rather
 // than by a branch: radius 0 puts every vertex of it on one point, every triangle
 // then has zero area, and the rasteriser produces no fragments. That is cheaper
-// than any test, and — more usefully — it means "how many spells are up" never
+// than any test, and — more usefully — it means "how many powers are up" never
 // changes which pipeline runs or how many draws there are.
 
-#include<snowNoise>
-#include<snowWake>
-#include<snowWater>
+#include<starNoise>
+#include<starWake>
+#include<starWater>
 
 attribute position: vec3f;   // (column, ring, strand)
 
@@ -27,8 +27,14 @@ uniform cameraPos: vec3f;
 uniform waterCols: f32;
 uniform waterRings: f32;
 uniform waterTime: f32;
-/// Per strand: (profile, milkiness, alpha, column count).
+/// Per strand: (profile, entrained dust, alpha, column count).
 uniform strandParams: array<vec4f, 8>;
+/// Per strand: (normalised hue, peak radiance) of the body's own emission.
+///
+/// Carried through to the fragment stage with the gain already folded in, which
+/// is one interpolant rather than a second uniform fetch keyed on a strand index
+/// the fragment shader does not otherwise have.
+uniform strandEmissive: array<vec4f, 8>;
 
 var waterTex: texture_2d<f32>;
 var waterTexSampler: sampler;
@@ -38,9 +44,10 @@ varying vNormal: vec3f;
 varying vQ: f32;
 varying vU: f32;
 varying vRadius: f32;
-varying vFoam: f32;
-varying vMilk: f32;
+varying vFront: f32;
+varying vDust: f32;
 varying vAlpha: f32;
+varying vEmissive: vec3f;
 varying vViewDist: f32;
 
 @vertex
@@ -69,7 +76,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
     var P = vec3f(0.0);
     var N = vec3f(0.0, 1.0, 0.0);
     var radius = 0.0;
-    var foam = 0.0;
+    var front = 0.0;
 
     if (alive) {
         P = waterPoint(waterTex, base, count, sp.x, u, q, tm);
@@ -100,7 +107,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
         N = select(Nn, outward, sp.x < 0.5);
 
         radius = waterRow(waterTex, base, count, u).w;
-        foam = waterRow(waterTex, base + 2, count, u).z;
+        front = waterRow(waterTex, base + 2, count, u).z;
     }
 
     vertexOutputs.vWorld = P;
@@ -108,9 +115,14 @@ fn main(input: VertexInputs) -> FragmentInputs {
     vertexOutputs.vQ = q;
     vertexOutputs.vU = u;
     vertexOutputs.vRadius = radius;
-    vertexOutputs.vFoam = foam;
-    vertexOutputs.vMilk = sp.y;
+    vertexOutputs.vFront = front;
+    vertexOutputs.vDust = sp.y;
     vertexOutputs.vAlpha = select(0.0, sp.z, alive);
+    // Gated on `alive` for the same reason the alpha is: a released strand keeps
+    // whatever hue it last held until something overwrites it, and a collapsed
+    // body still rasterises a sliver of degenerate triangle here and there.
+    let se = uniforms.strandEmissive[strand];
+    vertexOutputs.vEmissive = select(vec3f(0.0), se.rgb * se.w, alive);
     vertexOutputs.vViewDist = distance(P, uniforms.cameraPos);
     vertexOutputs.position = uniforms.viewProjection * vec4f(P, 1.0);
 }

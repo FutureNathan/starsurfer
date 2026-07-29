@@ -697,10 +697,18 @@ function buildBoard(B) {
     // A single centre fin. In a dust sea a fin does nothing a keel would not,
     // but it is the one silhouette element that says "board" from behind, which
     // is the angle this is nearly always seen from.
+    //
+    // It drops almost straight down rather than raking back, and that is what
+    // decides the root ring: the loft's section plane is perpendicular to the
+    // path through the rings, so a near-vertical descent puts the root's long
+    // axis along the deck. Rake it and the root tips with it, and since the
+    // root is 12 cm of chord inside 5 cm of deck, a tipped one has its lower
+    // half hanging out below the board — and the root ring is the loft's open
+    // end, so what hangs out is a hole. Vertical, it is buried.
     const fin = [
-        ring(0, 0.010, -0.560, 0.010, 0.075, 0.55, bone),
-        ring(0, -0.040, -0.585, 0.008, 0.055, 0.50, bone),
-        ring(0, -0.088, -0.615, 0.005, 0.030, 0.45, bone),
+        ring(0, 0.030, -0.575, 0.010, 0.062, 0.55, bone),
+        ring(0, -0.030, -0.590, 0.008, 0.050, 0.50, bone),
+        ring(0, -0.088, -0.612, 0.005, 0.028, 0.45, bone),
     ];
     loft(B, fin, M_BOARD, [0, 0, 1], false, true);
 

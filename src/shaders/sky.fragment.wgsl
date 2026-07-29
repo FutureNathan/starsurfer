@@ -1,7 +1,7 @@
-#include<snowNoise>
-#include<snowAtmosphere>
-#include<snowShading>
-#include<snowRidge>
+#include<starNoise>
+#include<starAtmosphere>
+#include<starShading>
+#include<starRidge>
 
 varying vDir: vec3f;
 
@@ -77,7 +77,7 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // The identical term the ground runs, so the two cannot disagree about what
     // back-lit dust does.
     let V = -dir;
-    col += snowSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 1.0)
+    col += dustSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 1.0)
          * albedo * mix(0.5, 1.0, shadow);
 
     // Ambient fill. At this distance it is most of what is left after

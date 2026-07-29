@@ -1,9 +1,10 @@
 // Nine-tap tent blur, at the bottom of the bloom chain.
 //
-// Widens the coarsest level into the broad halo that reads as atmosphere around
-// the sun rather than as a ring around it. A tent rather than a box because the
-// composite samples this bilinearly at sixteen times the resolution, and a box's
-// flat top makes the upsample's own linear interpolation visible as facets.
+// Widens the coarsest level into the outer lobe of the glare pattern, so what
+// surrounds the star falls away smoothly instead of ending in a ring. A tent
+// rather than a box because the composite samples this bilinearly at sixteen
+// times the resolution, and a box's flat top makes the upsample's own linear
+// interpolation visible as facets.
 
 varying vUV: vec2f;
 

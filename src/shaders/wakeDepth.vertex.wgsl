@@ -6,8 +6,8 @@
 // shadow of a solid wall it is not actually rendering, which on a crest that has
 // half come apart is the difference between a shadow and a stripe.
 
-#include<snowNoise>
-#include<snowWake>
+#include<starNoise>
+#include<starWake>
 
 attribute position: vec3f;   // (column, row, side)
 

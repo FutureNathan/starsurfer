@@ -1,7 +1,7 @@
 // Depth prepass for the surf wake — the same erosion the beauty pass applies.
 
-#include<snowNoise>
-#include<snowWake>
+#include<starNoise>
+#include<starWake>
 
 varying vQ: f32;
 varying vAlong: f32;

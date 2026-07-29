@@ -1,22 +1,27 @@
 /**
- * The bent-water renderer — one mesh, one material, one draw, eight strands.
+ * The plasma-body renderer — one mesh, one material, one draw, eight strands.
  *
- * Four of the five spells move a coherent body of water, and they are all the
- * same object: a swept surface along a spine, with a radius, a transported frame
- * and a foam channel. Giving each spell its own mesh would mean four pipelines,
- * four warm-ups, four sets of shadow-and-fog uniforms, and four slightly
- * different ideas about what lit water looks like. There is one of each here.
+ * Four of the five powers move a coherent body of ignited dust, and they are all
+ * the same object: a swept surface along a spine, with a radius, a transported
+ * frame and an ignition-front channel. Giving each power its own mesh would mean
+ * four pipelines, four warm-ups, four sets of shadow-and-fog uniforms, and four
+ * slightly different ideas about what a luminous body looks like. There is one
+ * of each here.
+ *
+ * What separates the four is one hue and two gains, uploaded per strand
+ * alongside the shape. That is the whole of a power's identity as far as this
+ * file is concerned; see `powers.js`.
  *
  * A strand is claimed with `acquire()`, written per frame with `column()`, and
  * dropped with `release()`. Releasing zeroes the strand's rows, which is also how
  * it is switched off: a zero radius puts every vertex of that strand on one
  * point, so its triangles have no area and the rasteriser skips them. The draw
- * call and the vertex count therefore do not depend on how many spells are up.
+ * call and the vertex count therefore do not depend on how many powers are up.
  *
  * The frame is parallel-transported along the spine on the CPU rather than
- * rebuilt from a fixed up-vector. A ribbon drawn through the air passes through
+ * rebuilt from a fixed up-vector. A stream drawn through the air passes through
  * vertical, and a Frenet or up-referenced frame flips there — the section spins
- * 180 degrees in one sample and the ribbon visibly folds. Transport has no such
+ * 180 degrees in one sample and the stream visibly folds. Transport has no such
  * degeneracy: each frame is the previous one rotated by the minimum rotation
  * taking the old tangent to the new one.
  *
@@ -30,18 +35,21 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { S } from "../core/settings.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "./spellLights.js";
+import { POWERS } from "./powers.js";
+import { LIN } from "../core/brand.js";
 
 /** Must match `array<vec4f, 8>` in `water.vertex.wgsl`. */
 export const STRAND_MAX = 8;
 
 /**
  * Spine *samples* per strand — the width of the data texture, and the most
- * columns any spell may write.
+ * columns any power may write.
  *
  * Raised from 48 for the Vortex, whose helices are the tightest curve anything
  * here draws. A cubic through samples on a circular arc carries a radial error
@@ -60,7 +68,7 @@ export const STRAND_COLS = 64;
  * through the samples, so it has real curvature between them; drawing it at
  * barely more than one vertex per sample renders that curvature as a polygon and
  * the body comes out visibly segmented — the thing that makes a swept tube look
- * like a length of pipe rather than like moving water. Nearly three vertices per
+ * like a length of pipe rather than like moving mass. Nearly three vertices per
  * sample is where the segmentation stops being findable.
  *
  * It is also the sampling rate the relief field has to stay under; see the note
@@ -78,7 +86,7 @@ const LATTICE_COLS = 176;
  *
  * Twenty-four rather than twelve. A twelve-sided tube seen at two metres has a
  * readable dodecagonal silhouette, and once you have noticed it you cannot stop:
- * it is the single clearest tell that the water is a mesh. It also caps how much
+ * it is the single clearest tell that the body is a mesh. It also caps how much
  * detail the relief field is allowed to put *around* the section — and detail
  * around the section, rather than along it, is exactly what stops a tube reading
  * as a string of beads.
@@ -89,6 +97,16 @@ export const PROFILE_TUBE = 0;
 export const PROFILE_SHEET = 1;
 
 const _splits = new Vector4();
+
+/**
+ * Starlight white — the hue an ignition front runs to as it heats.
+ *
+ * A hue and not a radiance: the front's brightness comes from the power's own
+ * gain, so this is only which way the colour moves. Shared by all four bodies,
+ * because past a certain temperature every material is the same white and having
+ * four slightly different whites would be four ways to be wrong.
+ */
+const _frontColor = new Color3(...LIN.star);
 
 export class WaterBody {
     /**
@@ -103,7 +121,7 @@ export class WaterBody {
         this.shadows = shadows;
         this.lights = lights;
 
-        // Three rows per strand: (pos, radius) / (right, twist) / (dist, age, foam, flatten)
+        // Three rows per strand: (pos, radius) / (right, twist) / (dist, age, front, flatten)
         this._texData = new Float32Array(STRAND_COLS * STRAND_MAX * 3 * 4);
         this.dataTex = RawTexture.CreateRGBATexture(
             this._texData, STRAND_COLS, STRAND_MAX * 3, scene,
@@ -114,16 +132,27 @@ export class WaterBody {
         this.dataTex.wrapU = Constants.TEXTURE_CLAMP_ADDRESSMODE;
         this.dataTex.wrapV = Constants.TEXTURE_CLAMP_ADDRESSMODE;
 
-        /** (profile, milkiness, alpha, column count) per strand. */
+        /** (profile, entrained dust, alpha, column count) per strand. */
         this._params = new Float32Array(STRAND_MAX * 4);
+        /**
+         * (hue rgb, radiance gain) per strand — what the body emits.
+         *
+         * Split from `_params` rather than widened into it because the two are
+         * written on different clocks: the profile and the dust fraction are a
+         * power's *identity* and are set once per cast, while the gain is its
+         * temperature and is rewritten every frame off the envelope. Keeping the
+         * gain in its own slot means a power can cool without restating what it
+         * is.
+         */
+        this._emissive = new Float32Array(STRAND_MAX * 4);
         /** @type {boolean[]} */
         this._used = new Array(STRAND_MAX).fill(false);
 
         this.mesh = buildLattice(scene);
         this.material = this._makeMaterial();
         this.mesh.material = this.material;
-        // With the spray, after the opaque pass. Water first: mist hanging in
-        // front of a body of water is much commoner than the reverse, and
+        // With the grains, after the opaque pass. Bodies first: dust hanging in
+        // front of a luminous body is much commoner than the reverse, and
         // neither writes depth.
         this.mesh.renderingGroupId = 2;
         this.mesh.alphaIndex = 0;
@@ -141,13 +170,15 @@ export class WaterBody {
                 attributes: ["position"],
                 uniforms: [
                     "viewProjection", "cameraPos",
-                    "waterCols", "waterRings", "waterTime", "strandParams",
+                    "waterCols", "waterRings", "waterTime",
+                    "strandParams", "strandEmissive",
                     "sunDir", "sunRadiance", "shR",
                     "cascadeMatrices", "cascadeSplits", "cascadeParams",
                     "shadowTexel", "shadowSoftness", "shadowBias",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity", "sssStrength",
                     "glintIntensity", "glintGrazing", "waterDepthTint",
+                    "frontColor",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
                 samplers: ["waterTex", "skyLUT", "cascade0", "cascade1", "cascade2"],
@@ -168,6 +199,10 @@ export class WaterBody {
         }
         mat.setFloat("waterCols", LATTICE_COLS);
         mat.setFloat("waterRings", RING);
+        // The white every power's ignition front runs to. Constant, so it is set
+        // here rather than restated every frame — but it still comes off the
+        // palette rather than out of a literal in the shader.
+        mat.setColor3("frontColor", _frontColor);
         return mat;
     }
 
@@ -202,22 +237,51 @@ export class WaterBody {
         this._params[p + 1] = 0;
         this._params[p + 2] = 0;
         this._params[p + 3] = 0;
+        this._emissive[p] = 0;
+        this._emissive[p + 1] = 0;
+        this._emissive[p + 2] = 0;
+        this._emissive[p + 3] = 0;
     }
 
     /**
      * Per-strand constants for this frame.
      * @param {number} s
      * @param {number} profile PROFILE_TUBE or PROFILE_SHEET
-     * @param {number} milkiness 0 clear water, 1 opaque slush
+     * @param {number} entrained 0 clear plasma, 1 opaque lifted dust
      * @param {number} alpha global fade, 0 hides the strand
      * @param {number} count live columns, 2..STRAND_COLS
      */
-    setParams(s, profile, milkiness, alpha, count) {
+    setParams(s, profile, entrained, alpha, count) {
         const p = s * 4;
         this._params[p] = profile;
-        this._params[p + 1] = milkiness;
+        this._params[p + 1] = entrained;
         this._params[p + 2] = alpha;
         this._params[p + 3] = count < 2 ? 0 : Math.min(count, STRAND_COLS);
+    }
+
+    /**
+     * What this strand's body emits.
+     *
+     * The hue is normalised and the gain carries the whole radiance, so a power
+     * dims by moving one number and can never drift in colour while it does —
+     * which is what would happen if the envelope were folded into the triple.
+     *
+     * The gain is the radiance the body reaches once its optical depth has
+     * saturated, *not* the radiance every pixel of it shows: the shader solves
+     * a slab of emitting, absorbing medium, so a thin trailing wisp emits a
+     * fraction of this and the belly of a column emits all of it. That is what
+     * makes the silhouette the brightest part without a rim term anywhere.
+     *
+     * @param {number} s strand
+     * @param {number} r @param {number} g @param {number} b normalised linear hue
+     * @param {number} gain peak radiance, linear and pre-exposure
+     */
+    setEmissive(s, r, g, b, gain) {
+        const p = s * 4;
+        this._emissive[p] = r;
+        this._emissive[p + 1] = g;
+        this._emissive[p + 2] = b;
+        this._emissive[p + 3] = gain > 0 ? gain : 0;
     }
 
     /**
@@ -235,10 +299,10 @@ export class WaterBody {
      * @param {number} twist section roll (tube) or curl (sheet)
      * @param {number} dist metres along the spine, drives the relief field
      * @param {number} age 0..1
-     * @param {number} foam 0..1
+     * @param {number} front ignition front, 0..1
      * @param {number} flatten vertical squash of the section, 1 = round
      */
-    column(s, c, x, y, z, radius, rx, ry, rz, twist, dist, age, foam, flatten) {
+    column(s, c, x, y, z, radius, rx, ry, rz, twist, dist, age, front, flatten) {
         if (c < 0 || c >= STRAND_COLS) return;
         const d = this._texData;
         const row = s * 3;
@@ -248,13 +312,13 @@ export class WaterBody {
         o += w;
         d[o] = rx; d[o + 1] = ry; d[o + 2] = rz; d[o + 3] = twist;
         o += w;
-        d[o] = dist; d[o + 1] = age; d[o + 2] = foam; d[o + 3] = flatten;
+        d[o] = dist; d[o + 1] = age; d[o + 2] = front; d[o + 3] = flatten;
     }
 
     // ---------------------------------------------------------------- frame
 
     /**
-     * Upload and push uniforms. Called after every spell has written its strands.
+     * Upload and push uniforms. Called after every power has written its strands.
      * @param {number} dt
      * @param {Vector3} cameraPos
      */
@@ -283,6 +347,7 @@ export class WaterBody {
         m.setVector3("cameraPos", this._camPos);
         m.setFloat("waterTime", this._t);
         m.setArray4("strandParams", this._params);
+        m.setArray4("strandEmissive", this._emissive);
 
         m.setVector3("sunDir", sky.sunDir);
         m.setColor3("sunRadiance", sky.sunRadiance);
@@ -322,7 +387,7 @@ export class WaterBody {
      * Compile behind the loading screen.
      *
      * Two synthetic strands are laid and **left standing**, so the warm-up frames
-     * in `main` actually rasterise water. `finishWarmUp` takes them down
+     * in `main` actually rasterise a body. `finishWarmUp` takes them down
      * afterwards.
      *
      * Leaving them up is the whole point. `isReady()` compiles the shader
@@ -343,6 +408,8 @@ export class WaterBody {
             );
         }
         this.setParams(0, PROFILE_TUBE, 0.2, 1, 24);
+        this.setEmissive(0, POWERS.ion.hue[0], POWERS.ion.hue[1], POWERS.ion.hue[2],
+                         POWERS.ion.body);
         // And a sheet, because the two profiles are different code paths through
         // the same vertex shader and only one of them being exercised is exactly
         // how a warm-up quietly stops covering half of what it claims to.
@@ -355,11 +422,13 @@ export class WaterBody {
             );
         }
         this.setParams(1, PROFILE_SHEET, 0.6, 1, 24);
+        this.setEmissive(1, POWERS.flare.hue[0], POWERS.flare.hue[1], POWERS.flare.hue[2],
+                         POWERS.flare.body);
 
         this.dataTex.update(this._texData);
         this.mesh.isVisible = true;
         this._pushUniforms();
-        await whenReady(this.material, "water material", [this.mesh, false]);
+        await whenReady(this.material, "plasma body material", [this.mesh, false]);
     }
 
     /** Take the synthetic strands down, after the warm-up frames have drawn. */
@@ -381,7 +450,7 @@ export class WaterBody {
  * The static lattice: (column, ring, strand), no geometry at all.
  *
  * Strands are separate index ranges in one buffer rather than separate meshes,
- * so the whole system is a single draw however many spells are up.
+ * so the whole system is a single draw however many powers are up.
  */
 function buildLattice(scene) {
     const perStrand = LATTICE_COLS * RING;

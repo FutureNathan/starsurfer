@@ -38,19 +38,6 @@ const CLOTH_ROW0 = 4;
 /** How many cascades the figure casts into. See `ShadowSystem.registerCaster`. */
 const CHAR_CASCADES = 2;
 
-/**
- * Radiance scale for the brand's emissive gains.
- *
- * `EMIT` states each emitter's gain against a unit surface. In this scene lit
- * dust sits near linear 5 and the post chain's bright-pass knee is at 3, so the
- * gains have to be lifted onto that scale to mean what they say. At 1.6 the trim
- * strip lands a little over the knee and blooms — it is a luminaire, and a
- * luminaire that does not bloom is paint — while the faceplate's glow lands
- * comfortably under it, which is what keeps it a mirror with a warm floor rather
- * than a lamp.
- */
-const EMIT_SCALE = 1.6;
-
 /** Linear mix of two brand colours, for the values that sit between two. */
 function mixLin(a, b, t) {
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -119,17 +106,25 @@ const PARAMS = [
  * gold. 0.035 is the dielectric everything else uses; 0.05 is a polyester
  * clear-coat, whose 1.55 refractive index puts it there.
  *
- * The emissive gain multiplies the slot's own albedo, so an emitter and its
- * colour can never disagree — both the faceplate's floor and the trim's output
- * come out exactly the accent hue `brand.js` authored them at.
+ * The emissive gain multiplies the slot's own albedo, and both emitting slots
+ * are authored at the accent hue — so `albedo * gain` is exactly
+ * `emissive(EMIT.x)` and an emitter can never disagree with its own colour.
+ *
+ * The gains are taken from `EMIT` unscaled, because they are already absolute
+ * radiances on this scene's scale: lit dust sits near linear 5 and the post
+ * chain's bright-pass knee is at 3. At 4 the faceplate's floor clears the knee
+ * only in its red channel, so it blooms as a warm halo without ever competing
+ * with the reflection it is meant to sit under. At 6 the strips are
+ * unambiguously over it — a luminaire that does not bloom is paint, and these
+ * are the only lights the astronaut carries.
  */
 const EXTRA = [
     [0.035, 0.0, 0.0, 0.0],
     [0.035, 0.0, 0.0, 0.0],
-    [0.040, 1.0, EMIT.visor.gain * EMIT_SCALE, 0.0],
+    [0.040, 1.0, EMIT.visor.gain, 0.0],
     [0.040, 0.0, 0.0, 0.0],
     [0.035, 0.0, 0.0, 0.0],
-    [0.040, 0.0, EMIT.trim.gain * EMIT_SCALE, 0.0],
+    [0.040, 0.0, EMIT.trim.gain, 0.0],
     [0.040, 1.0, 0.0, 0.0],
     [0.050, 0.0, 0.0, 0.0],
 ];

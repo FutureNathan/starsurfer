@@ -10,8 +10,11 @@
 //
 // The local min/max clamp is what makes it "adaptive": the correction is limited
 // to the range already present in the 3x3 neighbourhood, so a sharp edge is
-// steepened and a flat expanse of snow does not gain a halo it has no gradient to
-// justify.
+// steepened and a flat expanse of dust does not gain a halo it has no gradient
+// to justify. That clamp is also what makes this safe to run at full strength on
+// a frame that is mostly void: the largest ringing a star could pick up is the
+// void's own value on one side and the star's on the other, and both are already
+// there.
 
 varying vUV: vec2f;
 

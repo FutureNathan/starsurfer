@@ -16,12 +16,12 @@
 // the detail.
 // -----------------------------------------------------------------------------
 
-#include<snowNoise>
-#include<snowTerrain>
-#include<snowDeform>
-#include<snowShading>
-#include<snowSpellLights>
-#include<snowAtmosphere>
+#include<starNoise>
+#include<starTerrain>
+#include<starDeform>
+#include<starShading>
+#include<starSpellLights>
+#include<starAtmosphere>
 
 varying vWorld: vec3f;
 varying vHeightUV: vec2f;
@@ -106,7 +106,7 @@ uniform spellLightCount: f32;
 // the character material has to run the byte-identical lookup — the Y-flip
 // convention and the receiver-plane gradient are exactly the sort of thing that
 // two copies would quietly disagree about.
-#include<snowShadowLookup>
+#include<starShadowLookup>
 
 // -----------------------------------------------------------------------------
 
@@ -428,21 +428,22 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     const INV_PI: f32 = 0.31830988618;
 
     // --- direct diffuse, wrapped -------------------------------------------
-    // Snow's mean free path is millimetres, so light wraps well past the
-    // geometric terminator. This is why snow shadow edges are soft even where
-    // the shadow map is pin sharp.
+    // The mean free path through packed grains is millimetres, so light wraps
+    // well past the geometric terminator. This is why the terminator on a swell
+    // is soft even where the shadow map is pin sharp. It is also the *only*
+    // thing softening it: one hard star, and no sky dome behind it.
     let wrapAmount = mix(0.62, 0.15, max(compression, rockExposed));
     let diff = wrapDiffuse(NdotL, wrapAmount);
     var direct = albedo * INV_PI * sunRadiance * diff * shadow;
 
     // --- subsurface --------------------------------------------------------
-    let sss = snowSubsurface(
+    let sss = dustSubsurface(
         N, L, V, sunRadiance, thickness,
         uniforms.sssStrength * (1.0 - rockExposed), uniforms.sssRadius
     );
-    // Only partly shadowed: scattered light arrives through the snow, so a
-    // shadowed drift lip still glows. Killing this with the shadow term is what
-    // makes shadowed snow go flat and grey.
+    // Only partly shadowed: scattered light arrives through the grains, so a
+    // shadowed crest still glows along its edge. Killing this with the shadow
+    // term is what would make every shadowed face go flat.
     direct += sss * albedo * mix(0.42, 1.0, shadow);
 
     // --- direct specular ---------------------------------------------------
@@ -457,14 +458,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     // --- ambient -----------------------------------------------------------
-    // Sky irradiance from SH. Strongly blue by construction, which is the other
-    // half of the warm-light / cool-shadow split that sells snow.
+    // Sky irradiance from SH. Violet by construction — it is the nebula and the
+    // sea's own glow — which is the other half of the warm-star / cool-shadow
+    // split the whole look rests on.
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
     // Near-field bounce, and deliberately small.
     //
     // This term used to carry most of the fill: the sky LUT's lower hemisphere
-    // held a crude estimate of the snow's own radiance, so a second explicit
+    // held a crude estimate of the ground's own radiance, so a second explicit
     // bounce was needed to make up the difference. That is no longer true. The
     // LUT now stores the dust sea's *solved* radiance below the horizon —
     // reflected starlight plus its own emission, iterated to convergence — and
@@ -512,7 +514,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // a glint is a specular highlight from a crystal facet that the shading
     // normal does not represent.
     if (uniforms.glintIntensity > 0.001 && rockExposed < 0.5) {
-        let g = snowGlints(
+        let g = dustGlints(
             world.xz, N, V, L, footprint,
             uniforms.glintIntensity, uniforms.glintGrazing
         );
@@ -534,12 +536,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //     it is a *brown* trench, and it lands there because AgX stops rolling
     //     saturation off half a stop below its shoulder.
     //
-    //  2. Wherever it does darken, it goes blue in proportion. Light reaching
-    //     into a hollow in snow has scattered through snow to get there, and snow
-    //     absorbs red over any appreciable path — which is why a real snow cave
-    //     is blue and not grey. The tint is the same `deepTint` the subsurface
-    //     term uses, and tying it to the darkening rather than to `deformDepth`
-    //     means the two can never drift apart.
+    //  2. Wherever it does darken, it goes violet in proportion. Light reaching
+    //     into a hollow has scattered through the dust to get there, and the dust
+    //     absorbs red over any appreciable path — the same mechanism that makes a
+    //     real snow cave blue, on a medium whose own colour is violet. The tint
+    //     is the same `deepTint` the subsurface term uses, and tying it to the
+    //     darkening rather than to `deformDepth` means the two cannot drift.
     let caveTint = mix(vec3f(1.0), vec3f(0.62, 0.48, 1.0), (1.0 - ao) * 0.95);
     color *= ao * caveTint;
 
@@ -636,9 +638,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
             // Albedo alone, before a single lighting term touches it. The one
             // view that separates "this surface is lit badly" from "this surface
             // is the wrong colour", which are otherwise indistinguishable — and
-            // on carved snow specifically, where four independent channels
-            // (compression, ice, displaced mass, rock) all write here, it is the
-            // only way to see which of them is talking.
+            // on a carved trail specifically, where four independent channels
+            // (compression, charge, displaced mass, shard) all write here, it is
+            // the only way to see which of them is talking.
             color = albedo;
         } else if (uniforms.debugMode > 8.5) {
             // Depth-map agreement, in metres.

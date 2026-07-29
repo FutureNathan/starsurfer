@@ -21,8 +21,13 @@
  *       projection *is* the view-space z, carried through as a varying rather
  *       than reconstructed from the depth buffer. Exact, and it costs one
  *       interpolant.
- *   g   specular mask: 0 matte snow, 1 mirror ice. Only the reflection pass
- *       reads it, and only where it is non-zero.
+ *   g   reflectivity: 0 matte, 1 mirror. Three things write it — the astronaut's
+ *       gold faceplate and the crystal prisms, both flatly 1, and the glaze the
+ *       crystal power lays over the dust around them, which writes a partial
+ *       weight that fades out with the deformation buffer's own falloff.
+ *       Everything else writes 0. Only the reflection pass reads it, and only
+ *       where it is non-zero; it is a *weight*, not a material index, so a new
+ *       mirror needs no new branch downstream.
  *   ba  spare.
  *
  * Half float rather than full: the relative precision is 2^-11, so the error is

@@ -1,31 +1,38 @@
 /**
- * Spell 5 — Vortex.
+ * Power 5 — Gravity Well.
  *
- * A swirling column of airborne snow around the player that visibly *strips*
- * surface snow from the ground, holds it aloft, and lets it settle back.
+ * A column of dust wound around the player that visibly *lifts* the sea off the
+ * ground, holds it aloft, and lets it settle back.
  *
- * The stripping is the point, and it is the one thing here that no other spell
+ * The lifting is the point, and it is the one thing here that no other power
  * does: this is the only effect in the demo that takes the terrain state buffer
  * *back*. A brush with a negative depression is a perfectly ordinary brush as
  * far as the simulation is concerned — the accumulation is additive and the
- * clamp floors it at zero — so "remove snow from a ring" and "put it back" are
- * the same code path as everything else, with a sign on it.
+ * clamp floors it at zero — so "take a ring of the sea away" and "put it back"
+ * are the same code path as everything else, with a sign on it.
+ *
+ * It is also the dimmest of the five, and that is the reskin rather than an
+ * oversight. The other four are things that *emit*; a well is a thing light
+ * falls into. What is in the air here is lifted mass rather than plasma, so it
+ * wells at about the brightness of the ground it tore up and takes most of its
+ * light from the star and from the other powers instead of making its own.
  *
  * The airborne mass is two systems working from one description:
  *
- *   three helices   swept tubes of dense slush, wound around the player and
- *                   rotating. These give the column a readable *shape*; a vortex
+ *   three helices   swept tubes of dense dust, wound around the player and
+ *                   rotating. These give the column a readable *shape*; a well
  *                   made only of particles is a cloud, and a cloud does not
  *                   spiral.
  *   the grains      emitted continuously *along those same helices*, with the
  *                   helix's own tangential velocity, and short-lived enough that
  *                   they never get far from the path that launched them. That is
- *                   how the spray swirls without the particle simulation needing
- *                   to know what a vortex is — the same trick the surf plume uses
+ *                   how the grains swirl without the particle simulation needing
+ *                   to know what a well is — the same trick the surf plume uses
  *                   to leave the crest the mesh is actually drawing.
  */
 
 import { PROFILE_TUBE } from "./waterBody.js";
+import { POWERS } from "./powers.js";
 import { clamp01, smooth01, bell, transport } from "./bending.js";
 
 /** How many helices. Three reads as a spiral; two reads as a double helix. */
@@ -100,9 +107,12 @@ export class Vortex {
         this._strip(dt, env);
         this._grains(dt, env);
 
+        // On the axis, a little over head height, so it lights the inside of the
+        // column and the player standing in it rather than the ground outside.
+        const well = POWERS.well;
         ctx.lights.add(
             this.x, ctx.terrain.heightAt(this.x, this.z) + 1.3, this.z,
-            9.0, 0.46, 0.74, 1.0, 9.0 * env
+            9.0, well.hue[0], well.hue[1], well.hue[2], well.light * env
         );
     }
 
@@ -128,7 +138,7 @@ export class Vortex {
                 // lift — so `u` runs downward, matching every other strand.
                 const h = 1 - u;
                 const ang = phase + this.spin + h * TURNS * Math.PI * 2;
-                // Wide at the bottom where it is picking snow up, narrower and
+                // Wide at the bottom where it is picking mass up, narrower and
                 // faster at the top. Not a cone: the waist is what makes it read
                 // as a vortex rather than as a party hat.
                 const r = (2.55 - 1.15 * h) * (0.78 + 0.34 * bell(clamp01(h * 1.2)));
@@ -149,13 +159,13 @@ export class Vortex {
                     rx = 0; ry = 1; rz = 0;
                 }
 
-                // Both ends taper to nothing: the top because the snow is
+                // Both ends taper to nothing: the top because the dust is
                 // dispersing, the bottom because it is still on the ground.
                 //
                 // Thin. The helices are here to give the column a readable
                 // *shape*, not to be the column: the mass of it is the grains,
                 // and a fat ribbon takes the reading away from them and turns
-                // the spell into three solid loops with some snow near it.
+                // the power into three solid loops with some dust near it.
                 // Monotonic in `u`, with one slow modulation and nothing else.
                 // Several terms keyed to world distance reach the sample Nyquist
                 // and pinch the tube shut wherever their zeros line up, which
@@ -184,20 +194,35 @@ export class Vortex {
                 px = x; py = y; pz = z;
             }
 
-            // Almost entirely opaque: this is lifted snow, not water. The small
+            // Almost entirely opaque: this is lifted mass, not plasma. The small
             // amount of transparency left is what lets the far side of the
             // column show through the near side, which is most of what makes it
             // read as a rotating volume.
             water.setParams(s, PROFILE_TUBE, 0.88, clamp01(env * 1.3), COLS);
+
+            // What glow there is comes from the nebula the sea is condensing out
+            // of, seen through a column of it that has just been stirred — the
+            // same violet the dust field wells with in its own troughs, at the
+            // same order of brightness. Not a source: a well that outshone the
+            // ground it lifted would be a fountain.
+            const well = POWERS.well;
+            water.setEmissive(s, well.hue[0], well.hue[1], well.hue[2], well.body * env);
         }
     }
 
     /**
-     * Strip the ground, then give it back.
+     * Lift the ground, then give it back.
      *
-     * The ring grows outward while the spell holds and retreats while it fades,
-     * so the snow comes back from the outside in — which is what settling snow
+     * The ring grows outward while the power holds and retreats while it fades,
+     * so the sea comes back from the outside in — which is what settling dust
      * does, since the outermost material was lifted the least far.
+     *
+     * Nothing is written to the charge channel, and it cannot be: the simulation
+     * takes charge as a *max*, so a well has no way to drain what is already
+     * there however negative an argument it is handed. Which is the right
+     * outcome anyway — the sea comes back as the same mass it left as, and a
+     * ring of ground that had been scrubbed dark would read as damage rather
+     * than as matter that went up and came down.
      */
     _strip(dt, env) {
         const ctx = this.ctx;
@@ -214,10 +239,10 @@ export class Vortex {
         this._stripOwed = 0;
 
         const N = 9;
-        // Holding: take snow away — depression up, no berm, because the mass is
-        // in the air rather than piled at the rim. Fading: put it back, as
+        // Holding: take the sea away — depression up, no berm, because the mass
+        // is in the air rather than piled at the rim. Fading: put it back, as
         // negative depression plus a little loose berm, because what lands is
-        // broken snow sitting proud of what it fell on.
+        // broken dust sitting proud of what it fell on.
         const give = holding ? -1 : 1;
 
         for (let i = 0; i < N; i++) {
@@ -262,7 +287,7 @@ export class Vortex {
         const groundY = ctx.terrain.heightAt(this.x, this.z);
 
         for (let k = 0; k < count; k++) {
-            // Weighted toward the bottom, where the snow is being picked up.
+            // Weighted toward the bottom, where the mass is being picked up.
             const h = Math.random() * Math.random();
             const hIdx = (Math.random() * HELICES) | 0;
             const phase = (hIdx / HELICES) * Math.PI * 2;

@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// snowClipmap — vertex placement and displacement for the nested-ring terrain.
+// starClipmap — vertex placement and displacement for the nested-ring terrain.
 //
 // The whole terrain is one static vertex buffer and one draw call. Vertices
 // carry only a grid index and a ring level; where they actually land is decided

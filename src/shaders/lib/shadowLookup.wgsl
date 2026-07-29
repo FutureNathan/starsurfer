@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
-// snowShadowLookup — the receiving half of the cascaded shadow maps.
+// starShadowLookup — the receiving half of the cascaded shadow maps.
 //
-// Lifted out of the snow material once the character needed the identical
+// Lifted out of the dust material once the character needed the identical
 // lookup. Two independent copies of this would be a slow-motion disaster: the
 // Y-flip convention, the receiver-plane gradient and the normal offset are all
 // things that are invisible to inspection and wrong in ways that only show up
@@ -18,7 +18,7 @@
 //   uniform shadowBias: f32
 //   var cascade0/1/2: texture_2d<f32> + matching samplers
 //
-// and must include <snowShading> first, for `pcssShadow`.
+// and must include <starShading> first, for `pcssShadow`.
 // -----------------------------------------------------------------------------
 
 /// Project into one cascade and run PCSS. Returns 1.0 (lit) outside the
