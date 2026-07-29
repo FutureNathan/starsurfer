@@ -409,11 +409,18 @@ parts the bloom pass exists to catch. The gains it lists are not free-floating:
 they are stated against two measured numbers, lit dust at 5 and the bloom threshold
 at 3, so reading one tells you whether the thing it belongs to glows.
 
-Some internal identifiers still carry the `snow` prefix — the shader-store keys,
-the include names, a handful of file names. They are registered strings and
-`#include` targets with no user-visible effect, and renaming them is a coordinated
-edit across two registration sites that buys nothing and risks a silent
-unresolved-symbol failure.
+Two identifiers are worth explaining rather than renaming. `sun` throughout the
+code and the shaders means the one distant star — it is what every WGSL uniform
+block already calls its single directional source. And a settings key beginning
+`spell` is one of the five powers; the overlay labels them "Powers", and the key
+names are read by a dozen files and appear in no user-visible string.
+
+The word *snow* survives in a handful of comments, always as a comparison and
+never as a description. The macro layer gives up its anisotropy specifically so
+the field stops reading as wind-carved dunes; the albedo is held genuinely dark
+because a pale diffuse ground reads as snow whatever hue it is tinted. Those
+comments are the reasoning behind a number, which is what the comments in this
+repository are for.
 
 ## Assets and licences
 
