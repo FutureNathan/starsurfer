@@ -16,8 +16,8 @@ uniform time: f32;
 uniform starDensity: f32;
 uniform starBrightness: f32;
 uniform cameraPosition: vec3f;
-/// Direct solar irradiance at the ground, on the same scale the LUT stores
-/// radiance in — so the range is lit by the identical number the snow is.
+/// Direct starlight reaching the ground, on the same scale the LUT stores
+/// radiance in — so the range is lit by the identical number the dust is.
 uniform sunRadiance: vec3f;
 uniform shR: array<vec4f, 9>;
 uniform ambientIntensity: f32;
@@ -28,18 +28,19 @@ uniform ridgeAmp: f32;
 /// galaxy while the ground in front of it shines.
 uniform dustEmission: vec3f;
 
-// The field's own aerial perspective, so the range can be hazed by the same
-// atmosphere the snow in front of it is. See `shadeRidge`.
+// The field's own aerial perspective, so the range is hazed by the same nebula
+// the dust in front of it is. See `shadeRidge`.
 uniform fogDensity: f32;
 uniform fogHeightFalloff: f32;
 uniform fogStart: f32;
 uniform aerialStrength: f32;
 
-/// Shade a point on the far range.
+/// Shade a point on the far range — a ridge of crystalline debris standing out
+/// of the dust sea, drawn on the skybox rather than as geometry.
 ///
-/// Deliberately the *snow field's* material logic, not a separate one: the same
-/// wrapped diffuse, the same SH ambient, the same near-white albedo that is
-/// never 1.0. A distant mountain rendered with its own ad-hoc lighting is the
+/// Deliberately the *dust field's* material logic, not a separate one: the same
+/// wrapped diffuse, the same SH ambient, the same dark violet albedo, the same
+/// emission. A distant massif rendered with its own ad-hoc lighting is the
 /// classic way a matte painting announces itself — it does not sit in the same
 /// light as the ground in front of it.
 fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
@@ -51,50 +52,53 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // the bare rock is here for the *break* it gives the silhouette, not as a
     // ground cover.
     let steep = 1.0 - N.y;
-    let snowMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
+    let dustMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
-    let rock = vec3f(0.026, 0.024, 0.038);
-    let snow = vec3f(0.085, 0.062, 0.155);
-    let albedo = mix(rock, snow, snowMask);
+    let shard = vec3f(0.026, 0.024, 0.038);
+    let dust  = vec3f(0.085, 0.062, 0.155);
+    let albedo = mix(shard, dust, dustMask);
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
 
     const INV_PI: f32 = 0.31830988618;
-    let diff = wrapDiffuse(dot(N, L), mix(0.15, 0.62, snowMask));
+    let diff = wrapDiffuse(dot(N, L), mix(0.15, 0.62, dustMask));
     var col = albedo * INV_PI * uniforms.sunRadiance * diff * shadow;
 
     // --- subsurface ---------------------------------------------------------
-    // The term the first version left out, and the reason the range read as a
-    // different material from the field it stands behind.
+    // Without this the range reads as a different material from the field it
+    // stands behind.
     //
-    // Snow is translucent. The snow shader spends most of its budget saying so,
-    // and a mountain of snow with the sun behind it *glows* — it does not go to a
-    // dark silhouette. Without this the range came out as dark warm shapes
-    // against bright warm haze, which is the one combination that reads as dirt,
-    // and it was most visible in exactly the framing where a range should look
-    // its best: looking into a low sun.
+    // The dust is translucent — it is a loose aggregate of ice and silicate
+    // grains, and light entering one side of a drift leaves the other. A ridge of
+    // it with the star behind *glows* along its edge rather than going to a flat
+    // silhouette, and that rim is most of what separates it from the void it is
+    // drawn against.
     //
-    // Same `snowSubsurface` the ground runs, so the two cannot disagree about
-    // what back-lit snow does.
+    // The identical term the ground runs, so the two cannot disagree about what
+    // back-lit dust does.
     let V = -dir;
-    col += snowSubsurface(N, L, V, uniforms.sunRadiance, 0.45, snowMask, 1.0)
+    col += snowSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 1.0)
          * albedo * mix(0.5, 1.0, shadow);
 
-    // Sky fill. At this distance it is most of what is left after extinction,
-    // and it is the reason distant snow reads blue rather than grey.
+    // Ambient fill. At this distance it is most of what is left after
+    // extinction, and out here it is the reason a distant ridge reads violet
+    // rather than black: the nebula above and the dust sea below are the only
+    // things illuminating the faces the star cannot reach.
     col += albedo * INV_PI * shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
-    // Bounce off the range's own snow, exactly as the field does off itself. A
-    // white massif is lit from every direction by the rest of the massif, and
-    // leaving it out is what makes shaded faces read as too dark by a stop.
-    col += albedo * INV_PI * shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
-         * uniforms.ambientIntensity * 0.30 * clamp(-N.y * 0.5 + 0.5, 0.0, 1.0)
-         * snowMask;
+    // Near-field bounce off the range's own dust — the same small correction the
+    // ground makes, for the same reason. The sky LUT's lower hemisphere already
+    // carries the dust sea's solved radiance, so the sphere integral above has
+    // most of this; what is added here is the part a distant uniform sea cannot
+    // account for, weighted onto the downward-facing slopes it reaches.
+    col += albedo * INV_PI * shIrradiance(vec3f(0.0, -1.0, 0.0), uniforms.shR)
+         * uniforms.ambientIntensity * 0.25 * clamp(-N.y * 0.5 + 0.5, 0.0, 1.0)
+         * dustMask;
 
     // The same emission the near field carries, weighted by how much dust the
     // face is actually holding. See `DUST_EMISSION` in sky.js — the two are one
     // number, published from there, so they cannot drift apart.
-    col += uniforms.dustEmission * snowMask * 0.55;
+    col += uniforms.dustEmission * dustMask * 0.55;
 
     // ---- aerial perspective ------------------------------------------------
     //

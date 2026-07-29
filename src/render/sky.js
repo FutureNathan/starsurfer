@@ -35,9 +35,9 @@ const SH_H = 32;
  * exposure handles overall brightness — but it must be *one* number, applied to
  * both, or the star/sky ratio stops meaning anything.
  *
- * Ten times what the snow demo this grew out of used, and for one reason: the
- * ground's albedo went from 0.85 to 0.085. Scaling the source by the same factor
- * the surface lost puts lit dust back in the same linear range lit snow sat in,
+ * Ten times what a scene over a bright diffuse ground would want, and for one
+ * reason: this ground's albedo is 0.085. Scaling the source by the factor the
+ * surface lacks puts lit dust in a workable linear range,
  * which is what lets the post chain's whole calibration — the AgX exposure, the
  * bloom threshold in linear units — carry over untouched. Raising the exposure
  * instead would have moved the scene without moving the bloom threshold with it,
@@ -249,14 +249,20 @@ export class Sky {
     }
 
     /**
-     * Compile the bake shaders, then solve the sky and the snow bounce
-     * together. Used during load and after any sun change.
+     * Compile the bake shaders, then solve the backdrop and the dust sea's own
+     * radiance together. Used during load and after the star moves.
      *
-     * The two are mutually dependent: the sky lights the snow, the snow bounces
-     * ~85% of that straight back up, and that bounce is itself a major source
-     * of sky-hemisphere light. Solved by iteration — bake, project to SH, work
-     * out what the ground is now radiating, bake again. It converges in three
-     * passes because each round trip is multiplied by the albedo.
+     * The two are mutually dependent: the backdrop lights the dust, the dust
+     * radiates — a little reflected, mostly its own emission — and that
+     * radiance fills the LUT's entire lower hemisphere, which is then part of
+     * what lights the dust. Solved by iteration: bake, project to SH, work out
+     * what the ground is now radiating, bake again.
+     *
+     * It converges fast, and faster than it used to. Each round trip through the
+     * reflected term is multiplied by an albedo of 0.085 rather than 0.85, so the
+     * geometric series it forms has a ratio an order of magnitude smaller; the
+     * emissive term is a constant and does not iterate at all. Three passes is
+     * now generous rather than marginal.
      */
     async solve() {
         this.syncFromSettings();
@@ -400,7 +406,7 @@ export class Sky {
         m.setFloat("starDensity", S.starDensity);
         m.setFloat("starBrightness", S.starBrightness);
 
-        // The far range. Lit by the same radiance and the same SH the snow is —
+        // The far range. Lit by the same radiance and the same SH the dust is —
         // see `shadeRidge` in the fragment shader.
         m.setColor3("sunRadiance", this.sunRadiance);
         m.setArray4("shR", this.sh);

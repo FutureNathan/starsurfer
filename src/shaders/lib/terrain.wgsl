@@ -3,20 +3,24 @@
 //
 // Split into two halves that live in different places at runtime:
 //
-//   terrainMacro()  broad dunes + medium drifts. Tens of metres down to about a
+//   terrainMacro()  broad swells + medium drifts. Tens of metres down to about a
 //                   metre. Baked once into a texture at load, because the CPU
 //                   needs the same data for character grounding and reading back
 //                   a bake is the only way to guarantee the two agree exactly.
 //
-//   terrainFine()   sastrugi ridges and wind ripples, decimetre and below.
-//                   Evaluated live in the vertex and fragment shaders with exact
-//                   analytic derivatives — far too fine to bake at any sane
-//                   texture resolution, and cheap enough not to bother.
+//   terrainFine()   filaments and ripples, decimetre and below. Evaluated live
+//                   in the vertex and fragment shaders with exact analytic
+//                   derivatives — far too fine to bake at any sane texture
+//                   resolution, and cheap enough not to bother.
 //
-// Everything is anisotropic about a single prevailing wind direction, which is
-// most of what separates a real snow field from a bumpy one: real fields are
-// *carved*, and the carving has a direction. Broad forms run transverse
-// to the wind (dune ridges), fine forms run parallel to it (sastrugi streaks).
+// The two halves take opposite positions on anisotropy, and that split is what
+// makes this read as a drifting cloud of grains rather than as a wind-carved
+// snow field. The macro layer is near-isotropic: broad rolling swells with no
+// prevailing grain, because nothing out here blows. The fine layer is stretched
+// hard along the drift bearing, so metre-scale filaments stream across those
+// swells the way gas does in a nebula. Put the anisotropy in the macro layer
+// instead and you get transverse dune ridges, which is the strongest snow cue
+// there is.
 // -----------------------------------------------------------------------------
 
 /// Build the combined rotate-and-anisotropically-scale matrix for a noise layer.
@@ -88,7 +92,7 @@ fn terrainMacroD(p: vec2f, w: f32, amp: f32) -> vec2f {
 // -------------------------------------------------------------------- rocks
 
 /// Sparse exposed rock. Jittered grid, one outcrop per cell, most of them
-/// culled so the field stays "just snow and the player".
+/// culled so the field stays "just dust and the player".
 /// Returns vec2f(height contribution, rock mask 0..1).
 fn rockField(p: vec2f, w: f32) -> vec2f {
     let cell = 165.0;
@@ -224,7 +228,7 @@ fn terrainFineFiltered(p: vec2f, w: f32, exposure: f32, amp: f32, fp: f32) -> ve
 
     // Sastrugi: wavelength ~2.3 m. Real sastrugi stands 10-30 cm proud with a
     // hard scalloped crest — it is a landform in its own right, not a texture,
-    // and underscaling it is what leaves a snow field looking like poured icing.
+    // and underscaling it is what leaves a dust sea looking like poured icing.
     // Same local veer and anisotropy the vertex stage used. See `windLocal`.
     let wl = windLocal(p);
 

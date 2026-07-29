@@ -1,6 +1,6 @@
 /**
- * Terrain system: owns the heightfield, the clipmap mesh, the snow material,
- * the shadow-pass materials and the generated detail map.
+ * The dust field: owns the heightfield, the clipmap mesh, the surface material,
+ * the shadow-pass materials and the generated grain map.
  *
  * Per frame this uploads a handful of uniforms and nothing else. No geometry is
  * rebuilt, no buffer is re-uploaded, nothing is allocated.
@@ -83,7 +83,7 @@ export class Terrain {
         /** The terrain state buffer. Feet, the surf wake and every spell write here. */
         this.deform = new DeformationField(scene);
 
-        // Generated snow grain, tiled at three world scales by the material.
+        // Generated dust grain, tiled at three world scales by the material.
         this.detailTex = new ProceduralTexture(
             "detailTex",
             { width: DETAIL_RES, height: DETAIL_RES },
@@ -232,7 +232,7 @@ export class Terrain {
 
         // The cascade fitter needs the world's vertical extent to size each
         // light volume's depth range. A margin covers carved berms and anything
-        // standing on the snow.
+        // standing on the dust.
         this.shadows.setHeightBounds(
             this.heightfield.minHeight - 4,
             this.heightfield.maxHeight + 6
@@ -332,7 +332,7 @@ export class Terrain {
         m.setArray4("cascadeParams", this.shadows.paramData);
         m.setFloat("shadowTexel", this.shadows.texelSize);
         m.setFloat("shadowSoftness", 1.8);
-        // Metres. Snow has no thin geometry to peter-pan, so this can stay
+        // Metres. The field has no thin geometry to peter-pan, so this can stay
         // small and keep contact shadows attached.
         m.setFloat("shadowBias", 0.022);
 

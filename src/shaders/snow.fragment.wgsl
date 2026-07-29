@@ -1,11 +1,11 @@
 // -----------------------------------------------------------------------------
-// The snow material.
+// The cosmic dust material.
 //
 // Normals arrive from four independent sources and have to be combined in the
 // right order or the surface stops holding together:
 //
 //   macro     baked landform gradient        tens of metres → ~1 m
-//   fine      analytic sastrugi and ripples  ~2 m → ~10 cm
+//   fine      analytic filaments and ripples ~2 m → ~10 cm
 //   detail    tiled generated grain map      ~10 cm → ~5 mm
 //   deform    the terrain state buffer       whatever the player carved
 //
@@ -47,8 +47,9 @@ var deformTexSampler: sampler;
 // ------------------------------------------------------------------ uniforms
 uniform cameraPos: vec3f;
 uniform sunDir: vec3f;
-/// Direct solar irradiance at the ground, already atmospherically extinguished
-/// and in the same units the sky LUT stores radiance in.
+/// Direct starlight reaching the ground, in the same units the sky LUT stores
+/// radiance in. No extinction term: there is no atmosphere between the star and
+/// this surface to take one.
 uniform sunRadiance: vec3f;
 
 uniform shR: array<vec4f, 9>;
@@ -151,7 +152,7 @@ fn unpackN(rg: vec2f) -> vec3f {
     return vec3f(xy, sqrt(max(0.0, 1.0 - dot(xy, xy))));
 }
 
-/// Triplanar detail-normal fetch. Snow on a steep rock face has no sensible
+/// Triplanar detail-normal fetch. Dust on a steep shard face has no sensible
 /// planar projection, and stretching the grain up a 60-degree slope is instantly
 /// legible as a smear.
 ///
@@ -206,7 +207,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // an order of magnitude — and anything keyed off it fades out, even though
     // the surface is no further away and is still perfectly resolvable across the
     // sliver's short axis. For the natural detail layers that trade is fine and
-    // deliberate. For carved snow it is not: it means the trail changes shape
+    // deliberate. For a carved trail it is not: it means the trail changes shape
     // when you move the camera and not the player, which reads as a bug because
     // it is one. This is the same reasoning anisotropic texture filtering runs on.
     let footprintMin = max(min(length(ddxW.xz), length(ddyW.xz)), 1e-4);
@@ -224,8 +225,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // ------------------------------------------------------------ deformation
     // Depression, displaced berm mass and compression, written by feet, the
-    // surf wake and every spell. Read here so lighting responds to carved snow
-    // exactly as it does to natural relief.
+    // surf wake and every power. Read here so lighting responds to a carved
+    // trail exactly as it does to natural relief.
     var compression = 0.0;
     var iceAmount = 0.0;
     var deformDepth = 0.0;
@@ -251,7 +252,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // after it has stopped being a shape.
         //
         // Keyed to the narrow footprint axis, so the width tracks how far away the
-        // snow is and not how obliquely it is being looked at.
+        // dust is and not how obliquely it is being looked at.
         let step = max(uniforms.deformTexel * 2.0, footprintMin * 1.4);
         let eUV = step / uniforms.deformSize;
 
@@ -279,7 +280,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     var N = normalFromGradient(grad);
 
     // The surface the *depth pass* rendered: macro landform, the analytic fine
-    // layer and carved snow, but nothing finer. The shading normal below picks up
+    // layer and the carved trail, but nothing finer. The shading normal picks up
     // three tiled grain scales on top of this, and biasing the shadow lookup
     // against that would describe a surface orders of magnitude higher in
     // frequency than the one in the depth map — the offset would point off in a
@@ -324,16 +325,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     ).z;
 
     // ------------------------------------------------------------- material
-    // Cosmic dust is the inverse of the snow this material used to describe.
-    // Snow's whole problem was an albedo so high it clipped; dust's is an albedo
-    // so low that reflected light alone leaves the field unreadable. It is dark
+    // Cosmic dust is a hard material to light. Its albedo is so low that
+    // reflected light alone leaves the field unreadable — It is dark
     // violet — grains of silicate and ice condensing out of a nebula, seen
     // against a sky with almost nothing in it — and what gives it form is the
     // emissive block further down, not this.
     //
-    // Keeping it genuinely dark matters. A pale ground under a star reads as
-    // snow no matter what hue it is tinted, because the eye takes "bright
-    // diffuse surface, low saturation" as snow before it takes anything else.
+    // Keeping it genuinely dark matters. A pale ground under a hard raking light
+    // reads as snow no matter what hue it is tinted, because the eye takes
+    // "bright diffuse surface, low saturation" as snow before anything else.
     var albedo = vec3f(0.085, 0.062, 0.155);
     var roughness = 0.78;
     var f0 = vec3f(0.020);
@@ -365,28 +365,27 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         thickness = mix(thickness, 0.0, rockExposed);
     }
 
-    // --- carved-snow surface state -----------------------------------------
-    // Freshly displaced mass is the opposite of trodden snow: it has just been
-    // broken up and thrown, so it is loose, bright and rough. Without this the
-    // berms shade identically to the trench and the whole trail flattens into
-    // one grey smear.
+    // --- freshly thrown mass -----------------------------------------------
+    // Displaced dust is the opposite of packed dust: it has just been broken up
+    // and thrown, so it is loose, bright and rough. Without this the berms shade
+    // identically to the trench and the whole trail flattens into one smear.
     //
-    // Both numbers here must not make carved snow *less blue*, which is the one
-    // axis this material cannot afford to lose. Drain the cool cast out of a
-    // heavily worked patch and it reads as bare ground even while its luminance
-    // goes up — a warm-grey patch surrounded by blue-white snow is not snow.
+    // Neither number here may make a worked patch *less violet*, which is the
+    // one axis this material cannot afford to lose. Drain the cast out of a
+    // heavily carved patch and it reads as bare ground even while its luminance
+    // goes up — a neutral-grey scar across a violet field is not the same
+    // material, and the eye reads it as a texturing error rather than as a trail.
     //
-    //  1. The loose colour was a *whiter* white — B/R 1.078 against snow's 1.105
-    //     — so brightening toward it desaturated. It is now brighter than snow in
-    //     every channel and very slightly bluer, which is also the truer answer:
-    //     freshly broken snow has more surface per unit volume and scatters more,
-    //     and snow's scattering is what its blue comes from.
-    //  2. Roughness at 0.78 cut the ambient sky specular, through both the
-    //     roughness-dependent Fresnel and a blurrier mip. That term is one of the
-    //     bluest things in the frame, and a berm loses it exactly where the eye
-    //     is comparing it against snow that still has it. Loose snow is still
-    //     rougher than packed — it should be — just not by enough to strip the
-    //     sky out of it.
+    //  1. The loose colour is brighter than settled dust in every channel and
+    //     slightly more saturated, not less. That is also the truer answer:
+    //     freshly broken grains have far more surface per unit volume and
+    //     scatter more, and scattering is where the dust's colour comes from in
+    //     the first place.
+    //  2. Roughness goes *up* on loose mass, unlike snow, where a berm packs
+    //     under its own weight almost immediately. There is no melt layer out
+    //     here and nothing to press it, so broken dust stays broken — and the
+    //     high roughness is what keeps the emissive glow reading as coming from
+    //     inside the mass rather than off its surface.
     if (deformBerm > 0.002) {
         let loose = clamp(deformBerm * 5.0, 0.0, 1.0);
         albedo = mix(albedo, vec3f(0.155, 0.115, 0.265), loose * 0.55);
@@ -402,7 +401,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the note where this is applied, at the bottom: it scales the whole
     // radiance, not the ambient, and it carries a blue shift with it.
     //
-    // Analytic only, deliberately. A snow field is the worst possible content
+    // Analytic only, deliberately. A dust sea is the worst possible content
     // for a screen-space occlusion pass: an open, smooth, high-albedo surface
     // viewed at grazing angles, so the estimator has almost no real occluders to
     // find and what it returns is dominated by its own view-dependent bias — a
@@ -499,7 +498,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //
     // The occlusion below scales this along with everything else: a spell casting
     // into an open field and a spell casting into the bottom of its own crater
-    // are lighting very different amounts of visible snow.
+    // are lighting very different amounts of visible dust.
     if (uniforms.spellLightCount > 0.5) {
         color += spellLighting(
             world, N, V, albedo, thickness,
