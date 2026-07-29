@@ -9,6 +9,7 @@
  */
 
 import { S, SCHEMA, set, applyPreset } from "../core/settings.js";
+import { NAME } from "../core/brand.js";
 import { stats, systemMs, FrameGraph, spikes, resetSpikes } from "../core/perf.js";
 
 const CSS = `
@@ -116,7 +117,7 @@ export class Overlay {
         // --------------------------------------------------------- header
         const hdr = document.createElement("div");
         hdr.className = "hdr";
-        hdr.innerHTML = "<b>SNOWFLOW</b><i>F1 to close</i>";
+        hdr.innerHTML = "<b>" + NAME + "</b><i>F1 to close</i>";
         el.appendChild(hdr);
 
         // ----------------------------------------------------- frame graph
@@ -429,7 +430,7 @@ export class Overlay {
         const rig = this.rig;
         if (!rig) return "—";
         const c = this.character;
-        let s = "const s=SNOWFLOW;";
+        let s = "const s=STARSURFER;";
         if (c) {
             s +=
                 "s.character.position.set(" +

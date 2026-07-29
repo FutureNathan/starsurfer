@@ -1,7 +1,7 @@
 {
-  "name": "snowflow",
+  "name": "starsurfer",
   "version": "1.0.0",
-  "description": "Real-time procedural snow rendering tech demo (Babylon.js / WebGPU)",
+  "description": "Real-time procedural galaxy and cosmic-dust rendering tech demo (Babylon.js / WebGPU)",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,9 @@
     "webgpu",
     "babylonjs",
     "wgsl",
-    "snow",
+    "space",
+    "galaxy",
+    "nebula",
     "terrain",
     "procedural",
     "graphics"

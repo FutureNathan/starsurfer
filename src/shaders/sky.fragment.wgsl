@@ -12,8 +12,9 @@ uniform sunDir: vec3f;
 uniform sunColor: vec3f;
 uniform sunIntensity: f32;
 uniform time: f32;
-uniform windDir: vec2f;
-uniform cloudAmount: f32;
+/// Occupancy and brightness of the point-star field.
+uniform starDensity: f32;
+uniform starBrightness: f32;
 uniform cameraPosition: vec3f;
 /// Direct solar irradiance at the ground, on the same scale the LUT stores
 /// radiance in — so the range is lit by the identical number the snow is.
@@ -22,6 +23,10 @@ uniform shR: array<vec4f, 9>;
 uniform ambientIntensity: f32;
 /// Peak height of the far range, metres. Zero switches it off entirely.
 uniform ridgeAmp: f32;
+/// The dust field's own emission. The range is covered in the same dust and has
+/// to glow by the same amount, or it draws as a black cut-out in front of the
+/// galaxy while the ground in front of it shines.
+uniform dustEmission: vec3f;
 
 // The field's own aerial perspective, so the range can be hazed by the same
 // atmosphere the snow in front of it is. See `shadeRidge`.
@@ -41,16 +46,15 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     let N = hit.normal;
     let L = uniforms.sunDir;
 
-    // Snow almost everywhere, rock only on the faces too steep to hold it. This
-    // is a polar range, not an alpine one: there is no snow line to speak of, and
-    // the first version's 120-460 m ramp put rock across the whole visible band
-    // and turned the horizon into a dark smear. Rock is here for the *break* it
-    // gives a white massif, not as a ground cover.
+    // Settled dust almost everywhere, bare shard only on the faces too steep to
+    // hold it. Nothing sweeps this range clear, so there is no line to speak of;
+    // the bare rock is here for the *break* it gives the silhouette, not as a
+    // ground cover.
     let steep = 1.0 - N.y;
     let snowMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
-    let rock = vec3f(0.052, 0.055, 0.066);
-    let snow = vec3f(0.855, 0.885, 0.945);
+    let rock = vec3f(0.026, 0.024, 0.038);
+    let snow = vec3f(0.085, 0.062, 0.155);
     let albedo = mix(rock, snow, snowMask);
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
@@ -86,6 +90,11 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     col += albedo * INV_PI * shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
          * uniforms.ambientIntensity * 0.30 * clamp(-N.y * 0.5 + 0.5, 0.0, 1.0)
          * snowMask;
+
+    // The same emission the near field carries, weighted by how much dust the
+    // face is actually holding. See `DUST_EMISSION` in sky.js — the two are one
+    // number, published from there, so they cannot drift apart.
+    col += uniforms.dustEmission * snowMask * 0.55;
 
     // ---- aerial perspective ------------------------------------------------
     //
@@ -130,6 +139,68 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     return mix(col, inscatter, ext);
 }
 
+/// The point-star field.
+///
+/// Screen-only, and deliberately so: this never enters the bake. At the 64x32
+/// the spherical-harmonic readback runs at, a star is far smaller than a texel,
+/// and what the projection returns is not a star field but a randomly-tinted
+/// ambient that jumps every time the star moves. Stars light nothing here. They
+/// cost one hash and they are drawn over the top.
+///
+/// Cells are laid out on the six faces of a cube rather than in lat-long UV.
+/// Lat-long is shorter by two lines and puts a visible pinch of crowded stars at
+/// the zenith — which is exactly where the camera looks when you drop into a
+/// trough and pitch up out of it.
+fn starField(dir: vec3f, density: f32, t: f32) -> vec3f {
+    let a = abs(dir);
+    var uv: vec2f;
+    var face: f32;
+    if (a.x >= a.y && a.x >= a.z) {
+        uv = dir.yz / a.x;
+        face = select(0.0, 1.0, dir.x < 0.0);
+    } else if (a.y >= a.z) {
+        uv = dir.xz / a.y;
+        face = select(2.0, 3.0, dir.y < 0.0);
+    } else {
+        uv = dir.xy / a.z;
+        face = select(4.0, 5.0, dir.z < 0.0);
+    }
+
+    // One candidate star per cell, and only the containing cell is tested — so
+    // the whole field is a single hash regardless of how many stars are in it.
+    const N: f32 = 96.0;
+    let g = uv * N;
+    let cell = floor(g);
+    let f = g - cell;
+
+    let h = hash33(vec3f(cell, face * 37.0));
+    if (h.z > 0.42 * density) { return vec3f(0.0); }
+
+    // Held off the cell edges, because only one cell is sampled: a star centred
+    // on a boundary would be sliced in half by the cell it does not belong to.
+    let centre = clamp(h.xy, vec2f(0.25), vec2f(0.75));
+    let d = length(f - centre);
+
+    // Apparent magnitude, cubed. A real field is overwhelmingly faint stars with
+    // a handful of bright ones; a uniform distribution reads as static.
+    let m = hash21(cell + vec2f(face * 11.0, 3.7));
+    let mag = m * m * m;
+
+    // Twinkle. There is no air to scintillate out here, so this is small and
+    // slow — the eye's own adaptation rather than the atmosphere's turbulence —
+    // and every star gets its own rate and phase so the field never pulses.
+    let tw = 0.80 + 0.20 * sin(t * (0.6 + m * 2.4) + h.x * 62.8);
+
+    // ~2 px across at 1440p. Smaller than that and TAA treats each star as
+    // sub-pixel noise and dissolves the field into a faint grey haze.
+    let core = exp(-d * d * 420.0) * (0.35 + 3.4 * mag);
+
+    // Colour by spectral class, roughly: hot blue-white through to cool amber,
+    // with the bright end of the population running warm to sit with the gold.
+    let col = mix(vec3f(0.74, 0.82, 1.0), vec3f(1.0, 0.80, 0.56), h.y * 0.7 + mag * 0.3);
+    return col * core * tw;
+}
+
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
     let dir = normalize(input.vDir);
@@ -158,45 +229,33 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         }
     }
 
-    // ---------------------------------------------------------- solar disc
-    // ~0.53 degrees across, with limb darkening. The glow around it is the
-    // aureole: forward-scattered light in the first few degrees, which at this
-    // sun elevation is a large part of why the horizon reads warm.
+    // ------------------------------------------------------------- the star
+    // A third of a degree across, with limb darkening — smaller and harder than
+    // the sun seen from Earth, because this one is further away and there is no
+    // air to soften its edge.
+    //
+    // What is left of the aureole is not atmospheric. In vacuum a bright point
+    // source has no halo *in the scene*; the halo is in the instrument, and this
+    // scene is being watched through one. So the wide lobe is gone and the tight
+    // one stays, at a fraction of its old strength: glare in the optics, which
+    // is also what the bloom pass downstream is modelling.
     let mu = dot(dir, uniforms.sunDir);
-    let discCos = cos(0.0046);
+    let discCos = cos(0.0029);
     if (mu > discCos) {
-        let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0046;
+        let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0029;
         let limb = pow(max(0.0, 1.0 - r * r * 0.72), 0.42);
         col += uniforms.sunColor * uniforms.sunIntensity * 42.0 * limb;
     }
-    let aureole = pow(max(0.0, mu), 1400.0) * 5.5 + pow(max(0.0, mu), 64.0) * 0.28;
+    let aureole = pow(max(0.0, mu), 2600.0) * 3.2 + pow(max(0.0, mu), 220.0) * 0.06;
     col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5;
 
-    // ------------------------------------------------------------- cirrus
-    // Thin, high, wind-aligned. Restrained on purpose: the reference skies are
-    // mostly clean gradient, and clouds here exist to stop the upper sky from
-    // being a flat wash, not to become subject matter.
-    if (uniforms.cloudAmount > 0.001 && dir.y > 0.0) {
-        // Project onto a high plane so bands converge at the horizon.
-        let planeY = 1.0 / max(0.06, dir.y);
-        var cp = dir.xz * planeY * 0.5 + uniforms.windDir * uniforms.time * 0.004;
-
-        // Stretch across the wind so the streaks run with it.
-        let a = atan2(uniforms.windDir.x, uniforms.windDir.y);
-        cp = rot2(a) * cp;
-        cp.x *= 0.28;
-
-        let n = fbmd(cp, 4, 2.13, 0.52).x;
-        var cloud = smoothstep(0.06, 0.34, n);
-        // Fade out at the horizon and at the zenith.
-        cloud *= smoothstep(0.0, 0.22, dir.y) * (1.0 - smoothstep(0.55, 1.0, dir.y) * 0.45);
-        cloud *= uniforms.cloudAmount;
-
-        // Lit from below-ish by a low sun, so the underside catches warmth.
-        let sunLit = pow(max(0.0, mu * 0.5 + 0.5), 3.0);
-        let cloudCol = mix(vec3f(0.52, 0.60, 0.74), uniforms.sunColor * 1.35, sunLit * 0.75);
-        col = mix(col, cloudCol * (0.55 + uniforms.sunIntensity * 0.06), cloud * 0.62);
-    }
+    // --------------------------------------------------------------- stars
+    // Added last and additively, over everything except the star's own disc.
+    // Stars sit *in front of* the nebula from here, and a nebula that occludes
+    // its own foreground stars is the single most common tell in a painted
+    // space background.
+    col += starField(dir, uniforms.starDensity, uniforms.time)
+         * uniforms.starBrightness * uniforms.sunIntensity * 0.010;
 
     fragmentOutputs.color = vec4f(col, 1.0);
 }

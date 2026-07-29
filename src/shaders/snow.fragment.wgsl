@@ -83,6 +83,16 @@ uniform deformTexel: f32;
 uniform deformDepthScale: f32;
 
 uniform ambientIntensity: f32;
+
+// --- the dust's own light ----------------------------------------------------
+// Master scale on everything the surface emits, and the two ends of its
+// emission ramp: `dustGlowColor` is what freshly disturbed and charged dust
+// burns at, `dustCoolColor` is the slow nebula glow it sits in at rest. Both
+// are radiances, so both are expected to run above 1.0.
+uniform dustEmissive: f32;
+uniform dustGlowColor: vec3f;
+uniform dustCoolColor: vec3f;
+
 uniform debugMode: f32;
 uniform screenSize: vec2f;
 
@@ -314,31 +324,42 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     ).z;
 
     // ------------------------------------------------------------- material
-    // Snow albedo sits in a narrow, high, slightly blue band. It is never 1.0:
-    // pushing albedo to white is what produces the blown-out clipped highlights
-    // that read as "untextured white blob" rather than as snow.
-    var albedo = vec3f(0.855, 0.885, 0.945);
-    var roughness = 0.62;
-    var f0 = vec3f(0.028);
+    // Cosmic dust is the inverse of the snow this material used to describe.
+    // Snow's whole problem was an albedo so high it clipped; dust's is an albedo
+    // so low that reflected light alone leaves the field unreadable. It is dark
+    // violet — grains of silicate and ice condensing out of a nebula, seen
+    // against a sky with almost nothing in it — and what gives it form is the
+    // emissive block further down, not this.
+    //
+    // Keeping it genuinely dark matters. A pale ground under a star reads as
+    // snow no matter what hue it is tinted, because the eye takes "bright
+    // diffuse surface, low saturation" as snow before it takes anything else.
+    var albedo = vec3f(0.085, 0.062, 0.155);
+    var roughness = 0.78;
+    var f0 = vec3f(0.020);
     var thickness = 1.0; // 1 = deep drift, 0 = thin crust
 
-    // Compressed snow: denser, darker, tighter specular, scatters less.
-    albedo = mix(albedo, vec3f(0.62, 0.665, 0.755), compression * 0.85);
-    roughness = mix(roughness, 0.34, compression);
+    // Packed dust: compressed under the board, denser and darker still. It does
+    // not become glossy — there is no melt layer out here to smooth it.
+    albedo = mix(albedo, vec3f(0.045, 0.035, 0.088), compression * 0.85);
+    roughness = mix(roughness, 0.52, compression);
     thickness = mix(thickness, 0.35, compression);
 
-    // Refrozen ice: smooth and genuinely reflective.
-    albedo = mix(albedo, vec3f(0.42, 0.56, 0.70), iceAmount * 0.8);
+    // Charged dust: the fourth deformation channel. Where the board's edge or a
+    // power has dumped energy into the field, the grains fuse into a smooth
+    // vitrified glaze — genuinely mirror-like, and the one thing in the scene
+    // that still feeds the screen-space reflection pass.
+    albedo = mix(albedo, vec3f(0.16, 0.10, 0.34), iceAmount * 0.8);
     roughness = mix(roughness, 0.07, iceAmount);
     f0 = mix(f0, vec3f(0.045), iceAmount);
     thickness = mix(thickness, 0.15, iceAmount);
 
-    // Exposed rock. Snow keeps its grip on the flatter faces, so the mask is
-    // gated by slope rather than applied flat.
+    // Asteroid shards standing out of the dust sea. Dust settles on the flatter
+    // faces, so the mask is gated by slope rather than applied flat.
     let rockExposed = rockMask * smoothstep(0.32, 0.66, 1.0 - N.y);
     if (rockExposed > 0.001) {
         let rn = noise2(world.xz * 2.3) * 0.5 + 0.5;
-        let rockCol = mix(vec3f(0.055, 0.058, 0.068), vec3f(0.115, 0.112, 0.118), rn);
+        let rockCol = mix(vec3f(0.030, 0.028, 0.042), vec3f(0.072, 0.062, 0.088), rn);
         albedo = mix(albedo, rockCol, rockExposed);
         roughness = mix(roughness, 0.85, rockExposed);
         thickness = mix(thickness, 0.0, rockExposed);
@@ -368,11 +389,11 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //     sky out of it.
     if (deformBerm > 0.002) {
         let loose = clamp(deformBerm * 5.0, 0.0, 1.0);
-        albedo = mix(albedo, vec3f(0.895, 0.920, 0.965), loose * 0.55);
-        roughness = mix(roughness, 0.78, loose * 0.7);
+        albedo = mix(albedo, vec3f(0.155, 0.115, 0.265), loose * 0.55);
+        roughness = mix(roughness, 0.86, loose * 0.7);
         thickness = mix(thickness, 1.0, loose * 0.6);
-        // Broken snow has crystal faces pointing everywhere, which is where the
-        // chunky granular read at a trail edge actually comes from.
+        // Broken dust has facets pointing everywhere, which is where the chunky
+        // granular read at a trail edge actually comes from.
         let chunk = noise2(world.xz * 34.0) * 0.5 + 0.5;
         albedo *= 1.0 - loose * 0.10 * chunk;
     }
@@ -441,11 +462,23 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // half of the warm-light / cool-shadow split that sells snow.
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
-    // Snow bounces onto itself: a huge, bright, near-white surround. Without a
-    // bounce term the troughs go far too dark for a material with 0.85 albedo.
+    // Near-field bounce, and deliberately small.
+    //
+    // This term used to carry most of the fill: the sky LUT's lower hemisphere
+    // held a crude estimate of the snow's own radiance, so a second explicit
+    // bounce was needed to make up the difference. That is no longer true. The
+    // LUT now stores the dust sea's *solved* radiance below the horizon —
+    // reflected starlight plus its own emission, iterated to convergence — and
+    // it is the brightest hemisphere in the scene. `shIrradiance(N)` integrates
+    // the whole sphere, so every downward-facing surface already receives it.
+    //
+    // What is left over is the part a distant uniform sea cannot describe: the
+    // metre of field immediately under a crest, which is closer and brighter
+    // than the average and which the SH's nine coefficients cannot resolve.
+    // Small, and weighted onto downward-facing normals where it belongs.
     let bounceUp = clamp(-N.y * 0.5 + 0.5, 0.0, 1.0);
-    irradiance += shIrradiance(vec3f(0.0, 1.0, 0.0), uniforms.shR)
-                * uniforms.ambientIntensity * 0.28 * bounceUp * albedo;
+    irradiance += shIrradiance(vec3f(0.0, -1.0, 0.0), uniforms.shR)
+                * uniforms.ambientIntensity * 0.25 * bounceUp * albedo;
 
     var ambient = albedo * INV_PI * irradiance;
 
@@ -508,8 +541,47 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //     is blue and not grey. The tint is the same `deepTint` the subsurface
     //     term uses, and tying it to the darkening rather than to `deformDepth`
     //     means the two can never drift apart.
-    let caveTint = mix(vec3f(1.0), vec3f(0.55, 0.72, 1.0), (1.0 - ao) * 0.95);
+    let caveTint = mix(vec3f(1.0), vec3f(0.62, 0.48, 1.0), (1.0 - ao) * 0.95);
     color *= ao * caveTint;
+
+    // ---------------------------------------------------- the dust's own light
+    // Deep space gives this surface almost nothing. One small hard star, and a
+    // sky whose integrated irradiance is a rounding error beside it. Lit alone,
+    // the field would be a black plane with a bright rim and no readable form
+    // anywhere between the crests.
+    //
+    // So it emits. Three sources, largest scale first:
+    //
+    //   drift   A slow violet glow keyed to a very low-frequency noise: the
+    //           nebula the field is condensing out of, seen *through* the grains
+    //           rather than reflected off them. Weighted into the cavities, so
+    //           the troughs well up and the crests stay dark except where the
+    //           star rakes them. That inversion is what makes the swells read —
+    //           the eye takes form from the emission gradient where it would
+    //           normally take it from N·L, and the two run in opposite
+    //           directions, which is exactly why the surface does not flatten
+    //           the way an emissive-plus-lit surface usually does.
+    //   fresh   Mass the board has just thrown. Freshly broken grains have far
+    //           more surface per unit volume and shed their charge at once, so a
+    //           carve is the brightest thing on the ground.
+    //   charge  The deformation buffer's fourth channel — refrozen ice once,
+    //           accumulated energy now. It burns gold and it lingers, which is
+    //           what leaves a trail behind the board rather than a flash.
+    //
+    // Added after the occlusion multiply and before aerial perspective. A hollow
+    // that glows must not be dimmed by its own hollowness; it must still haze
+    // out with distance like everything else, or the far field becomes a band of
+    // flat violet pasted in front of the sky.
+    var emissive = vec3f(0.0);
+    {
+        let drift = noise2(world.xz * 0.035) * 0.5 + 0.5;
+        let welling = mix(0.55, 1.0, 1.0 - cavity) * mix(0.7, 1.0, 1.0 - ao);
+        emissive += uniforms.dustCoolColor * (0.30 + 0.70 * drift) * welling;
+        emissive += uniforms.dustGlowColor * clamp(deformBerm * 5.0, 0.0, 1.0) * 1.2;
+        emissive += uniforms.dustGlowColor * iceAmount * 1.8;
+        emissive *= uniforms.dustEmissive * (1.0 - rockExposed * 0.8);
+    }
+    color += emissive;
 
     // ------------------------------------------------------- aerial perspective
     color = applyAerial(

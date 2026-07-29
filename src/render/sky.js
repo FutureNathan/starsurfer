@@ -1,18 +1,21 @@
 /**
- * Procedural sky, image-based lighting, and the sun's own colour.
+ * The galaxy, image-based lighting, and the star's own colour.
  *
- * No HDRI. The whole look rests on a sun 5-15 degrees up, and with an analytic
- * model the elevation slider drags the horizon warmth, the zenith gradient and
- * the ambient tint along with it, consistently. A captured HDRI would freeze
- * those relationships at whatever elevation it was shot at.
+ * No HDRI. The look rests on one hard star 5-15 degrees up and a galactic band
+ * crossing the sky behind it, and with an analytic model both are sliders that
+ * correctly drag the ambient tint, the horizon colour and the specular
+ * environment along with them. A captured HDRI would freeze all of that.
  *
- * The scattering integral is far too heavy for per-pixel work, so it bakes into
- * an equirectangular LUT once, and again only when the sun actually moves.
- * Everything downstream — skybox, ambient SH, specular reflections, aerial
- * inscatter — reads that one texture.
+ * The backdrop bakes into an equirectangular LUT once, and again only when the
+ * star actually moves. Everything downstream — skybox, ambient SH, specular
+ * reflections, aerial inscatter — reads that one texture. Which is also why the
+ * bake stays low-frequency: it is projected to nine spherical-harmonic
+ * coefficients through a 64x32 readback, and point stars baked at that
+ * resolution come back as noise, not as stars. They are drawn in the skybox
+ * shader instead, where they cost nothing and light nothing.
  */
 
-import { Vector2, Vector3, Color3 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
 import { ProceduralTexture } from "@babylonjs/core/Materials/Textures/Procedurals/proceduralTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
@@ -28,11 +31,19 @@ const SH_H = 32;
 
 /**
  * Converts the `sunIntensity` slider into the shared radiometric scale used by
- * both the sky integral and the direct sun. Its absolute value is arbitrary —
+ * the backdrop and the direct star alike. Its absolute value is arbitrary —
  * exposure handles overall brightness — but it must be *one* number, applied to
- * both, or the sun/sky ratio stops meaning anything.
+ * both, or the star/sky ratio stops meaning anything.
+ *
+ * Ten times what the snow demo this grew out of used, and for one reason: the
+ * ground's albedo went from 0.85 to 0.085. Scaling the source by the same factor
+ * the surface lost puts lit dust back in the same linear range lit snow sat in,
+ * which is what lets the post chain's whole calibration — the AgX exposure, the
+ * bloom threshold in linear units — carry over untouched. Raising the exposure
+ * instead would have moved the scene without moving the bloom threshold with it,
+ * and nothing in the frame would ever have bloomed again.
  */
-const SUN_SCALE_BASE = 5.5;
+const SUN_SCALE_BASE = 55.0;
 
 const _dir = new Vector3();
 
@@ -60,8 +71,14 @@ export class Sky {
         this.sunRadiance = new Color3(1, 1, 1);
         /** Shared radiometric scale for the sun and the baked sky. */
         this.sunScale = 1;
-        /** Radiance leaving the snow field, solved iteratively. */
+        /** Radiance leaving the dust sea, solved iteratively. */
         this.groundBounce = new Color3(0, 0, 0);
+        /** Unit normal of the galactic plane. */
+        this.galaxyPole = new Vector3(0, 1, 0);
+        /** Unit vector toward the galactic core. */
+        this.galaxyCore = new Vector3(0, 0, 1);
+        /** The galaxy settings the current bake was made with. */
+        this._galaxyKey = "";
         /** 36 floats: 9 SH coefficients as vec4, for the shader UBO. */
         this.sh = new Float32Array(36);
 
@@ -123,12 +140,13 @@ export class Sky {
                     "sunColor",
                     "sunIntensity",
                     "time",
-                    "windDir",
-                    "cloudAmount",
+                    "starDensity",
+                    "starBrightness",
                     "sunRadiance",
                     "shR",
                     "ambientIntensity",
                     "ridgeAmp",
+                    "dustEmission",
                     "fogDensity",
                     "fogHeightFalloff",
                     "fogStart",
@@ -168,31 +186,49 @@ export class Sky {
 
         this.sunScale = S.sunIntensity * SUN_SCALE_BASE;
 
-        // Direct sunlight reddens as it grazes: the lower the sun, the longer
-        // the path through the atmosphere and the more of the blue end is
-        // scattered out of the beam. At 13 degrees the beam has already lost
-        // most of its blue, which is what makes the warm-light / cool-shadow
-        // split physical rather than an art choice.
-        const zenithDeg = (Math.acos(clamp(this.sunDir.y, -1, 1)) * 180) / Math.PI;
+        // The galaxy is baked, so moving it has to invalidate the LUT the same
+        // way moving the star does.
+        const gkey =
+            S.galaxyTilt + "|" + S.galaxyBearing + "|" +
+            S.galaxyBand + "|" + S.nebulaStrength;
+        if (gkey !== this._galaxyKey) {
+            this._galaxyKey = gkey;
+            this._dirty = true;
+        }
 
-        // Kasten-Young air mass — stays finite at the horizon, unlike 1/cos.
-        const denom =
-            Math.cos((zenithDeg * Math.PI) / 180) +
-            0.50572 * Math.pow(Math.max(1e-3, 96.07995 - zenithDeg), -1.6364);
-        const airMass = Math.min(denom > 0 ? 1 / denom : 40, 40);
-
-        // Vertical optical depth: scattering coefficient x scale height.
+        // The star's colour is its temperature and nothing else. There is no air
+        // between here and it, so the elevation-dependent reddening the previous
+        // model computed — Kasten-Young air mass against Rayleigh and Mie
+        // optical depths — has no meaning at all out here, and the whole block
+        // is gone.
+        //
+        // The warm/cool split it used to produce is worth keeping, though, and
+        // it survives for a different reason: the *star* is warm and the
+        // *nebula* filling the shadows is violet, so a lit face and a shadowed
+        // face still land on opposite sides of the wheel. `sunTempWarm` now runs
+        // from a neutral white star to a cooler, older, distinctly gold one.
         const warm = S.sunTempWarm;
-        const tauR = [0.0464, 0.108, 0.265];
-        const tauM = 0.0252;
-        const r = Math.exp(-(tauR[0] * warm + tauM) * airMass);
-        const g = Math.exp(-(tauR[1] * warm + tauM) * airMass);
-        const b = Math.exp(-(tauR[2] * warm + tauM) * airMass);
+        const r = 1.0;
+        const g = 1.0 - 0.18 * warm;
+        const b = 1.0 - 0.40 * warm;
 
         this.sunRadiance.set(r * this.sunScale, g * this.sunScale, b * this.sunScale);
+        // Normalised so the max channel is 1. The skybox multiplies this by the
+        // intensity itself when it draws the disc, so an unnormalised value here
+        // would scale the star twice.
+        this.sunColor.set(r, g, b);
 
-        const m = Math.max(r, Math.max(g, b)) || 1;
-        this.sunColor.set(r / m, g / m, b / m);
+        // ---- where the galaxy sits ---------------------------------------
+        // The core direction, then the plane's normal as that direction rotated
+        // a quarter turn toward the zenith. Constructing the pole this way makes
+        // the band pass exactly through the core and cross the horizon at right
+        // angles to it, which is the arrangement the Milky Way actually has and
+        // the one the eye reads as "seen from inside a disc".
+        const gaz = (S.galaxyBearing * Math.PI) / 180;
+        const gel = (S.galaxyTilt * Math.PI) / 180;
+        const cg = Math.cos(gel), sg = Math.sin(gel);
+        this.galaxyCore.set(Math.sin(gaz) * cg, sg, Math.cos(gaz) * cg);
+        this.galaxyPole.set(-Math.sin(gaz) * sg, cg, -Math.cos(gaz) * sg);
     }
 
     /**
@@ -240,7 +276,7 @@ export class Sky {
         await this.projectSH();
     }
 
-    /** Radiance leaving the snow, from everything currently landing on it. */
+    /** Radiance leaving the dust sea, from everything landing on it plus its own. */
     _updateGroundBounce() {
         // Irradiance arriving on horizontal ground: direct sun (cosine-weighted)
         // plus the whole sky hemisphere, which the SH already integrates.
@@ -250,12 +286,19 @@ export class Sky {
         const eg = this.sunRadiance.g * c + up[1];
         const eb = this.sunRadiance.b * c + up[2];
 
-        // Lambertian re-emission: L = albedo * E / PI.
+        // Lambertian re-emission, plus the field's own light.
+        //
+        // That second term is what stops the horizon splitting in two. The dust
+        // shader adds an emissive glow on top of everything it reflects; if the
+        // LUT's lower hemisphere held only the reflected part, the far edge of
+        // the clipmap would dissolve into a colour the near ground never has,
+        // and the seam would draw as a ring at a fixed radius from the player.
+        // `DUST_EMISSION` is that shader's average emission, on the same scale.
         const k = 1 / Math.PI;
         this.groundBounce.set(
-            SNOW_ALBEDO[0] * er * k,
-            SNOW_ALBEDO[1] * eg * k,
-            SNOW_ALBEDO[2] * eb * k
+            DUST_ALBEDO[0] * er * k + DUST_EMISSION[0] * S.dustGlow,
+            DUST_ALBEDO[1] * eg * k + DUST_EMISSION[1] * S.dustGlow,
+            DUST_ALBEDO[2] * eb * k + DUST_EMISSION[2] * S.dustGlow
         );
     }
 
@@ -281,6 +324,10 @@ export class Sky {
             // Color3, so setColor3 — setVector3 would read .x/.y/.z off it,
             // find undefined, and write NaN straight into the uniform buffer.
             t.setColor3("groundBounce", this.groundBounce);
+            t.setVector3("galaxyPole", this.galaxyPole);
+            t.setVector3("galaxyCore", this.galaxyCore);
+            t.setFloat("galaxyBand", S.galaxyBand);
+            t.setFloat("nebulaAmount", S.nebulaStrength);
             t.render();
         }
     }
@@ -343,9 +390,6 @@ export class Sky {
 
     /** @param {import("../core/camera.js").CameraRig} rig */
     render(rig, time) {
-        const a = (S.windDirection * Math.PI) / 180;
-        _wind.set(Math.sin(a), Math.cos(a));
-
         const m = this.material;
         m.setVector3("cameraPosition", rig.camera.position);
         m.setFloat("skyScale", rig.camera.maxZ * 0.5);
@@ -353,8 +397,8 @@ export class Sky {
         m.setColor3("sunColor", this.sunColor);
         m.setFloat("sunIntensity", this.sunScale);
         m.setFloat("time", time);
-        m.setVector2("windDir", _wind);
-        m.setFloat("cloudAmount", 0.55);
+        m.setFloat("starDensity", S.starDensity);
+        m.setFloat("starBrightness", S.starBrightness);
 
         // The far range. Lit by the same radiance and the same SH the snow is —
         // see `shadeRidge` in the fragment shader.
@@ -362,6 +406,12 @@ export class Sky {
         m.setArray4("shR", this.sh);
         m.setFloat("ambientIntensity", S.ambientIntensity);
         m.setFloat("ridgeAmp", S.showMountains ? S.mountainHeight : 0);
+        _dustEmit.set(
+            DUST_EMISSION[0] * S.dustGlow,
+            DUST_EMISSION[1] * S.dustGlow,
+            DUST_EMISSION[2] * S.dustGlow
+        );
+        m.setColor3("dustEmission", _dustEmit);
 
         // The field's own haze, so the range is hazed by the same atmosphere the
         // dunes are and the two meet at one colour rather than two.
@@ -381,7 +431,21 @@ export class Sky {
 
 const _shBasis = new Float32Array(9);
 const _irrTmp = new Float32Array(3);
-const _wind = new Vector2(0, 1);
+const _dustEmit = new Color3(0, 0, 0);
 
-/** Fresh snow reflects most of what hits it, slightly more at the blue end. */
-const SNOW_ALBEDO = [0.83, 0.86, 0.91];
+/**
+ * Cosmic dust reflects very little of what hits it, and what it does reflect is
+ * violet. These are the same numbers the dust material carries in
+ * `snow.fragment.wgsl`, lifted a little because the bounce integrates over a
+ * whole hemisphere of field including its brighter disturbed patches.
+ */
+const DUST_ALBEDO = [0.10, 0.075, 0.18];
+
+/**
+ * The dust field's own average emission, per unit of `S.dustGlow`. Derived from
+ * the emissive block in `snow.fragment.wgsl`: the nebula-violet base colour
+ * times the mean of its drift and welling weights, times the emissive scale the
+ * terrain publishes. If that block is retuned, this has to move with it or the
+ * horizon separates.
+ */
+const DUST_EMISSION = [0.91, 0.55, 1.70];

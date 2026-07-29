@@ -22,6 +22,7 @@ import {
     OUTER_EXTENT,
 } from "./clipmapMesh.js";
 import { S } from "../core/settings.js";
+import { LIN } from "../core/brand.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
 import { bakeOnce, whenReady, bindMatrixArray } from "../core/gpuUtil.js";
@@ -31,6 +32,34 @@ const DETAIL_RES = 1024;
 const _splits = new Vector4(0, 0, 0, 0);
 const _lod = new Vector2();
 const _screen = new Vector2();
+
+// The dust's emission ramp, straight off the brand palette. `dustGlowColor` is
+// what freshly thrown and charged dust burns at; `dustCoolColor` is the slow
+// nebula glow the field sits in at rest. Built once — neither is animated.
+const _dustGlow = new Color3(...LIN.accent);
+// Halfway between the nebula's own violet and the lit dust colour. Pure
+// nebula-violet has almost no green in it, and a surface whose only light in
+// shadow is that colour reads as flat magenta rather than as violet-lit dust.
+const _dustCool = new Color3(
+    LIN.nebulaBright[0] + 0.45 * (LIN.dust[0] - LIN.nebulaBright[0]),
+    LIN.nebulaBright[1] + 0.45 * (LIN.dust[1] - LIN.nebulaBright[1]),
+    LIN.nebulaBright[2] + 0.45 * (LIN.dust[2] - LIN.nebulaBright[2])
+);
+
+/**
+ * Radiance per unit of `S.dustGlow`.
+ *
+ * The colours above are reflectances — they live in [0,1] because that is what a
+ * hex code can express. Emission does not: the star puts lit dust near 5 in
+ * linear units, so a glow authored in the same range as an albedo would be two
+ * orders of magnitude too faint to see. This is the factor that moves it onto
+ * the scene's radiance scale, and it is set so the resting glow lands near a
+ * fifth of lit dust — present everywhere, dominant only in shadow.
+ *
+ * `DUST_EMISSION` in render/sky.js is this same quantity, averaged, and the two
+ * have to move together or the horizon separates into two colours.
+ */
+const DUST_EMIT_SCALE = 10.0;
 
 const DEBUG_MODES = {
     beauty: 0, deform: 1, normals: 2, depth: 3, cascades: 4,
@@ -105,7 +134,9 @@ export class Terrain {
                     "sssStrength", "sssRadius",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "deformCenter", "deformSize", "deformTexel", "deformDepthScale",
-                    "ambientIntensity", "debugMode", "screenSize",
+                    "ambientIntensity",
+                    "dustEmissive", "dustGlowColor", "dustCoolColor",
+                    "debugMode", "screenSize",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
                 samplers: [
@@ -316,6 +347,10 @@ export class Terrain {
         m.setFloat("fogStart", S.fogStart);
         m.setFloat("aerialStrength", S.aerialStrength);
         m.setFloat("ambientIntensity", S.ambientIntensity);
+
+        m.setFloat("dustEmissive", S.dustGlow * DUST_EMIT_SCALE);
+        m.setColor3("dustGlowColor", _dustGlow);
+        m.setColor3("dustCoolColor", _dustCool);
 
         m.setVector2("deformCenter", deformCenter);
         m.setFloat("deformSize", deformSize);

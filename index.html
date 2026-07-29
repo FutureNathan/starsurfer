@@ -3,15 +3,19 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>SNOWFLOW</title>
+<title>STARSURFER</title>
+<meta name="description" content="An astronaut surfing a sea of cosmic dust through a galaxy of stars. Real-time WebGPU, everything procedural." />
+<meta name="theme-color" content="#05060f" />
 <style>
     :root {
-        /* Cool-shadow palette pulled from the Horizon reference. */
-        --ink:      #070b12;
-        --ink-2:    #0d141f;
-        --frost:    #dbe6f2;
-        --frost-dim:#7d8ea3;
-        --accent:   #8fc4e8;
+        /* Mirrors src/core/brand.js — deep indigo void, warm gold accent. */
+        --void:          #05060f;
+        --nebula-deep:   #2a1a4d;
+        --nebula-bright: #6b2f7a;
+        --dust:          #b8a2ff;
+        --accent:        #ffc46b;
+        --star:          #fff6e0;
+        --dim:           #7a6f9e;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -20,8 +24,8 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: var(--ink);
-        color: var(--frost);
+        background: var(--void);
+        color: var(--star);
         font-family: ui-sans-serif, "Inter", "Segoe UI", system-ui, sans-serif;
         -webkit-font-smoothing: antialiased;
     }
@@ -45,19 +49,49 @@
         display: grid;
         place-items: center;
         background:
-            radial-gradient(120% 90% at 50% 42%, #16202e 0%, #0a1019 55%, #05080d 100%);
+            /* the galactic band, running low and off-axis */
+            radial-gradient(140% 42% at 62% 74%,
+                rgba(107, 47, 122, 0.55) 0%,
+                rgba(42, 26, 77, 0.42) 38%,
+                transparent 72%),
+            /* the void itself, deepest at the top */
+            radial-gradient(120% 100% at 50% 100%,
+                #140e2b 0%, #0a0a1a 46%, var(--void) 100%);
         transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     #boot.gone { opacity: 0; pointer-events: none; }
 
-    /* Faint drifting grain so the boot screen is never a flat fill. */
+    /*
+     * Star field. Two drift rates over one tiled layer of pin-point radial
+     * gradients, so the field has depth without a single texture fetch.
+     */
+    #boot::before {
+        content: "";
+        position: absolute;
+        inset: -50%;
+        background-image:
+            radial-gradient(1.4px 1.4px at 18% 12%, var(--star), transparent),
+            radial-gradient(1px 1px     at 71% 27%, var(--star), transparent),
+            radial-gradient(1.8px 1.8px at 43% 61%, var(--accent), transparent),
+            radial-gradient(1px 1px     at 88% 74%, var(--star), transparent),
+            radial-gradient(1.2px 1.2px at 31% 88%, var(--dust), transparent),
+            radial-gradient(1px 1px     at 61% 44%, var(--star), transparent),
+            radial-gradient(1.6px 1.6px at 9%  53%, var(--star), transparent),
+            radial-gradient(1px 1px     at 95% 18%, var(--dust), transparent);
+        background-size: 340px 340px;
+        opacity: 0.55;
+        animation: sail 90s linear infinite;
+        pointer-events: none;
+    }
+
+    /* Faint drifting grain, so the void is never a flat fill. */
     #boot::after {
         content: "";
         position: absolute;
         inset: -50%;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
-        opacity: 0.035;
+        opacity: 0.04;
         mix-blend-mode: screen;
         animation: drift 24s linear infinite;
         pointer-events: none;
@@ -68,6 +102,11 @@
         to   { transform: translate3d(-160px, -160px, 0); }
     }
 
+    @keyframes sail {
+        from { transform: translate3d(0, 0, 0); }
+        to   { transform: translate3d(-340px, 170px, 0); }
+    }
+
     .boot-inner {
         position: relative;
         z-index: 1;
@@ -76,11 +115,12 @@
     }
 
     .wordmark {
-        font-size: clamp(28px, 4.4vw, 54px);
+        font-size: clamp(26px, 4.2vw, 50px);
         font-weight: 200;
-        letter-spacing: 0.62em;
-        text-indent: 0.62em; /* optical re-centre against the trailing track */
-        color: var(--frost);
+        letter-spacing: 0.56em;
+        text-indent: 0.56em; /* optical re-centre against the trailing track */
+        color: var(--star);
+        text-shadow: 0 0 34px rgba(255, 196, 107, 0.28);
         opacity: 0;
         animation: rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) 120ms forwards;
     }
@@ -92,7 +132,7 @@
         letter-spacing: 0.34em;
         text-indent: 0.34em;
         text-transform: uppercase;
-        color: var(--frost-dim);
+        color: var(--dim);
         opacity: 0;
         animation: rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) 420ms forwards;
     }
@@ -107,7 +147,7 @@
         margin: 3.6em auto 0;
         width: 100%;
         height: 1px;
-        background: rgba(219, 230, 242, 0.13);
+        background: rgba(184, 162, 255, 0.15);
         overflow: hidden;
     }
 
@@ -115,8 +155,8 @@
         position: absolute;
         inset: 0 auto 0 0;
         width: 0%;
-        background: linear-gradient(90deg, transparent, var(--accent) 60%, #eaf4ff);
-        box-shadow: 0 0 14px rgba(143, 196, 232, 0.55);
+        background: linear-gradient(90deg, transparent, var(--accent) 62%, var(--star));
+        box-shadow: 0 0 14px rgba(255, 196, 107, 0.6);
         transition: width 380ms cubic-bezier(0.4, 0, 0.2, 1);
     }
 
@@ -127,7 +167,7 @@
         font-weight: 400;
         letter-spacing: 0.2em;
         text-transform: uppercase;
-        color: var(--frost-dim);
+        color: var(--dim);
         font-variant-numeric: tabular-nums;
     }
 
@@ -139,17 +179,17 @@
         z-index: 200;
         display: none;
         place-items: center;
-        background: var(--ink);
+        background: var(--void);
         padding: 2rem;
         text-align: center;
         font-size: 13px;
         letter-spacing: 0.06em;
         line-height: 1.7;
-        color: var(--frost-dim);
+        color: var(--dim);
     }
 
     #nogpu.show { display: grid; }
-    #nogpu b { color: var(--frost); font-weight: 500; }
+    #nogpu b { color: var(--star); font-weight: 500; }
 
     /* ------------------------------------------------------------- hint */
 
@@ -162,7 +202,7 @@
         font-size: 10px;
         letter-spacing: 0.24em;
         text-transform: uppercase;
-        color: rgba(219, 230, 242, 0.42);
+        color: rgba(255, 246, 224, 0.42);
         text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
         pointer-events: none;
         opacity: 0;
@@ -170,17 +210,22 @@
     }
 
     #hint.show { opacity: 1; }
+
+    @media (prefers-reduced-motion: reduce) {
+        #boot::before, #boot::after { animation: none; }
+        .wordmark, .tagline { animation-duration: 1ms; }
+    }
 </style>
 </head>
 <body>
     <canvas id="view" tabindex="0"></canvas>
 
-    <div id="hint">click to look &nbsp;·&nbsp; wasd to move &nbsp;·&nbsp; f1 for settings</div>
+    <div id="hint">click to look &nbsp;·&nbsp; wasd to move &nbsp;·&nbsp; right mouse to surf &nbsp;·&nbsp; f1 for settings</div>
 
     <div id="boot">
         <div class="boot-inner">
-            <div class="wordmark">SNOWFLOW</div>
-            <div class="tagline">a study in snow</div>
+            <div class="wordmark">STARSURFER</div>
+            <div class="tagline">a study in stars</div>
             <div class="bar"><div class="bar-fill" id="boot-bar"></div></div>
             <div class="phase" id="boot-phase">initialising</div>
         </div>
@@ -189,7 +234,7 @@
     <div id="nogpu">
         <div>
             <b>WebGPU is not available in this browser.</b><br />
-            SNOWFLOW requires a WebGPU-capable browser. Try Chrome 113+ on a desktop GPU.
+            STARSURFER requires a WebGPU-capable browser. Try Chrome 113+ on a desktop GPU.
         </div>
     </div>
 

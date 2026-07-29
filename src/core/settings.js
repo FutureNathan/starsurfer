@@ -14,36 +14,64 @@ export const S = {
     preset: "ultra",
     resolutionScale: 1.0,
 
-    // ------------------------------------------------------------------- sun
-    sunAzimuth: 118, // degrees, compass bearing of the sun
-    // Low enough for long raking shadows, high enough that the beam still
-    // carries real energy — below ~10 degrees the air mass eats so much of it
-    // that the scene goes flat and sky-lit.
+    // ------------------------------------------------------- the nearby star
+    // The scene is lit by one distant star. Its key names are unchanged from
+    // the demo this grew out of — `sunX` throughout the code and the shaders
+    // means "the star", and renaming it would touch every WGSL uniform block
+    // for no visual gain.
+    sunAzimuth: 118, // degrees, bearing of the star
+    // Low enough for long raking shadows across the dust swells. In vacuum
+    // there is no air mass to redden the beam, so the elevation buys geometry
+    // rather than colour.
     sunElevation: 13.0,
     sunIntensity: 4.2,
-    sunTempWarm: 1.0, // 0 = neutral white, 1 = full warm low-sun tint
+    sunTempWarm: 1.0, // 0 = neutral white, 1 = full warm reddening
     ambientIntensity: 1.0,
     ambientBlue: 1.0, // strength of the cool shadow shift
 
-    // ------------------------------------------------------------- atmosphere
+    // ------------------------------------------------------------ deep space
+    // There is no atmosphere out here; what these drive is the nebula the field
+    // is drifting through, which scatters in much the same way and much more
+    // thinly.
     fogDensity: 0.0072,
     fogHeightFalloff: 0.045,
     fogStart: 24,
     aerialStrength: 1.0,
-    // Degrees. Drives sastrugi shear and dune orientation. Held 70-80 degrees
-    // away from `sunAzimuth`: sastrugi ridges run along the wind, so when the
-    // two align the sun rakes down every ridge, lights both flanks identically
-    // and the fine structure reads as flat ground.
+    // Degrees. Drives the shear on the dust ripples and the orientation of the
+    // long swells. Held 70-80 degrees away from `sunAzimuth`: the ripples run
+    // along the drift, so when the two align the star rakes down every ridge,
+    // lights both flanks identically and the fine structure reads as flat.
     windDirection: 42,
     windStrength: 1.0,
-    /** Far-field mountain range on the skybox. */
+    /** Far-field ridge of crystalline debris on the skybox. */
     showMountains: true,
-    /** Peak height of that range, metres. */
+    /** Peak height of that ridge, metres. */
     mountainHeight: 2150,
-    /** Strength of the volumetric shafts spilling past dune crests. */
+    /** Strength of the volumetric shafts spilling past the dust crests. */
     shaftStrength: 0.30,
 
-    // ------------------------------------------------------------------- snow
+    // ---------------------------------------------------------------- galaxy
+    /** Star field density multiplier. */
+    starDensity: 1.0,
+    /** Star field brightness multiplier. */
+    starBrightness: 1.0,
+    /** Strength of the galactic band across the sky. */
+    galaxyBand: 1.0,
+    /** Degrees the galactic plane is tilted out of the horizon. */
+    galaxyTilt: 38,
+    /** Bearing, degrees, of the galactic core. */
+    galaxyBearing: 205,
+    /** Density of the nebula clouds hanging in the void. */
+    nebulaStrength: 1.0,
+
+    // ----------------------------------------------------------- cosmic dust
+    /**
+     * Master scale on the light the dust field emits. This is not a stylistic
+     * nicety — reflected light alone leaves a 0.09-albedo surface under one
+     * small star with no readable form, so at zero the ground goes essentially
+     * black and only its lit rim survives.
+     */
+    dustGlow: 1.0,
     glintIntensity: 0.55,
     glintGrazing: 0.72, // how hard the grazing-angle gate bites
     sssStrength: 1.0,
@@ -117,9 +145,9 @@ export const S = {
  */
 export const SCHEMA = [
     {
-        group: "Sun & Sky",
+        group: "Star",
         items: [
-            { k: "sunAzimuth", l: "Azimuth", t: "f", min: 0, max: 360, step: 1 },
+            { k: "sunAzimuth", l: "Bearing", t: "f", min: 0, max: 360, step: 1 },
             { k: "sunElevation", l: "Elevation", t: "f", min: 0.5, max: 45, step: 0.1 },
             { k: "sunIntensity", l: "Intensity", t: "f", min: 0, max: 10, step: 0.05 },
             { k: "sunTempWarm", l: "Warmth", t: "f", min: 0, max: 1, step: 0.01 },
@@ -128,33 +156,45 @@ export const SCHEMA = [
         ],
     },
     {
-        group: "Atmosphere",
+        group: "Galaxy",
         items: [
-            { k: "fogDensity", l: "Fog density", t: "f", min: 0, max: 0.03, step: 0.0001 },
+            { k: "starDensity", l: "Star density", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "starBrightness", l: "Star brightness", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "galaxyBand", l: "Galactic band", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "galaxyTilt", l: "Band tilt", t: "f", min: -60, max: 60, step: 1 },
+            { k: "galaxyBearing", l: "Core bearing", t: "f", min: 0, max: 360, step: 1 },
+            { k: "nebulaStrength", l: "Nebula", t: "f", min: 0, max: 2, step: 0.01 },
+        ],
+    },
+    {
+        group: "Void",
+        items: [
+            { k: "fogDensity", l: "Nebula density", t: "f", min: 0, max: 0.03, step: 0.0001 },
             { k: "fogHeightFalloff", l: "Height falloff", t: "f", min: 0, max: 0.3, step: 0.001 },
-            { k: "aerialStrength", l: "Aerial persp.", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "windDirection", l: "Wind dir", t: "f", min: 0, max: 360, step: 1 },
-            { k: "windStrength", l: "Wind strength", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "showMountains", l: "Far range", t: "b" },
-            { k: "mountainHeight", l: "Range height", t: "f", min: 0, max: 2500, step: 10 },
+            { k: "aerialStrength", l: "Depth haze", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "windDirection", l: "Drift dir", t: "f", min: 0, max: 360, step: 1 },
+            { k: "windStrength", l: "Drift strength", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "showMountains", l: "Far ridges", t: "b" },
+            { k: "mountainHeight", l: "Ridge height", t: "f", min: 0, max: 2500, step: 10 },
             { k: "showLightShafts", l: "Light shafts", t: "b" },
             { k: "shaftStrength", l: "Shaft amt", t: "f", min: 0, max: 2, step: 0.01 },
         ],
     },
     {
-        group: "Snow",
+        group: "Cosmic dust",
         items: [
-            { k: "glintIntensity", l: "Glint", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "glintGrazing", l: "Glint gate", t: "f", min: 0, max: 1, step: 0.01 },
-            { k: "sssStrength", l: "SSS strength", t: "f", min: 0, max: 3, step: 0.01 },
-            { k: "sssRadius", l: "SSS radius", t: "f", min: 0.1, max: 3, step: 0.01 },
+            { k: "dustGlow", l: "Dust glow", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "glintIntensity", l: "Sparkle", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "glintGrazing", l: "Sparkle gate", t: "f", min: 0, max: 1, step: 0.01 },
+            { k: "sssStrength", l: "Glow strength", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "sssRadius", l: "Glow radius", t: "f", min: 0.1, max: 3, step: 0.01 },
             { k: "detailNormalStrength", l: "Detail normals", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "macroHeightScale", l: "Dune height", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "sastrugiStrength", l: "Sastrugi", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "macroHeightScale", l: "Swell height", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "sastrugiStrength", l: "Ripples", t: "f", min: 0, max: 2, step: 0.01 },
         ],
     },
     {
-        group: "Deformation",
+        group: "Displacement",
         items: [
             { k: "deformDepth", l: "Depth", t: "f", min: 0, max: 3, step: 0.01 },
             { k: "deformBerm", l: "Berm mass", t: "f", min: 0, max: 3, step: 0.01 },
@@ -162,7 +202,7 @@ export const SCHEMA = [
         ],
     },
     {
-        group: "Snow-surf",
+        group: "Surf",
         items: [
             { k: "wakeHeight", l: "Wake height", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "wakeSpray", l: "Plume density", t: "f", min: 0, max: 2.5, step: 0.01 },
@@ -172,12 +212,12 @@ export const SCHEMA = [
         ],
     },
     {
-        group: "Spells",
+        group: "Powers",
         items: [
-            { k: "showSpells", l: "Spells", t: "b" },
-            { k: "spellLight", l: "Spell light", t: "f", min: 0, max: 3, step: 0.01 },
-            { k: "spellSpray", l: "Spell spray", t: "f", min: 0, max: 2.5, step: 0.01 },
-            { k: "waterDepthTint", l: "Water depth", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "showSpells", l: "Powers", t: "b" },
+            { k: "spellLight", l: "Emitted light", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "spellSpray", l: "Ejecta", t: "f", min: 0, max: 2.5, step: 0.01 },
+            { k: "waterDepthTint", l: "Plasma depth", t: "f", min: 0, max: 3, step: 0.01 },
         ],
     },
     {

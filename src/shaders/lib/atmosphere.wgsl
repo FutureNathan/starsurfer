@@ -1,49 +1,32 @@
 // -----------------------------------------------------------------------------
 // snowAtmosphere — sky model and aerial perspective.
 //
-// The sky is a Nishita single-scattering integration rather than an HDRI. The
-// whole look hangs on a sun sitting 5-15 degrees above the horizon, and with an
-// analytic model the sun angle is a slider that correctly drags the sky
-// gradient, the horizon warmth and the ambient tint along with it. A captured
-// HDRI locks all of that to whatever elevation the photographer had.
+// (The include keeps its old name. It is `#include`d by nine shaders and read by
+// the shader registry under that key; renaming it buys nothing and costs a
+// silent unresolved-symbol failure if any one of the nine is missed.)
 //
-// It is expensive — 16 view steps by 8 light steps — so it is never evaluated
-// per pixel per frame. It bakes into a cubemap at load, and again only when the
-// sun actually moves.
+// The sky is deep space: a fixed backdrop of unresolved starlight, a galactic
+// band and emission nebulae, evaluated analytically rather than sampled from an
+// HDRI. Same argument as the atmospheric model this replaced — with a model, the
+// galaxy's orientation and the star's bearing are sliders that correctly drag
+// the ambient tint and the horizon colour along with them.
+//
+// It bakes into an equirectangular LUT at load and again only when the star
+// moves. Everything downstream reads that one texture: skybox pixels, ambient
+// spherical harmonics, specular reflections, and the inscatter half of aerial
+// perspective.
 //
 // Aerial perspective at runtime is the cheap analytic half: height-falloff
-// extinction plus an inscatter colour looked up from that same cubemap, which
-// keeps distant snow tied to the sky it is sitting under.
+// extinction plus an inscatter colour looked up from that same LUT, which keeps
+// the far field tied to the sky it sits under. There is no air out here, so what
+// it models is the nebula the dust sea is drifting through — thin, and much
+// less coloured than an atmosphere, but the same integral.
 // -----------------------------------------------------------------------------
 
-const EARTH_R: f32 = 6360000.0;
-const ATMOS_R: f32 = 6420000.0;
-const H_RAYLEIGH: f32 = 8000.0;
-const H_MIE: f32 = 1200.0;
-
-// Sea-level scattering coefficients, per metre.
-const BETA_R: vec3f = vec3f(5.8e-6, 13.5e-6, 33.1e-6);
-const BETA_M: vec3f = vec3f(21e-6, 21e-6, 21e-6);
+/// Mie asymmetry. The medium is gone, but the phase function outlived it: the
+/// airborne dust in `spray.fragment.wgsl` scatters forward through the same
+/// lobe, which is what puts the bright edge on a plume with the star behind it.
 const MIE_G: f32 = 0.76;
-
-/// Strength of the isotropic multiple-scattering approximation, relative to
-/// single-scattered Rayleigh. Tuned so the diffuse sky irradiance lands near
-/// 15% of direct-normal solar, which is where a real clear sky sits.
-const MS_BOOST: f32 = 1.5;
-
-/// Distance to the far intersection of a ray with a sphere centred on the
-/// origin. Returns -1 when the ray misses.
-fn raySphereFar(origin: vec3f, dir: vec3f, radius: f32) -> f32 {
-    let b = dot(origin, dir);
-    let c = dot(origin, origin) - radius * radius;
-    let d = b * b - c;
-    if (d < 0.0) { return -1.0; }
-    return -b + sqrt(d);
-}
-
-fn phaseRayleigh(mu: f32) -> f32 {
-    return (3.0 / (16.0 * PI)) * (1.0 + mu * mu);
-}
 
 fn phaseMie(mu: f32, g: f32) -> f32 {
     let g2 = g * g;
@@ -52,207 +35,140 @@ fn phaseMie(mu: f32, g: f32) -> f32 {
     return (3.0 / (8.0 * PI)) * n / d;
 }
 
-/// Full single-scattering sky radiance for a view direction.
-/// `sunDir` points *toward* the sun. Result is linear, unnormalised radiance.
-fn nishitaSky(rayDir: vec3f, sunDir: vec3f, sunIntensity: f32, groundBounce: vec3f) -> vec3f {
-    // Stand just above the surface so the horizon resolves cleanly.
-    let origin = vec3f(0.0, EARTH_R + 800.0, 0.0);
+// ------------------------------------------------------------------- the void
 
-    let atmosDist = raySphereFar(origin, rayDir, ATMOS_R);
-    if (atmosDist < 0.0) { return vec3f(0.0); }
-
-    // Rays heading into the planet are clipped at the surface, which is what
-    // produces the dark, dense band right below the horizon.
-    let groundDist = raySphereFar(origin, rayDir, EARTH_R);
-    let bIn = dot(origin, rayDir);
-    let cIn = dot(origin, origin) - EARTH_R * EARTH_R;
-    let discr = bIn * bIn - cIn;
-    var march = atmosDist;
-    if (discr > 0.0) {
-        let near = -bIn - sqrt(discr);
-        if (near > 0.0) { march = near; }
+/// Value-noise fBm over a direction. Deliberately low-octave and low-frequency:
+/// this function's output is baked at 64x32 for the spherical-harmonic
+/// projection, where one texel subtends about five and a half degrees. Anything
+/// finer than that does not survive the projection as structure — it survives as
+/// a randomly-tinted ambient that jitters every time the star moves.
+fn spaceFbm(p0: vec3f, octaves: i32) -> f32 {
+    var p = p0;
+    var a = 0.5;
+    var s = 0.0;
+    for (var i = 0; i < octaves; i++) {
+        s += a * noise3(p);
+        p = p * 2.07 + vec3f(11.3, 5.7, 19.1);
+        a *= 0.52;
     }
+    return s;
+}
 
-    const STEPS: i32 = 32;
-    const LIGHT_STEPS: i32 = 8;
+/// Radiance of deep space in a view direction. Replaces the Nishita integral
+/// this file used to carry, and keeps its contract exactly:
+///
+///   - it returns linear, unnormalised radiance on the same scale as the star;
+///   - it is smooth enough to bake into a 64x32 LUT and project to SH;
+///   - it hands over to `groundBounce` below the horizon.
+///
+/// It is much cheaper than what it replaces — there is no medium to integrate
+/// through, so the whole thing is a handful of noise evaluations — but the
+/// reason it exists is not cost. In vacuum the sky is not a function of the
+/// star at all. It is a fixed backdrop of unresolved starlight and emission
+/// nebulae that happens to be *behind* the star, and modelling it as scattering
+/// would tie the two together in exactly the way that would be wrong: move the
+/// star and the galaxy would swing with it.
+///
+/// `galaxyPole` is the unit normal of the galactic plane and `coreDir` points at
+/// the core. Both come from JS so the band can be aimed with a slider without
+/// touching this file.
+fn spaceSky(
+    rayDir: vec3f,
+    sunDir: vec3f,
+    sunIntensity: f32,
+    groundBounce: vec3f,
+    galaxyPole: vec3f,
+    coreDir: vec3f,
+    bandAmt: f32,
+    nebulaAmt: f32
+) -> vec3f {
+    // Everything here is a fraction of the star's own radiance. Tying the
+    // backdrop to `sunIntensity` is not physics — it is what keeps one exposure
+    // calibration valid when the intensity slider moves, which matters more.
+    const SKY_SCALE: f32 = 0.05;
 
-    // View samples are distributed by a power law, not uniformly, and this is the
-    // single most important line in the integral.
+    // Near-black indigo. Not zero: a literal black sky reads as a rendering
+    // failure, and there is always *some* unresolved light out there.
+    const VOID_COL: vec3f = vec3f(0.035, 0.030, 0.085);
+    // Integrated light of stars too faint to resolve. Warm-white, because it is
+    // dominated by the old cool population toward the core rather than by the
+    // handful of hot blue giants that resolve individually.
+    const BAND_COL: vec3f = vec3f(0.62, 0.50, 0.44);
+    // Emission nebulae. Warm toward the core, violet away from it.
+    const NEB_WARM: vec3f = vec3f(0.88, 0.44, 0.20);
+    const NEB_COOL: vec3f = vec3f(0.34, 0.17, 0.74);
+
+    // Signed distance from the galactic plane, and how close to the core we are
+    // looking. `coreBoost` is cubed so the brightening is confined to genuinely
+    // core-ward directions instead of washing across half the sky.
+    let planeD = abs(dot(rayDir, galaxyPole));
+    let core = clamp(dot(rayDir, coreDir) * 0.5 + 0.5, 0.0, 1.0);
+    let coreBoost = core * core * core;
+
+    // --- the galactic band --------------------------------------------------
+    // A Gaussian across the plane. It is narrow and bright toward the core and
+    // broad and faint away from it, which is the single most recognisable thing
+    // about a spiral galaxy seen from inside its own disc.
+    let width = mix(0.20, 0.085, coreBoost);
+    var band = exp(-(planeD * planeD) / (width * width));
+    band *= mix(0.30, 1.0, coreBoost);
+
+    // Dust lanes. The sample point is stretched hard along the pole axis, so the
+    // noise varies quickly *across* the plane and slowly *along* it — which
+    // makes its features run as long threads parallel to the band rather than as
+    // blobs scattered over it. That anisotropy is the whole trick; an isotropic
+    // noise here reads as dirt on the lens.
+    let laneQ = rayDir * 3.0 + galaxyPole * (dot(rayDir, galaxyPole) * 26.0);
+    let lanes = spaceFbm(laneQ, 3) * 0.5 + 0.5;
+    band *= mix(0.28, 1.0, smoothstep(0.30, 0.72, lanes));
+
+    // --- emission nebulae ---------------------------------------------------
+    // Two scales of cloud, the second used only to break up the first's
+    // silhouette. Thresholded so most of the sky stays empty: nebulae that cover
+    // everything stop reading as objects and start reading as fog.
+    let n1 = spaceFbm(rayDir * 1.6 + vec3f(4.1, 0.0, 2.7), 4) * 0.5 + 0.5;
+    let n2 = spaceFbm(rayDir * 2.9 + vec3f(19.3, 7.2, 3.4), 3) * 0.5 + 0.5;
+    let cloud = smoothstep(0.38, 0.92, n1) * (0.40 + 0.60 * n2);
+    // Concentrated toward the plane, where the gas actually is, but not confined
+    // to it — a hard cutoff at the band edge looks like a mask.
+    let nebGate = mix(0.22, 1.0, exp(-(planeD * planeD) / 0.130));
+    let nebCol = mix(NEB_COOL, NEB_WARM, coreBoost * 0.75);
+
+    var col = VOID_COL * 0.06;
+    col += BAND_COL * band * bandAmt * 0.9;
+    col += nebCol * cloud * nebGate * nebulaAmt * 0.90;
+    col *= sunIntensity * SKY_SCALE;
+
+    // --- the dust sea -------------------------------------------------------
+    // Below the horizon the "sky" is the field being surfed. `groundBounce` is
+    // the radiance leaving it — reflected starlight plus its own emission —
+    // solved on the CPU by iterating against this very LUT until it converges.
     //
-    // Density falls off exponentially with height, so almost all of the
-    // scattering along any ray happens in the first few kilometres. A uniform
-    // march does not know that, and near the horizon it fails outright: a ray at
-    // zero elevation travels roughly 450 km before it leaves the atmosphere, so
-    // sixteen even steps put the *first* sample 14 km out and 15 km up — past
-    // essentially all of the air that matters. The model then under-integrates
-    // exactly the direction it is sampled hardest in, and the LUT dives by more
-    // than a stop in the last three degrees before the horizon and jumps back up
-    // below it, where the snow bounce takes over. A one-stop dark notch, one to
-    // two degrees wide, wrapped around the whole horizon.
+    // This is load-bearing, and for a reason that survives the move to space
+    // unchanged. Aerial perspective converges every distant surface onto the sky
+    // in its own direction; if the lower hemisphere of the LUT does not hold the
+    // dust sea's own colour, the far edge of the clipmap resolves to something
+    // else and draws as a hard ring at a fixed radius from the player.
     //
-    // Measured off a readback of the LUT along the anti-sun azimuth: 1.86 at
-    // +3.5 degrees, 0.84 at 0, 1.29 at -0.5. Nothing downstream can fix that,
-    // because it is a hole in the source data — and it was invisible for as long
-    // as nothing sampled it, which stopped being true when the aerial perspective
-    // started converging the far field onto the sky in its own direction.
+    // The handover stays fast — a degree and a half either side of the horizon.
+    // What is down there is a hundred kilometres of the same dust, and at that
+    // path length it is indistinguishable from the haze above it.
+    let downT = 1.0 - smoothstep(-0.030, -0.005, rayDir.y);
+    col = mix(col, groundBounce, downT);
+
+    // --- the grazing band ---------------------------------------------------
+    // Kept from the atmospheric model, at roughly a quarter of its old strength.
     //
-    // `t^2.5` puts the first of thirty-two samples 60 m out on that same grazing
-    // ray and still reaches the top of the atmosphere. Steps are integrated over
-    // their true width rather than a constant, so the quadrature stays correct.
-    const DIST_POWER: f32 = 2.5;
-
-    let mu = dot(rayDir, sunDir);
-    let pr = phaseRayleigh(mu);
-    let pm = phaseMie(mu, MIE_G);
-
-    var sumR = vec3f(0.0);
-    var sumM = vec3f(0.0);
-    /// The same two sums, over the samples that have no *direct* view of the sun.
-    /// See the note where they are spent, below the loop.
-    var shadR = vec3f(0.0);
-    var shadM = vec3f(0.0);
-    var odR = 0.0; // accumulated optical depth along the view ray
-    var odM = 0.0;
-
-    var tPrev = 0.0;
-    for (var i = 0; i < STEPS; i++) {
-        let tNext = march * pow(f32(i + 1) / f32(STEPS), DIST_POWER);
-        let stepLen = tNext - tPrev;
-        let p = origin + rayDir * (tPrev + stepLen * 0.5);
-        tPrev = tNext;
-        let h = length(p) - EARTH_R;
-
-        let dR = exp(-h / H_RAYLEIGH) * stepLen;
-        let dM = exp(-h / H_MIE) * stepLen;
-        odR += dR;
-        odM += dM;
-
-        // Optical depth from this sample toward the sun.
-        let lightDist = raySphereFar(p, sunDir, ATMOS_R);
-        let lStep = lightDist / f32(LIGHT_STEPS);
-        var lR = 0.0;
-        var lM = 0.0;
-        var occluded = false;
-
-        for (var j = 0; j < LIGHT_STEPS; j++) {
-            let lp = p + sunDir * (lStep * (f32(j) + 0.5));
-            let lh = length(lp) - EARTH_R;
-            if (lh < 0.0) { occluded = true; break; }
-            lR += exp(-lh / H_RAYLEIGH) * lStep;
-            lM += exp(-lh / H_MIE) * lStep;
-        }
-
-        if (occluded) {
-            // Not thrown away. This sample sits in the planet's own shadow, so
-            // it receives no direct sun — but it is still inside a lit
-            // atmosphere, and multiply-scattered light reaches it. Attenuate
-            // along the *view* path only and keep it for the isotropic pass.
-            let attenV = exp(-(BETA_R * odR + BETA_M * 1.1 * odM));
-            shadR += attenV * dR;
-            shadM += attenV * dM;
-            continue;
-        }
-
-        let tau = BETA_R * (odR + lR) + BETA_M * 1.1 * (odM + lM);
-        let atten = exp(-tau);
-        sumR += atten * dR;
-        sumM += atten * dM;
-    }
-
-    var col = sunIntensity * (sumR * BETA_R * pr + sumM * BETA_M * pm);
-
-    // --- multiple scattering ------------------------------------------------
-    // Single scattering alone underestimates a clear sky by roughly a factor of
-    // three, and it underestimates blue the most, because a blue photon is the
-    // one most likely to scatter again rather than to be absorbed. Left
-    // uncorrected the sky is too dim to fill shadows, the warm ground bounce
-    // wins the ambient, and snow shadows come out beige instead of blue — which
-    // is the opposite of the whole look.
-    //
-    // Approximated as an extra isotropic pass over the same optical depths.
-    // Cheap, stable, and it puts the sun/sky ratio in the right place.
-    //
-    // The shadowed samples enter *here* and nowhere else, and leaving them out
-    // entirely is what drew a dark band across the sky a degree or two above the
-    // horizon on the anti-sun side. At a 13-degree sun most of a grazing path in
-    // that direction lies in the planet's own shadow, so most of its samples took
-    // the early-out, single scattering had almost nothing left to integrate, and
-    // the model produced a stripe — brown once the grazing desaturation had had
-    // its say. Real skies do darken there (it is the base of the Earth's shadow)
-    // but they darken *smoothly*, because multiple scattering fills the shadow in
-    // from the lit air all around it. Half weight: it is scattered light arriving
-    // indirectly, not a second sun.
-    //
-    // It stayed hidden as long as nothing sampled that band. The aerial
-    // perspective now converges distant surfaces onto the sky in their own
-    // direction — which is the only convergence that lets them dissolve — so the
-    // band became the colour the whole far field was dissolving into.
-    const SHADOW_FILL: f32 = 0.5;
-    let msPhase = 1.0 / (4.0 * PI);
-    col += sunIntensity * (
-              (sumR + shadR * SHADOW_FILL) * BETA_R * MS_BOOST
-            + (sumM + shadM * SHADOW_FILL) * BETA_M * 0.4
-          ) * msPhase;
-
-    // Below the horizon the "sky" is snow. `groundBounce` is the radiance
-    // leaving that snow, computed on the CPU by iterating the bounce against
-    // this very LUT until it converges.
-    //
-    // This is not a detail. Snow reflects ~85% of what lands on it, so in a
-    // snow field the ground is one of the brightest sources in the scene, and
-    // it is what fills shadows with bright blue-white light instead of leaving
-    // them black. Omitting it — as a naive sky model does — is precisely why
-    // untuned snow renders come out with dead, crushed shadows.
-    //
-    // The handover has to be *fast* — one and a half degrees either side of
-    // where the clip actually begins. Run it any wider and the band below the
-    // horizon holds mostly the clipped march, which is dark for an artefactual
-    // reason: a ray angled into the planet is cut short, accumulates almost no
-    // single scattering, and single scattering is all this integral has. That
-    // leaves a dark stripe in the LUT exactly where the ground meets the sky,
-    // and distant surfaces converge on the sky in their own direction, so they
-    // would land on it.
-    //
-    // Which is also the physically sensible answer for this scene. What is down
-    // there is a hundred kilometres of snow: bright, pale, and — at that path
-    // length — indistinguishable from the haze above it.
-    if (discr > 0.0 && groundDist > 0.0) {
-        // Ascending edges: smoothstep is undefined when edge0 > edge1.
-        let downT = 1.0 - smoothstep(-0.030, -0.005, rayDir.y);
-        col = mix(col, groundBounce, downT);
-    }
-
-    // --- the optically thick horizon ---------------------------------------
-    // A horizontal path through the atmosphere is hundreds of kilometres long,
-    // and single scattering treats that as a coloured filter: blue is
-    // extinguished outright, green mostly, and what is left is a saturated olive
-    // band sitting between the blue dome and the warm sun. No real sky does that.
-    // A path that thick is not a filter, it is fog — high-order scattering inside
-    // it drives the result toward the achromatic, which is why a real hazy
-    // horizon is pale rather than coloured. The single isotropic pass above is
-    // nowhere near enough to model that at grazing angles.
-    //
-    // So the last dozen degrees are pulled toward their own luminance. It is the
-    // cheapest possible stand-in for high-order scattering, and it removes the
-    // green band outright — the one artefact of this sky model that reads as
-    // wrong rather than as stylised, and the reason the whole far field was
-    // inheriting a yellow cast through the aerial perspective.
-    //
-    // The sun's own warmth is untouched: the solar disc, the aureole and the
-    // forward-scatter lobe are all added *after* this LUT, in the sky material
-    // and in `applyAerial`.
-    //
-    // Widened and strengthened from 0.20 / 0.62 once the aerial perspective
-    // started converging distant surfaces onto this band rather than onto the
-    // cool dome above it. The residual warmth it left was invisible while it was
-    // a thin strip mostly hidden behind terrain; with the far field dissolving
-    // *into* it, it became a tan wash across a quarter of the frame, on the side
-    // of the sky facing away from the sun. Pale, very slightly cool — which is
-    // what a real hazy horizon is when you are not looking at the sun, and the
-    // warm case is added back afterwards by the forward lobe.
+    // Its original job — killing the saturated olive stripe single scattering
+    // produces along a hundred-kilometre horizontal path — is gone with the
+    // integral. What it still does is give the far field one consistent colour
+    // to dissolve into, because whatever sits in this band *is* the fog colour
+    // of everything on the horizon. At the old 0.82 it flattened the galactic
+    // band to grey wherever the two crossed, which is the most interesting
+    // twenty degrees in the frame; at 0.22 it only takes the edge off.
     let grazing = 1.0 - smoothstep(0.0, 0.26, abs(rayDir.y));
     let pale = dot(col, vec3f(0.30, 0.42, 0.28));
-    col = mix(col, vec3f(pale) * vec3f(0.97, 1.0, 1.06), grazing * 0.82);
+    col = mix(col, vec3f(pale) * vec3f(1.02, 0.98, 1.06), grazing * 0.22);
 
     return col;
 }

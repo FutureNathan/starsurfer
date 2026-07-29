@@ -1,5 +1,5 @@
 /**
- * SNOWFLOW — entry point and frame orchestration.
+ * STARSURFER — entry point and frame orchestration.
  *
  * WebGPU only, by design. No WebGL path, no feature-detect branches: if the
  * adapter isn't there we say so once and stop.
@@ -68,7 +68,7 @@ async function boot() {
     // this feature. Every desktop GPU that can run this demo has it.
     const filterable = engine.getCaps().textureFloatLinearFiltering;
     if (!filterable) {
-        console.warn("[snowflow] float32-filterable unavailable; height will step");
+        console.warn("[starsurfer] float32-filterable unavailable; height will step");
     }
 
     const applyScale = () => engine.setHardwareScalingLevel(1 / S.resolutionScale);
@@ -100,7 +100,7 @@ async function boot() {
     scene.activeCamera = rig.camera;
 
     // ------------------------------------------------------------------ sky
-    await loading.phase("integrating atmosphere", 0.2);
+    await loading.phase("seeding the star field", 0.2);
     const sky = new Sky(scene);
     sky.mesh.renderingGroupId = 0;
     await sky.solve();
@@ -115,14 +115,14 @@ async function boot() {
     const depthPass = new DepthPass(scene);
 
     // -------------------------------------------------------------- terrain
-    await loading.phase("baking heightfield", 0.34);
+    await loading.phase("baking the dust field", 0.34);
     const terrain = new Terrain(scene, sky, shadows);
     terrain.mesh.renderingGroupId = 1;
     await terrain.build();
     onChange("showTerrain", (v) => (terrain.mesh.isVisible = v));
     depthPass.registerCaster(terrain.mesh, terrain.makePrepassMaterial());
 
-    await loading.phase("placing character", 0.62);
+    await loading.phase("suiting up", 0.62);
 
     const character = new CharacterController(terrain);
     character.position.set(0, 0, 0);
@@ -285,7 +285,7 @@ async function boot() {
     await loading.done();
     setTimeout(() => overlay.resetSpikes(), 800);
 
-    globalThis.SNOWFLOW = {
+    globalThis.STARSURFER = {
         engine, scene, rig, character, figure, contact, spray, wake, spells,
         overlay, terrain, sky, shadows, post, depthPass,
         S, input, perfStats: stats,

@@ -35,29 +35,41 @@ fn windMat(angle: f32, sx: f32, sy: f32, scale: f32) -> mat2x2f {
 /// Broad + medium landform. Returns metres.
 /// `w` is the wind bearing in radians, `amp` a global height multiplier.
 fn terrainMacro(p: vec2f, w: f32, amp: f32) -> f32 {
-    // --- broad dunes -------------------------------------------------------
-    // Compressed along the wind, so ridge lines run across it. Derivative
-    // damping keeps crests smooth and lets detail pool in the troughs.
-    let m1 = windMat(w, 2.1, 1.0, 58.0);
+    // --- broad swells ------------------------------------------------------
+    // A dust sea is not a dune field, and the difference is almost entirely
+    // anisotropy. Wind-blown snow is compressed hard along one bearing, which
+    // is what puts the transverse ridge lines in it — and transverse ridge
+    // lines are the single strongest "this is a snow field" cue there is. Here
+    // the stretch factors run close to 1, so the form is near-isotropic: broad
+    // rolling swells with no prevailing grain, the way a cloud of grains
+    // settling under its own self-gravity would actually sit.
+    //
+    // Derivative damping stays. It keeps crests smooth and lets the fine
+    // filament layer pool in the troughs, which is where the glow wells up.
+    let m1 = windMat(w, 1.15, 1.0, 58.0);
     let broad = fbmDamped(m1 * p, 5, 2.03, 0.5, 0.9);
     var h = broad.x * 15.5;
 
     // A second, much larger and gentler swell so the field never reads as one
-    // repeating dune wavelength. This is what gives the horizon its long roll.
-    let m0 = windMat(w, 1.35, 1.0, 210.0);
+    // repeating wavelength. Longer and taller than the snow version: this is
+    // what gives the horizon its slow roll, and out here the horizon is a much
+    // bigger part of the frame because there is no haze to hide it.
+    let m0 = windMat(w, 1.1, 1.0, 340.0);
     let swell = fbmDamped(m0 * p, 3, 2.11, 0.55, 0.3);
-    h += swell.x * 26.0;
+    h += swell.x * 34.0;
 
-    // --- medium drifts and wind lobes --------------------------------------
-    // The domain is sheared along the wind by the broad height, which steepens
-    // lee faces and flattens windward ones — dune asymmetry, near enough.
-    let m2 = windMat(w, 1.55, 1.0, 13.5);
+    // --- medium drifts -----------------------------------------------------
+    // The domain is still sheared by the broad height, which gives the swells
+    // an asymmetry — one flank steeper than the other. It is the same trick
+    // that produced dune lee faces; with the anisotropy gone it now reads as
+    // the sea having a direction of travel rather than a wind.
+    let m2 = windMat(w, 1.2, 1.0, 13.5);
     var q2 = m2 * p;
     q2.x += broad.x * 2.4;
     let med = fbmDamped(q2, 4, 2.07, 0.48, 1.7);
 
-    // Drifts pile up where the broad form is concave (troughs and lee pockets)
-    // and get scoured off exposed crests.
+    // Loose grains pile up where the broad form is concave and get swept off
+    // the exposed crests.
     let shelter = clamp(0.5 - broad.x * 0.75, 0.15, 1.0);
     h += med.x * 2.9 * shelter;
 
@@ -118,16 +130,23 @@ fn rockField(p: vec2f, w: f32) -> vec2f {
 
 // --------------------------------------------------------------------- fine
 
-/// Local departure of the wind from its prevailing bearing, in radians, and the
-/// local anisotropy of the sastrugi.
+/// Local departure of the drift from its prevailing bearing, in radians, and the
+/// local anisotropy of the filaments.
 ///
-/// One global bearing gives every ridge in the field the same direction and the
-/// same aspect ratio, and the result reads as corduroy — a woven texture laid
-/// over the landform rather than snow carved by weather. Real sastrugi does not
-/// do that: the wind veers as it crosses a dune, so the field breaks into patches
-/// that run at slightly different angles and are streakier in some places than
-/// others. Two slow noise fields, at ~120 m and ~80 m, are enough to destroy the
-/// uniformity completely while leaving the prevailing direction obvious.
+/// One global bearing gives every filament in the field the same direction and
+/// the same aspect ratio, and the result reads as corduroy — a woven texture
+/// laid over the landform rather than a medium that has been flowing. Real
+/// nebula filaments do not do that: the flow veers as it crosses a swell, so the
+/// field breaks into patches that run at slightly different angles and are
+/// streakier in some places than others. Two slow noise fields, at ~120 m and
+/// ~80 m, are enough to destroy the uniformity completely while leaving the
+/// prevailing direction obvious.
+///
+/// The stretch base is much higher here than it was for wind-carved snow. The
+/// macro layer gave up its anisotropy to stop reading as dunes; the fine layer
+/// takes it on instead, and the result is long drawn-out threads streaming
+/// across broad isotropic swells — which is what a nebula does and a snow field
+/// never does.
 ///
 /// Both fine layers below read this, and so does the *filtered* twin further
 /// down, which must produce the same surface — one is the vertex displacement and
@@ -139,7 +158,7 @@ fn rockField(p: vec2f, w: f32) -> vec2f {
 /// perturb it by anyway.
 fn windLocal(p: vec2f) -> vec2f {
     let veer = noise2(p * 0.0083 + vec2f(31.7, 12.3)) * 0.42;
-    let stretch = 2.3 + 2.4 * (noise2(p * 0.0126 + vec2f(7.1, 41.9)) * 0.5 + 0.5);
+    let stretch = 4.0 + 2.4 * (noise2(p * 0.0126 + vec2f(7.1, 41.9)) * 0.5 + 0.5);
     return vec2f(veer, stretch);
 }
 
