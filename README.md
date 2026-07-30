@@ -199,6 +199,12 @@ Every other feature repeats statistically; the complex is singular per world,
 and that is its whole job. A map with a landmark is a place you can be lost
 in; a map without one is a texture.
 
+A round **mini-map** in the corner charts all of it: the whole play disc,
+hillshaded once at load from the same CPU height mirror the physics rides,
+lit from the same side as the world so a crater on the chart matches the
+crater out the window. Per frame it costs one image blit and an arrow —
+the relief is baked and immutable, so its portrait is too.
+
 The albedo carries markings as well as relief: highland/mare provinces at the
 625 m wavelength that give the real moon its face, and **ejecta rays** — lanes
 of fresher, brighter fines thresholded hard so most ground carries none,

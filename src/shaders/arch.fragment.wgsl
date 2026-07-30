@@ -41,6 +41,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let t2 = noise2(vec2f(world.x + world.z, world.y) * 3.1) * 0.5 + 0.5;
     albedo *= 0.80 + 0.28 * t1 + 0.14 * (t2 - 0.5);
 
+    // The dust coat. Regolith settles on everything that faces up, so the
+    // top of the arch is the same grey moon it stands in — without this the
+    // piece reads as a dark object placed on the scene, however good its
+    // shape. Only the vault undersides and the steep flanks stay bare
+    // basalt, which is also where bare rock survives on the real thing.
+    let dustK = smoothstep(0.08, 0.62, N.y);
+    albedo = mix(albedo,
+                 vec3f(0.112, 0.114, 0.121) * (0.90 + 0.20 * t1),
+                 dustK * 0.88);
+
     const INV_PI: f32 = 0.31830988618;
     let diff = wrapDiffuse(dot(N, L), 0.25);
     var col = albedo * INV_PI * uniforms.sunRadiance * diff * ao;

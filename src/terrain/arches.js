@@ -55,8 +55,8 @@ function lump(x, y, z) {
  * @param {number} footY world Y the feet are planted at
  * @param {number} seed decorrelates the lumps between pieces
  */
-function addVault(P, N, U, I, pose, len, span, crown, thick, footY, seed) {
-    const AXIS = 10;   // rings along the piece
+export function addVault(P, N, U, I, pose, len, span, crown, thick, footY, seed) {
+    const AXIS = 12;   // rings along the piece
     const ARC = 18;    // steps across the half-arc, outer + inner
     const rx = -pose.hz, rz = pose.hx; // across the channel
 
@@ -64,33 +64,64 @@ function addVault(P, N, U, I, pose, len, span, crown, thick, footY, seed) {
     const innerHalf = span / 2 - thick;
 
     // Parametric shell: v walks the outer arc foot→crown→foot, then back
-    // along the inner arc. The ends pinch outer to inner so the shell closes.
+    // along the inner arc. The ends pinch the inner surface out to meet the
+    // outer one, closing the shell.
+    //
+    // The outer surface is deliberately NOT a barrel — a constant-thickness
+    // pipe is exactly what "posted there" looks like. Rock that stands does
+    // so on mass: the feet flare into abutments a few times thicker than the
+    // crown, the top settles into a mound rather than a circular arc, and
+    // the whole piece breathes and drifts along its axis so no two
+    // cross-sections repeat. The inner passage stays a clean vault — that is
+    // the part that was bored by lava or left by the collapse, and the part
+    // the rider needs to trust.
     const rings = [];
     for (let a = 0; a <= AXIS; a++) {
         const u = a / AXIS;
         const along = (u - 0.5) * len;
-        // Pinch: the last ring and a half at each end tapers the shell shut.
-        const pinch = Math.min(1, Math.min(u, 1 - u) * AXIS / 1.5);
+        // A few percent of girth and a little sideways drift, varying slowly
+        // down the axis.
+        const breathe = 1 + 0.13 * lump(along * 0.33 + seed, seed * 0.7, 1.3);
+        const sway = lump(along * 0.21, seed + 5.0, 2.6) * 0.9;
         const ring = [];
         for (let v = 0; v <= ARC * 2; v++) {
             const outer = v <= ARC;
             const t = outer ? v / ARC : (v - ARC) / ARC;
             const th = (outer ? t : 1 - t) * Math.PI;
-            const half = outer
-                ? innerHalf + thick
-                : innerHalf + thick * (1 - pinch);
-            const ch = outer
-                ? crown + thick
-                : crown + thick * (1 - pinch);
-            let px = Math.cos(th) * half;
-            let py = Math.sin(th) * ch;
-            // Rock lumps, frozen at build time. Kept off the feet so the
-            // shell always meets the ground cleanly.
-            const l = lump(px * 0.7 + seed, py * 0.8, along * 0.6) * 0.5
+            // The ends close at an angle-dependent rate, so the broken edge
+            // of the shell is ragged rather than sliced square.
+            const rag = 1.1 + 0.85 * (lump(th * 2.7 + seed, seed, 7.7) * 0.5 + 0.5);
+            const pinch = Math.min(1, Math.min(u, 1 - u) * AXIS / rag);
+
+            // Outer form: abutments flare toward the ground, the top is a
+            // flattened mound. Inner form: the clean vault. An inner vertex
+            // blends toward the outer form as pinch falls off, which is what
+            // seals the ends whatever shape the outside has taken.
+            const flare = 1 + 1.9 * Math.cos(th) * Math.cos(th);
+            const pxO = Math.cos(th) * (innerHalf + thick * flare) * breathe;
+            const pyO = Math.pow(Math.max(0, Math.sin(th)), 0.74)
+                * (crown + thick) * breathe;
+            let px, py;
+            if (outer) {
+                px = pxO; py = pyO;
+            } else {
+                px = Math.cos(th) * innerHalf;
+                py = Math.sin(th) * crown;
+                px += (pxO - px) * (1 - pinch);
+                py += (pyO - py) * (1 - pinch);
+            }
+            // Rock lumps at three scales, frozen at build time — boulder
+            // masses, slabs, surface rubble. Kept off the feet so the shell
+            // always meets the ground cleanly, and quieter inside than out.
+            const l = lump(px * 0.28 + seed, py * 0.31, along * 0.24) * 1.0
+                + lump(px * 0.7 + seed, py * 0.8, along * 0.6) * 0.5
                 + lump(px * 2.3, py * 2.1 + seed, along * 1.9) * 0.22;
             const lk = Math.min(1, py / 2.5);
-            px += l * 0.55 * lk * Math.cos(th);
-            py += l * 0.55 * lk * Math.max(0.2, Math.sin(th));
+            // The quieter inner amplitude blends back to the outer one as the
+            // ends seal, or the two surfaces would close onto different rock.
+            const amp = outer ? 0.85 : 0.4 + 0.45 * (1 - pinch);
+            px += l * amp * lk * Math.cos(th) + sway;
+            py += l * amp * lk * Math.max(0.2, Math.sin(th));
             ring.push([
                 pose.x + rx * px + pose.hx * along,
                 footY + py,
@@ -149,21 +180,28 @@ export class Arches {
 
         const P = [], N = [], U = [], I = [];
 
+        // Feet are planted on the highest ground under either abutment — the
+        // flare reaches ~13 m off-axis, so both distances are sampled — then
+        // buried three metres, so the shell rises out of the slope instead of
+        // resting on it.
+        const foot = (p) => {
+            let hi = -Infinity;
+            for (const d of [-13, -9, 9, 13]) {
+                const h = terrain.heightAt(p.x - p.hz * d, p.z + p.hx * d);
+                if (h > hi) hi = h;
+            }
+            return hi - 3;
+        };
+
         // The canyon arch: spans across the cut, axis along it.
         const a = poses.arch;
-        const bridge = { x: a.x, z: a.z, hx: a.hx, hz: a.hz };
-        const footA = terrain.heightAt(a.x - a.hz * 9, a.z + a.hx * 9);
-        const footB = terrain.heightAt(a.x + a.hz * 9, a.z - a.hx * 9);
-        addVault(P, N, U, I, bridge, 8, 19, 7.2, 2.4,
-                 Math.max(footA, footB) - 2, 3.1);
+        addVault(P, N, U, I, a, 11, 19, 7.2, 2.6, foot(a), 3.1);
 
         // The tube roofs, feet on the levees either side of the rille.
         for (let i = 0; i < poses.roofs.length; i++) {
             const r = poses.roofs[i];
-            const fa = terrain.heightAt(r.x - r.hz * 8, r.z + r.hx * 8);
-            const fb = terrain.heightAt(r.x + r.hz * 8, r.z - r.hx * 8);
             addVault(P, N, U, I, r, r.len, 17, 5.6, 2.2,
-                     Math.max(fa, fb) - 2, 11.7 + i * 7.3);
+                     foot(r), 11.7 + i * 7.3);
         }
 
         const mesh = new Mesh("arches", scene);

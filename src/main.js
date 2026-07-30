@@ -31,6 +31,7 @@ import { SprayField } from "./vfx/particles.js";
 import { SurfWake } from "./vfx/surfWake.js";
 import { SpellSystem } from "./spells/spellSystem.js";
 import { Overlay } from "./ui/overlay.js";
+import { initMinimap } from "./ui/minimap.js";
 import { Sky } from "./render/sky.js";
 import { ShadowSystem } from "./render/shadows.js";
 import { Terrain } from "./terrain/terrain.js";
@@ -241,6 +242,10 @@ async function boot() {
     // their render pipelines to exist. See `WaterBody.warmUp`.
     spells.finishWarmUp();
 
+    // After warm-up, so the sun the relief is shaded under is the one the
+    // scene settled on. Renders its whole chart here, once — see the module.
+    const minimap = initMinimap(terrain, sky, character);
+
     // ------------------------------------------------------------- run loop
     let prev = performance.now();
     let time = 0;
@@ -330,6 +335,7 @@ async function boot() {
         sample(dtMs);
         checkSpike(dtMs);
         overlay.update(dtMs, engine);
+        minimap.frame();
 
         endFrame();
     });

@@ -69,6 +69,8 @@ export function initAudio() {
     let musicTimer = 0;
     /** @type {HTMLAudioElement|null} */
     let currentEl = null;
+    /** @type {MediaElementAudioSourceNode|null} */
+    let currentSrc = null;
 
     fetch("/music/manifest.json")
         .then((r) => (r.ok ? r.json() : null))
@@ -123,19 +125,26 @@ export function initAudio() {
         const pick = pool[(Math.random() * pool.length) | 0];
         const el = new Audio("/music/" + pick.file);
         el.crossOrigin = "anonymous";
+        // Disconnected when the track ends. Source nodes live as long as
+        // their connection, so leaving them wired would stack one dead node
+        // onto the music bus per track played, forever.
+        const srcNode = ctx.createMediaElementSource(el);
         el.addEventListener("error", () => {
             // Missing or unreadable: drop it from the rotation and move on.
             dead.add(pick.file);
+            srcNode.disconnect();
             nowPlaying = null;
             scheduleNext(2);
         });
         el.addEventListener("ended", () => {
+            srcNode.disconnect();
             nowPlaying = null;
             currentEl = null;
+            currentSrc = null;
             scheduleNext(GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN));
         });
-        ctx.createMediaElementSource(el).connect(musicGain);
-        el.play().then(() => { nowPlaying = pick; currentEl = el; })
+        srcNode.connect(musicGain);
+        el.play().then(() => { nowPlaying = pick; currentEl = el; currentSrc = srcNode; })
             .catch(() => scheduleNext(8));
     }
 
@@ -144,6 +153,7 @@ export function initAudio() {
     onChange("musicPlaylist", () => {
         if (!ctx) return;
         if (currentEl) { currentEl.pause(); currentEl = null; }
+        if (currentSrc) { currentSrc.disconnect(); currentSrc = null; }
         nowPlaying = null;
         scheduleNext(1.5);
     });
@@ -468,7 +478,10 @@ export function initAudio() {
             // gone within a fraction of a second of stepping off. It sits
             // well under the powers on purpose — it is weather, they are
             // events, and the first mix had the weather talking over them.
-            const riding = ch.surf > 0.5 ? 1 : 0;
+            // Airborne counts as off the ground: a trick is silent until the
+            // landing slap, because the hiss is dust under the board and
+            // there is no dust under a board in flight.
+            const riding = ch.surf > 0.5 && !ch.airborne ? 1 : 0;
             const sp = ch.speed01;
             const wantGain = riding * (0.03 + 0.17 * sp);
             if (Math.abs(wantGain - surfGainSent) > 0.004) {
