@@ -120,6 +120,16 @@ almost nothing is a clean circle — every crater is sitting in the wreckage of
 older ones. The fine layer on top is knobbly rather than streaked: metre-scale
 rubble and half-metre secondary pitting.
 
+The massifs' micro-relief is floored at an ~11 m wavelength, and the floor is a
+contract with the character rather than a taste. Grounding reads a
+half-resolution CPU mirror of the bake through a smoothing B-spline; the render
+reads the full bake. On smooth ground the two agree to centimetres, but ridged
+octaves at a 1.4 m wavelength with metres of amplitude are content the mirror
+cannot represent at all — the drawn summit stood half a metre above the surface
+the feet were planted on, and the astronaut waded through every peak. With the
+finest octave held where both reconstructions carry it, the residual mismatch is
+back under the dust-sink the figure already has.
+
 The macro half bakes once into a 4096² R32F texture over a 2048 m field (0.5 m per
 texel) plus a 2048² RGBA16F auxiliary of slopes, bedrock mask and exposure, and is
 mirrored back to the CPU — so character grounding samples exactly the surface that
@@ -391,6 +401,18 @@ bright pass thresholds at 3.
    the line and die — and the whole thing flickers on two incommensurate sines,
    hashed per rock so a storm never pulses in unison.
 
+   What it leaves is molten. The crater floor is the only thing that writes the
+   top of the charge channel, and up there the ground material adds an ember-hued
+   emission that lands at the bolide trail's own radiance — the floor at the
+   moment of landing is made of the thing that just hit it. The cooling needs no
+   clock of its own: the terrain sim decays a hot channel on a 26-second constant
+   (radiative cooling goes as the fourth power of temperature, so molten rock
+   must not linger the way glass does), and as the value walks down through the
+   band the same pixel goes white-orange, deep orange by twenty seconds, gold
+   ember inside a minute, then the standing impact-glass glow on its own
+   fifteen-minute tail. The ion stream's scored lines sit just below the band
+   and keep their permanence.
+
    The impact is built to be seen from ninety metres, because that is where it
    happens. A four-metre crater and centimetre grains are a handful of pixels at
    that range, and half the time a swell is in front of them — what carries is
@@ -509,7 +531,21 @@ The far range is a heightfield raymarched on the skybox — no geometry, behind
 everything by construction, with analytic normals, ridges occluding ridges, and a
 second short march toward the star for its own cast shadows. It is lit by the
 ground's own material logic and hazed by the same nebula, so the two meet at one
-colour instead of two.
+colour instead of two. It also occludes: the star's disc, its analytic glow and
+the point-star field are all gated off a range hit, so stars end at the
+silhouette — a summit with stars twinkling on its face is the painted-backdrop
+tell in the other direction — while the bloom pass still spills a half-hidden
+star's glare over the edge, which is where glare actually lives.
+
+The march window is set by the tallest thing the player can stand on, and the
+moon rework moved both of its ends. The near massifs' tops sliced flat against
+the old 13° ceiling; and from a hundred-metre summit the clipmap's far edge sits
+at -10°, where the old -3° floor left a band of raw below-horizon LUT — a flat
+pale smear with the range floating above it. The window now runs 18° down, and
+below the horizon the march is nearly free: the ray starts inside the range's
+empty seven-kilometre bowl, hits its floor on the first sample, and shades as a
+fully hazed distant plain — the same colour the clipmap's far edge converges to,
+so the ground and the range connect at every eye height.
 
 ### Post-processing
 

@@ -174,7 +174,19 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // Ice is the one thing here that is meant to feel permanent within a
         // session — a spell that "permanently alters the surface" should not
         // visibly melt while the player watches it.
-        ice *= exp(-dt * r / 900.0);
+        //
+        // With one exception, and the exception is the point: the top of the
+        // range is *molten*. An asteroid writes 1.0 and nothing else goes above
+        // 0.70, and molten rock must not linger the way glass does — radiative
+        // cooling goes as the fourth power of temperature, so the white-hot
+        // floor of a fresh crater dies fast and hands over to the slow tail.
+        // On a 26-second constant a 1.0 pool visibly dims through the molten
+        // band in fifteen or twenty seconds, exactly the "watch it cool" beat;
+        // the ion stream's scored lines at 0.58 sit below the band and keep
+        // their fifteen minutes. Banked dt keeps both multiplies clear of the
+        // half-float noise floor described above.
+        let hot = smoothstep(0.62, 0.95, ice);
+        ice *= exp(-dt * r * mix(1.0 / 900.0, 1.0 / 26.0, hot));
     }
 
     // ----------------------------------------------------------------- splat

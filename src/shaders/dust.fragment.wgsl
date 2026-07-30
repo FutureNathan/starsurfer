@@ -98,6 +98,9 @@ uniform dustCoolColor: vec3f;
 /// basalt — see the note where they are mixed.
 uniform regolithHigh: vec3f;
 uniform regolithLow: vec3f;
+/// Molten rock — the ember hue, from `brand.js`. Only the top of the charge
+/// range reaches it; see the emission block.
+uniform moltenColor: vec3f;
 
 uniform debugMode: f32;
 uniform screenSize: vec2f;
@@ -603,6 +606,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         let welling = mix(0.55, 1.0, 1.0 - cavity) * mix(0.7, 1.0, 1.0 - ao);
         emissive += uniforms.dustCoolColor * (0.30 + 0.70 * drift) * welling;
         emissive += uniforms.dustGlowColor * iceAmount * 0.45;
+
+        // Molten rock: the top of the charge range, which only an impact
+        // reaches — an asteroid floor is written at 1.0 and nothing else goes
+        // above 0.70. The band is steep and it is keyed to the channel itself,
+        // so the cooling needs no clock of its own: the sim decays a hot
+        // channel on a 26-second constant, and as the value walks down through
+        // the band the same pixel goes white-orange ember, then gold, then the
+        // standing glass glow, then dark. At full charge this lands at the
+        // bolide trail's own radiance — the crater floor at the moment of
+        // landing is made of the thing that just hit it.
+        let molten = smoothstep(0.58, 0.92, iceAmount);
+        emissive += uniforms.moltenColor * molten * (1.6 + 0.6 * iceAmount);
         emissive *= uniforms.dustEmissive * (1.0 - rockExposed * 0.8);
     }
     color += emissive;

@@ -215,9 +215,20 @@ fn rockField(p: vec2f, w: f32) -> vec2f {
             let t = clamp(1.0 - d / radius, 0.0, 1.0);
             let dome = t * t * (3.0 - 2.0 * t);
             // Ridged noise at a wavelength that scales with the massif, so a
-            // small one is not a large one with the same-size boulders on it.
-            let mr = windMat(w, 1.0, 1.0, radius * 0.30);
-            let rough = ridgedd(mr * (p - centre), 4, 2.17, 0.55).x;
+            // small one is not a large one with the same-size boulders on it —
+            // floored, and the floor is a contract with the character.
+            //
+            // Grounding reads a half-resolution CPU mirror of the bake through a
+            // smoothing B-spline; the render reads the full bake. On smooth
+            // ground the two agree to centimetres, but at four octaves the
+            // finest ridge here had metres of amplitude at a 1.4 m wavelength —
+            // content the mirror cannot represent at all — and the drawn summit
+            // stood half a metre above the surface the feet were planted on.
+            // The astronaut waded through every peak. With the finest octave
+            // held near 11 m both reconstructions carry it, and the residual
+            // mismatch is back under the dust-sink the figure already has.
+            let mr = windMat(w, 1.0, 1.0, max(radius * 0.30, 44.0));
+            let rough = ridgedd(mr * (p - centre), 3, 1.95, 0.55).x;
             let hgt = 26.0 + r2.y * 74.0;
 
             hSum += dome * hgt * (0.62 + 0.55 * rough);

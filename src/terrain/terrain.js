@@ -47,6 +47,10 @@ const _dustCool = new Color3(...LIN.nebulaFill);
 // is bouncing off.
 const _regHigh = new Color3(...LIN.regolith);
 const _regLow = new Color3(...LIN.regolithDark);
+// Molten rock, for the top of the charge channel. The same ember the asteroid
+// burns on the way down, so the crater floor at the moment of landing is the
+// colour of the thing that just hit it.
+const _molten = new Color3(...LIN.ember);
 
 /**
  * Radiance per unit of `S.dustGlow`.
@@ -138,7 +142,7 @@ export class Terrain {
                     "deformCenter", "deformSize", "deformTexel", "deformDepthScale",
                     "ambientIntensity",
                     "dustEmissive", "dustGlowColor", "dustCoolColor",
-                    "regolithHigh", "regolithLow",
+                    "regolithHigh", "regolithLow", "moltenColor",
                     "debugMode", "screenSize",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
@@ -356,6 +360,7 @@ export class Terrain {
         m.setColor3("dustCoolColor", _dustCool);
         m.setColor3("regolithHigh", _regHigh);
         m.setColor3("regolithLow", _regLow);
+        m.setColor3("moltenColor", _molten);
 
         m.setVector2("deformCenter", deformCenter);
         m.setFloat("deformSize", deformSize);

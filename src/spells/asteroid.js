@@ -564,7 +564,11 @@ export class Asteroid {
             0.86,   // depression
             0.62,   // rim
             0.88,   // shocked and packed
-            0.70,   // and left burning — the scar has to read from ninety metres
+            1.00,   // molten. The only writer that reaches the top of the
+                    // channel: the floor burns at the ember hue over the bloom
+                    // knee and cools through gold to glass in the first half
+                    // minute — see the hot decay in deformSim and the molten
+                    // band in the ground material.
             Math.random() * Math.PI,
             1.12,   // very slightly oval — a stamped circle is the tell
             1.0

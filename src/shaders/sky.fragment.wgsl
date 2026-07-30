@@ -221,22 +221,31 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // ------------------------------------------------------- far-field range
     // Above the band the march's ceiling test rejects immediately, so the upper
-    // bound is only there to skip the call.
+    // bound is only there to skip the call. 0.32 rather than the 0.230 it was:
+    // the near massifs grew to 2,900 m, whose tops from the valley floor sit
+    // right at 0.23 — a cap there sliced them flat.
     //
-    // The lower bound reaches well *below* the horizon on purpose, and an earlier
-    // version's did not. Fading the range out at a fixed elevation angle drew a
-    // dead straight horizontal line under the whole massif — a ruler across the
-    // frame, which is the one thing a landscape never has. A real range's feet are
-    // hidden by the land in front of it, and here that happens for free: the
-    // clipmap is drawn *after* the sky and covers everything below its own
-    // silhouette, so letting the range paint down past the horizon lets the near
-    // dunes occlude it exactly where they actually stand. A ray at -0.05 from eye
-    // height meets the ground inside eighty metres, so there is nowhere it can
-    // escape the terrain and show a base.
-    if (uniforms.ridgeAmp > 1.0 && dir.y < 0.230 && dir.y > -0.050) {
+    // The lower bound reaches well *below* the horizon on purpose, and how far
+    // below is set by the tallest thing the player can stand on. The clipmap is
+    // drawn *after* the sky and covers everything below its own silhouette, so
+    // the range only has to paint far enough down that the terrain always takes
+    // over before the window runs out. The old floor of -0.05 assumed an eye
+    // two metres up, where a ray at -0.05 meets ground within eighty metres;
+    // the moon rework put hundred-metre massifs under the player, and from a
+    // summit the clipmap's far edge sits at -0.18 — everything between showed
+    // the LUT's raw below-horizon hemisphere, a flat pale band with the range
+    // floating above it. At -0.35 the window outlasts the silhouette from any
+    // standable height with margin. Below the horizon the march is cheap: the
+    // ray starts inside the range's empty seven-kilometre bowl and hits its
+    // floor on the first sample, which shades as a fully hazed distant plain —
+    // the same colour the clipmap's own far edge converges to, so the two meet
+    // instead of leaving a seam.
+    var ridgeHit = false;
+    if (uniforms.ridgeAmp > 1.0 && dir.y < 0.32 && dir.y > -0.35) {
         let hit = ridgeMarch(uniforms.cameraPosition, dir, uniforms.ridgeAmp);
         if (hit.hit) {
             col = shadeRidge(hit, dir);
+            ridgeHit = true;
         }
     }
 
@@ -265,7 +274,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // magnitude off its neighbours to reproject.
     let mu = dot(dir, uniforms.sunDir);
     let discCos = cos(0.0029);
-    if (mu > discCos) {
+    if (mu > discCos && !ridgeHit) {
         let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0029;
         let limb = pow(max(0.0, 1.0 - r * r * 0.72), 0.42);
         col += uniforms.sunColor * uniforms.sunIntensity * 1.6 * limb;
@@ -288,8 +297,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // rather than tens of thousands. The wide one is a four-degree,
     // half-a-linear-unit haze that never blooms at all and exists only so the
     // star sits in the nebula rather than being pasted on top of it.
+    // Occluded by the range along with the disc — the analytic part of the glow
+    // is scene light and a mountain in front of it blocks it. The instrument's
+    // own glare survives: the bloom pass reads the final frame, so a star
+    // half-behind a summit still spills over the silhouette the way glare does.
     let aureole = pow(max(0.0, mu), 20000.0) * 0.070 + pow(max(0.0, mu), 300.0) * 0.0030;
-    col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5;
+    col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5
+         * select(1.0, 0.0, ridgeHit);
 
     // --------------------------------------------------------------- stars
     // Added last and additively, over everything except the star's own disc.
@@ -301,8 +315,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // reciprocal of the drop in `SUN_SCALE_BASE` — the star scale came down when
     // the ground stopped being dust and started being rock, and the point of that
     // change was to move the ground, not to dim the sky.
-    col += starField(dir, uniforms.starDensity, uniforms.time)
-         * uniforms.starBrightness * uniforms.sunIntensity * 0.0138;
+    //
+    // Gated off the range. Stars sit in front of the *nebula* — a nebula that
+    // occluded its own foreground stars would be the painted-backdrop tell —
+    // but they are thousands of times further away than a mountain, and a
+    // summit with stars twinkling on its face is the same tell in the other
+    // direction.
+    if (!ridgeHit) {
+        col += starField(dir, uniforms.starDensity, uniforms.time)
+             * uniforms.starBrightness * uniforms.sunIntensity * 0.0138;
+    }
 
     fragmentOutputs.color = vec4f(col, 1.0);
 }
