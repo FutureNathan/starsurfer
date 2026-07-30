@@ -311,6 +311,10 @@ white, the brightest emissive in the palette — emitted at *fractional* positio
 along it, plus screen-space speed streaks and camera shake on a loaded edge. The
 streaks are the same grains seen closer: a screen-space strand is one of them
 smeared along its own path, stated at the radiance that smear leaves it with.
+The whole streak system reads the prepass and leaves background pixels alone:
+streaks are motion, and the stars are not moving — a star field smeared into
+radial lines is a warp-jump effect on a scene whose premise is standing still
+under a fixed sky. The ground blurs with speed; the sky holds.
 
 ### The five powers
 
@@ -408,10 +412,9 @@ bright pass thresholds at 3.
    clock of its own: the terrain sim decays a hot channel on a 26-second constant
    (radiative cooling goes as the fourth power of temperature, so molten rock
    must not linger the way glass does), and as the value walks down through the
-   band the same pixel goes white-orange, deep orange by twenty seconds, gold
-   ember inside a minute, then the standing impact-glass glow on its own
-   fifteen-minute tail. The ion stream's scored lines sit just below the band
-   and keep their permanence.
+   band the same pixel goes white-orange, is a dim ember inside twenty seconds,
+   and fades on as a dark vitrified scar. The surf rail and the ion stream's
+   scored lines sit below the band's toe and keep their slow tail.
 
    The impact is built to be seen from ninety metres, because that is where it
    happens. A four-metre crater and centimetre grains are a handful of pixels at
@@ -555,8 +558,13 @@ in its own shader rather than being detached, because toggling a post-process of
 reshuffles which texture every remaining pass renders into.
 
 - **TAA** — Halton(2,3) jitter written straight into the projection and frozen for
-  the frame, so the prepass and the beauty pass agree to the subpixel. Depth-based
-  reprojection, a five-tap Catmull-Rom history fetch, and variance clipping whose
+  the frame, so the prepass and the beauty pass agree to the subpixel. The shadow
+  filter's per-pixel rotation advances each frame specifically to feed this pass:
+  a static hash is signal, not noise — the resolve faithfully converged to the
+  hash itself, and since interleaved gradient noise is constant along
+  near-vertical diagonals, every penumbra carried faint crawling lines. Animated,
+  the resolve integrates sixty-four rotations and a penumbra comes out smooth.
+  Depth-based reprojection, a five-tap Catmull-Rom history fetch, and variance clipping whose
   box is widened to contain the current sample — which is what keeps the star field
   alive, since a bright point on black is otherwise clipped below the value the
   renderer just produced, every frame.
