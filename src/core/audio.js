@@ -42,7 +42,11 @@ export function initAudio() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) {
         // Inert stub, same shape. Nothing else needs to know.
-        return { frame() {}, get nowPlaying() { return null; } };
+        return {
+            frame() {},
+            get nowPlaying() { return null; },
+            get trackCount() { return 0; },
+        };
     }
 
     /** @type {AudioContext|null} */
@@ -164,7 +168,7 @@ export function initAudio() {
         const src = noise(t);
         const bp = filter("bandpass", 260, 1.4);
         bp.frequency.exponentialRampToValueAtTime(1900, t + 0.6);
-        const g = env(t, 0.34, 0.10, 1.0);
+        const g = env(t, 0.55, 0.10, 1.0);
         src.connect(bp); bp.connect(g);
         src.stop(t + 1.3);
     }
@@ -182,7 +186,7 @@ export function initAudio() {
             lfo.connect(lfoAmt); lfoAmt.connect(lp.frequency);
             const g = ctx.createGain();
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.11, t + 0.18);
+            g.gain.exponentialRampToValueAtTime(0.17, t + 0.18);
             o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
             o1.start(t); o2.start(t); lfo.start(t);
             ionNodes = { o1, o2, lfo, g };
@@ -200,42 +204,67 @@ export function initAudio() {
         o.type = "sine";
         o.frequency.setValueAtTime(170, t);
         o.frequency.exponentialRampToValueAtTime(36, t + 0.5);
-        const g = env(t, 0.7, 0.02, 1.5);
+        const g = env(t, 1.0, 0.02, 1.5);
         o.connect(g);
         o.start(t); o.stop(t + 1.6);
         const crack = noise(t);
         const bp = filter("bandpass", 900, 0.8);
-        const cg = env(t, 0.30, 0.008, 0.28);
+        const cg = env(t, 0.45, 0.008, 0.28);
         crack.connect(bp); bp.connect(cg);
         crack.stop(t + 0.35);
     }
 
     function sfxAsteroid(t) {
-        // The rumble rides the whole fall and cuts out at contact; the boom
+        // The rumble rides the whole fall and cuts out at contact; the impact
         // lands exactly when the rock does, because both read the same
         // exported constant the dispatcher leads the rider by.
         const rum = noise(t);
         const lp = filter("lowpass", 110);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.30, t + FALL);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + FALL + 0.15);
+        g.gain.exponentialRampToValueAtTime(0.45, t + FALL);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + FALL + 0.12);
         rum.connect(lp); lp.connect(g); g.connect(sfxGain);
         rum.stop(t + FALL + 0.3);
 
+        // The impact, in four layers — this is the loudest thing the game
+        // does, and it earns it. The compressor on the bus is what lets the
+        // stack run past unity and come out huge instead of shredded.
+        //
+        //   thud        the strike itself, a fast pitch drop
+        //   sub         the ground answering, an octave under the thud and
+        //               half a second longer, which is most of the "epic"
+        //   crack       the broadband snap that marks the exact instant
+        //   aftershock  a low rumble rolling away for two seconds, the sound
+        //               of a very large thing having just happened somewhere
         const ti = t + FALL;
         const thud = ctx.createOscillator();
         thud.type = "sine";
-        thud.frequency.setValueAtTime(64, ti);
-        thud.frequency.exponentialRampToValueAtTime(30, ti + 0.8);
-        const tg = env(ti, 0.85, 0.012, 1.1);
+        thud.frequency.setValueAtTime(90, ti);
+        thud.frequency.exponentialRampToValueAtTime(32, ti + 0.7);
+        const tg = env(ti, 1.25, 0.010, 1.1);
         thud.connect(tg);
         thud.start(ti); thud.stop(ti + 1.2);
+
+        const sub = ctx.createOscillator();
+        sub.type = "sine";
+        sub.frequency.setValueAtTime(52, ti);
+        sub.frequency.exponentialRampToValueAtTime(24, ti + 1.4);
+        const sg = env(ti, 1.0, 0.03, 1.8);
+        sub.connect(sg);
+        sub.start(ti); sub.stop(ti + 1.9);
+
         const crack = noise(ti);
-        const clp = filter("lowpass", 320);
-        const cg = env(ti, 0.4, 0.01, 0.35);
+        const clp = filter("lowpass", 520);
+        const cg = env(ti, 0.65, 0.008, 0.45);
         crack.connect(clp); clp.connect(cg);
-        crack.stop(ti + 0.4);
+        crack.stop(ti + 0.5);
+
+        const shock = noise(ti + 0.12);
+        const slp = filter("lowpass", 85);
+        const shg = env(ti + 0.12, 0.5, 0.10, 2.1);
+        shock.connect(slp); slp.connect(shg);
+        shock.stop(ti + 2.4);
     }
 
     function sfxWell(t) {
@@ -247,7 +276,7 @@ export function initAudio() {
         const tremAmt = ctx.createGain(); tremAmt.gain.value = 0.08;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.20, t + 0.7);
+        g.gain.exponentialRampToValueAtTime(0.30, t + 0.7);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 4.2);
         trem.connect(tremAmt); tremAmt.connect(g.gain);
         o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
@@ -271,7 +300,18 @@ export function initAudio() {
         musicGain = ctx.createGain();
         sfxGain = ctx.createGain();
         musicGain.connect(ctx.destination);
-        sfxGain.connect(ctx.destination);
+        // The effects run through a compressor, and that is what buys "epic":
+        // an asteroid impact is four sources stacked well past unity, and the
+        // compressor turns that pile-up into loud-and-clean instead of the
+        // crackle of a clipped master. Music skips it — tracks are mastered.
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -14;
+        comp.knee.value = 18;
+        comp.ratio.value = 5;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.22;
+        sfxGain.connect(comp);
+        comp.connect(ctx.destination);
 
         noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const d = noiseBuf.getChannelData(0);
@@ -306,11 +346,13 @@ export function initAudio() {
             }
 
             // The surf bed follows the board: louder and brighter with speed,
-            // gone within a fraction of a second of stepping off.
+            // gone within a fraction of a second of stepping off. It sits
+            // well under the powers on purpose — it is weather, they are
+            // events, and the first mix had the weather talking over them.
             const riding = ch.surf > 0.5 ? 1 : 0;
             const sp = ch.speed01;
             surfLevel.gain.setTargetAtTime(
-                riding * (0.05 + 0.30 * sp), t, 0.12
+                riding * (0.03 + 0.17 * sp), t, 0.12
             );
             surfLP.frequency.setTargetAtTime(
                 380 + 2600 * sp * sp, t, 0.15
@@ -333,5 +375,7 @@ export function initAudio() {
             ionSet(input.spellHeld2);
         },
         get nowPlaying() { return nowPlaying; },
+        /** How many tracks survived the manifest — 0 means none installed. */
+        get trackCount() { return pool.length; },
     };
 }

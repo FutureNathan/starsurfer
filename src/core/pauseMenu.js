@@ -438,9 +438,16 @@ export function initPauseMenu(canvas, overlay, audio) {
     const syncNowPlaying = () => {
         if (!np) return;
         const track = audio?.nowPlaying;
-        np.innerHTML = track
-            ? `now playing · <b>${track.title}</b> — ${track.artist}`
-            : "nothing playing — tracks land between stretches of vacuum";
+        if (track) {
+            np.innerHTML = `now playing · <b>${track.title}</b> — ${track.artist}`;
+        } else if (!audio || audio.trackCount === 0) {
+            // Say it plainly. "Nothing playing" with an empty folder reads
+            // as a bug; "no tracks installed" reads as the truth.
+            np.innerHTML = "no music installed yet — <b>public/music/README.md</b> "
+                + "is the three-minute recipe";
+        } else {
+            np.innerHTML = "between tracks — the vacuum is part of the mix";
+        }
     };
 
     let open = false;
