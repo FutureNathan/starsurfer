@@ -30,7 +30,16 @@ const WALK_DECEL = 30;
 
 const SURF_MAX = 19.5;
 const SURF_THRUST = 11.0;
-const SURF_DRAG = 0.42;
+/**
+ * Sets the flat-ground cruise, and it went up sevenfold on purpose. At 0.42
+ * the drag equilibrium on level ground sat past 30 m/s, so the 19.5 cap was
+ * doing all the work and flat ground hit the identical top speed as a
+ * forty-degree descent — which erased the entire reason to read the terrain.
+ * At 2.8 the numbers give the ride a gradient: about 13.5 m/s cruising flat,
+ * 17-18 down a gentle slope, and the cap only reachable on a genuinely steep
+ * face. Downhill is now *earned*, and feels like something happening.
+ */
+const SURF_DRAG = 2.8;
 const SURF_TURN = 2.35; // rad/s at full steer
 const SURF_GRIP = 7.5;
 

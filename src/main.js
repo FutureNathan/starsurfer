@@ -176,18 +176,22 @@ async function boot() {
     // element, and a second toggle would tug it out from under the panel.
     const toggleOverlay = () => { if (!pauseMenu?.paused) overlay.toggle(); };
     initInput(canvas, { onToggleOverlay: toggleOverlay });
-    // The on-screen controls, when the primary pointer is a finger. They mount
-    // after the overlay because the settings button on them toggles it.
-    if (wantsTouchControls()) initTouch(canvas, { input, onToggleOverlay: toggleOverlay });
     // Sound: the music player and the effect synthesiser. Arms itself on the
     // first gesture, because browsers refuse audio before one.
     const audio = initAudio();
-    // Escape: frees the mouse, pauses the loop below, shows the controls —
-    // and hosts the overlay on its settings tab. Keyboard-shaped by nature,
-    // so it mounts alongside the desktop input.
-    const pauseMenu = wantsTouchControls()
-        ? null
-        : initPauseMenu(canvas, overlay, audio);
+    // The pause menu, on every device: Escape opens it on a keyboard, the ⚙
+    // button opens it on a touchscreen, and either way it pauses the loop
+    // below, shows the controls and hosts the overlay on its settings tab.
+    const pauseMenu = initPauseMenu(canvas, overlay, audio, wantsTouchControls());
+    // The on-screen controls, when the primary pointer is a finger. Their ⚙
+    // opens the menu; the overlay stays reachable through its settings tab.
+    if (wantsTouchControls()) {
+        initTouch(canvas, {
+            input,
+            onToggleOverlay: toggleOverlay,
+            onMenu: () => pauseMenu.show(),
+        });
+    }
 
     // ------------------------------------------------------------- warm-up
     // Everything that can compile, compiles here — behind the loading screen.

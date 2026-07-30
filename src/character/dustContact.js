@@ -67,6 +67,10 @@ export class DustContact {
         this._sinceSplat = 0;
         this._prevX = character.position.x;
         this._prevZ = character.position.z;
+
+        /** Where the last surf-groove segment ended, or NaN between runs. */
+        this._segX = NaN;
+        this._segZ = NaN;
     }
 
     /** @param {number} dt seconds */
@@ -81,6 +85,7 @@ export class DustContact {
         this._prevZ = ch.position.z;
 
         if (ch.surf > 0.02) this._surf(dt, moved);
+        else this._segX = NaN;   // next run starts a fresh groove segment
         if (ch.surf < 0.98) this._walk(dt, moved);
 
         // Footfalls fire regardless of mode; the gait suppresses them while
@@ -223,7 +228,7 @@ export class DustContact {
         // Below a walking pace there is no wake to speak of; splatting anyway
         // would just dig a pit wherever the player coasted to a stop.
         const speedK = Math.min(1, ch.speed / 6);
-        if (speedK < 0.05) return;
+        if (speedK < 0.05) { this._segX = NaN; return; }
 
         const k = Math.min(moved, 0.6) * s * speedK;
         if (k <= 0) return;
@@ -233,26 +238,60 @@ export class DustContact {
         // is what makes a fast run's scar read as bigger rather than just longer.
         const fast = Math.min(1, Math.max(0, ch.speed - 6) / 12);
 
-        const yaw = ch.facing;
-        const rx = Math.cos(yaw);
-        const rz = -Math.sin(yaw);
-
-        // --- the groove ------------------------------------------------------
         // The board rides the inside edge in a turn, so the trench offsets
         // slightly toward the lean.
         const lean = ch.carve;
-        const gx = ch.position.x + rx * lean * 0.12;
-        const gz = ch.position.z + rz * lean * 0.12;
+        const fyaw = ch.facing;
+        const frx = Math.cos(fyaw);
+        const frz = -Math.sin(fyaw);
+        const gx = ch.position.x + frx * lean * 0.12;
+        const gz = ch.position.z + frz * lean * 0.12;
+
+        // --- segment stamping ------------------------------------------------
+        // One brush per frame, stretched to cover exactly the ground crossed
+        // since the last one, centred on the midpoint and yawed to the segment.
+        //
+        // The version before this stamped a *fixed-length* ellipse at the
+        // board's position every frame, into a channel that accumulates — and
+        // the overlap between consecutive fixed stamps varies with speed and
+        // frame rate, while each stamp's tapered ends double-dig wherever they
+        // land on the previous stamp's middle. The result was a washboard: a
+        // chain of scalloped dents where a snowboard would have left one clean
+        // swipe, which is precisely what the screenshot showed. Matching the
+        // stamp's length to the travelled segment makes the accumulated depth
+        // per metre a constant of the run rather than of the frame timer.
+        if (Number.isNaN(this._segX) || moved > 3) {
+            this._segX = gx;
+            this._segZ = gz;
+            return;
+        }
+        const sx = gx - this._segX;
+        const sz = gz - this._segZ;
+        const seg = Math.hypot(sx, sz);
+        if (seg < 0.02) return;
+        const mx = (gx + this._segX) / 2;
+        const mz = (gz + this._segZ) / 2;
+        const yaw = Math.atan2(sx, sz);
+        this._segX = gx;
+        this._segZ = gz;
+
+        const width = SURF_WIDTH * (1 + 0.35 * fast);
+        // Half the segment plus a small constant lap over the previous stamp,
+        // in units of the brush width, floored at the old profile's shape so a
+        // slow ride still leaves a board-shaped mark rather than a dot.
+        const elong = Math.max(SURF_ELONG, (seg / 2 + 0.14) / width);
+        const rx = Math.cos(yaw);
+        const rz = -Math.sin(yaw);
 
         f.brush(
-            gx, gz,
-            SURF_WIDTH * (1 + 0.35 * fast),
+            mx, mz,
+            width,
             1.20 * k,   // deep — a run should be visible from across the field
             0.30 * k,
             4.0 * k,    // the board packs the trench floor hard
             0,
             yaw,
-            SURF_ELONG,
+            elong,
             0.55        // the board's edge is cleaner than a boot's
         );
 
@@ -264,7 +303,9 @@ export class DustContact {
         // weights run against it.
         //
         // The wake mesh in `src/vfx/surfWake.js` resolves its sides from the same
-        // sign, so the airborne wave and the mark it leaves agree.
+        // sign, so the airborne wave and the mark it leaves agree. Both berms
+        // ride the same segment the groove does, so the walls are as continuous
+        // as the trench between them.
         const outside = Math.min(1, Math.abs(lean));
         const sideL = 0.5 + lean * 0.5; // weight on the left berm
         const sideR = 0.5 - lean * 0.5;
@@ -273,16 +314,16 @@ export class DustContact {
         const throwK = 0.75 * k * (0.55 + 0.9 * outside) * (1 + 0.5 * fast);
 
         f.brush(
-            ch.position.x - rx * off, ch.position.z - rz * off,
+            mx - rx * off, mz - rz * off,
             SURF_WIDTH * 0.95,
             0, throwK * sideL * 2.0, 0, 0,
-            yaw, SURF_ELONG * 0.8, 1.0
+            yaw, elong * 0.8, 1.0
         );
         f.brush(
-            ch.position.x + rx * off, ch.position.z + rz * off,
+            mx + rx * off, mz + rz * off,
             SURF_WIDTH * 0.95,
             0, throwK * sideR * 2.0, 0, 0,
-            yaw, SURF_ELONG * 0.8, 1.0
+            yaw, elong * 0.8, 1.0
         );
     }
 }

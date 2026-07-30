@@ -210,64 +210,88 @@ export function initAudio() {
         src.stop(t + 1.3);
     }
 
+    /**
+     * The Ion Stream, third design. Not a hum at all any more.
+     *
+     * The first version was a mosquito (sawtooths into a resonant sweep) and
+     * the second was a hum that answered speed and altitude — accurate, and
+     * exactly as pleasing as listening to a dial. What a *held* sound needs
+     * is to be something a person would choose to keep holding: so this one
+     * is a quiet piece of score. A low fifth breathes underneath — two soft
+     * sines swelling and settling on a slow eight-second cycle, the Zimmer
+     * pedal-tone trick — and above it a sparse motif walks the C-major
+     * pentatonic on a glass tone, one soft note a second, stepwise with an
+     * occasional skip, never twice the same. It sits in the same key the
+     * bundled tracks lean on, so against music it reads as accompaniment
+     * rather than interference.
+     */
     let ionNodes = null;
+    const ION_SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
+    let ionNext = 0;
+    let ionIdx = 2;
+
+    function ionNote(t, f, vel) {
+        const o = ctx.createOscillator();
+        o.type = "sine";
+        o.frequency.value = f;
+        const o2 = ctx.createOscillator();
+        o2.type = "sine";
+        o2.frequency.value = f * 2;
+        const og = ctx.createGain(); og.gain.value = 0.22;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vel, t + 0.025);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 1.9);
+        o.connect(g); o2.connect(og); og.connect(g);
+        g.connect(sfxGain);
+        o.start(t); o2.start(t);
+        o.stop(t + 2.0); o2.stop(t + 2.0);
+    }
+
     function ionSet(onNow) {
         if (onNow && !ionNodes) {
-            // A warm rounded hum, not a whine. The first version ran two
-            // sawtooths through a resonant filter that opened to 3.6 kHz at
-            // full speed — which is, note for note, the recipe for a
-            // mosquito. Triangles carry almost no energy above their third
-            // partial, the filter stays low with barely any resonance, and
-            // the two oscillators sit a soft octave apart so the beat between
-            // them reads as a slow shimmer rather than a buzz.
             const t = ctx.currentTime;
-            const o1 = ctx.createOscillator(); o1.type = "triangle";
-            const o2 = ctx.createOscillator(); o2.type = "triangle";
-            o1.frequency.value = 82; o2.frequency.value = 164.8;
-            const lp = filter("lowpass", 480, 1.1);
-            const lfo = ctx.createOscillator(); lfo.frequency.value = 3.6;
-            const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 60;
-            lfo.connect(lfoAmt); lfoAmt.connect(lp.frequency);
+            const o1 = ctx.createOscillator(); o1.type = "sine";
+            const o2 = ctx.createOscillator(); o2.type = "sine";
+            o1.frequency.value = 65.41;           // C2
+            o2.frequency.value = 98.0;            // G2
+            const o2g = ctx.createGain(); o2g.gain.value = 0.5;
+            const breathe = ctx.createOscillator();
+            breathe.frequency.value = 1 / 8;
+            const bAmt = ctx.createGain(); bAmt.gain.value = 0.045;
             const g = ctx.createGain();
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.20, t + 0.18);
-            o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
-            o1.start(t); o2.start(t); lfo.start(t);
-            ionNodes = { o1, o2, lfo, lp, g };
+            g.gain.exponentialRampToValueAtTime(0.14, t + 0.9);
+            breathe.connect(bAmt); bAmt.connect(g.gain);
+            o1.connect(g); o2.connect(o2g); o2g.connect(g);
+            g.connect(sfxGain);
+            o1.start(t); o2.start(t); breathe.start(t);
+            ionNodes = { o1, o2, breathe, g };
+            ionNext = t + 0.4;
+            ionIdx = 2;
         } else if (!onNow && ionNodes) {
             const t = ctx.currentTime;
             const n = ionNodes;
             ionNodes = null;
-            n.g.gain.setTargetAtTime(0.0001, t, 0.09);
-            n.o1.stop(t + 0.5); n.o2.stop(t + 0.5); n.lfo.stop(t + 0.5);
+            n.g.gain.setTargetAtTime(0.0001, t, 0.25);
+            n.o1.stop(t + 1.2); n.o2.stop(t + 1.2); n.breathe.stop(t + 1.2);
         }
     }
 
-    /**
-     * The held hum is *ridden*, so it answers the ride: pitch climbs with
-     * speed, the filter opens with both speed and altitude, and the wobble
-     * quickens as the board does. Standing still in a hollow it is a low
-     * idling growl; flat out across a summit it is a bright electric whine —
-     * the one effect that continuously tells you the state of your own run.
-     */
-    function ionRide(ch) {
+    /** The motif scheduler, run once a frame while the stream is held. */
+    function ionRide() {
         if (!ionNodes) return;
         const t = ctx.currentTime;
-        const sp = ch.speed01;
-        const alt = Math.min(1, Math.max(0, ch.position.y / 90));
-        // The ranges are deliberately musical rather than dramatic: pitch
-        // rises a major third flat out (not the old octave-and-a-half of
-        // filter sweep), altitude adds a whole tone, and the filter never
-        // opens past the hum's own low partials. The state of the run is
-        // still audible; it just stops being a thing that bites.
-        const base = 82 * (1 + 0.26 * sp) * (1 + 0.12 * alt);
-        ionNodes.o1.frequency.setTargetAtTime(base, t, 0.10);
-        ionNodes.o2.frequency.setTargetAtTime(base * 2.01, t, 0.10);
-        ionNodes.lp.frequency.setTargetAtTime(
-            480 + 620 * sp + 260 * alt, t, 0.12
-        );
-        ionNodes.lfo.frequency.setTargetAtTime(3.6 + 3.4 * sp, t, 0.15);
-        ionNodes.g.gain.setTargetAtTime(0.20 + 0.05 * sp, t, 0.12);
+        if (t < ionNext) return;
+        // A stepwise walk with the odd skip, reflected off the scale's ends.
+        const step = Math.random() < 0.72
+            ? (Math.random() < 0.5 ? -1 : 1)
+            : (Math.random() < 0.5 ? -2 : 2);
+        ionIdx = Math.max(0, Math.min(ION_SCALE.length - 1, ionIdx + step));
+        ionNote(t, ION_SCALE[ionIdx], 0.09 + Math.random() * 0.05);
+        // Mostly a calm pulse, with an occasional held breath — the rests are
+        // what keep it a phrase instead of a sequencer.
+        ionNext = t + (Math.random() < 0.2 ? 2.2 : 0.85 + Math.random() * 0.35);
     }
 
     function sfxNova(t) {
@@ -397,6 +421,26 @@ export function initAudio() {
 
     // ------------------------------------------------------------- frame
     let stepAcc = 0;
+    let surfGainSent = -1;
+    let surfFreqSent = -1;
+
+    /**
+     * Write an AudioParam without leaking its timeline.
+     *
+     * The naive loop wrote `setTargetAtTime` on the surf bed's gain and
+     * filter every frame. Each of those events is open-ended and *stays in
+     * the param's event list*, which the audio thread then walks every
+     * render quantum — sixty new entries a second, forever. That list is
+     * the "game gets slower and slower until unplayable" leak: nothing in
+     * a heap profile, just an audio thread doing linearly more work every
+     * minute played. So: prune the timeline first where the engine allows
+     * it, and — the part that matters everywhere — only send at all when
+     * the target has actually moved.
+     */
+    function send(param, v, t, tau) {
+        if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+        param.setTargetAtTime(v, t, tau);
+    }
 
     return {
         /**
@@ -411,7 +455,10 @@ export function initAudio() {
             if (paused) {
                 // The menu is up: the ride is frozen, so its sounds are too.
                 // The music plays on — pause menus deserve a soundtrack.
-                surfLevel.gain.setTargetAtTime(0, t, 0.15);
+                if (surfGainSent !== 0) {
+                    surfGainSent = 0;
+                    send(surfLevel.gain, 0, t, 0.15);
+                }
                 ionSet(false);
                 return;
             }
@@ -422,12 +469,16 @@ export function initAudio() {
             // events, and the first mix had the weather talking over them.
             const riding = ch.surf > 0.5 ? 1 : 0;
             const sp = ch.speed01;
-            surfLevel.gain.setTargetAtTime(
-                riding * (0.03 + 0.17 * sp), t, 0.12
-            );
-            surfLP.frequency.setTargetAtTime(
-                380 + 2600 * sp * sp, t, 0.15
-            );
+            const wantGain = riding * (0.03 + 0.17 * sp);
+            if (Math.abs(wantGain - surfGainSent) > 0.004) {
+                surfGainSent = wantGain;
+                send(surfLevel.gain, wantGain, t, 0.12);
+            }
+            const wantFreq = 380 + 2600 * sp * sp;
+            if (Math.abs(wantFreq - surfFreqSent) > 40) {
+                surfFreqSent = wantFreq;
+                send(surfLP.frequency, wantFreq, t, 0.15);
+            }
 
             // Footfalls, walking only — the gait flag fires on the frame a
             // boot actually plants, which is what keeps this in sync with
@@ -444,7 +495,7 @@ export function initAudio() {
 
             if (input.spellPressed) power(input.spellPressed);
             ionSet(input.spellHeld2);
-            ionRide(ch);
+            ionRide();
         },
         get nowPlaying() { return nowPlaying; },
         /** Tracks in the *selected* playlist — 0 means it is empty. */

@@ -49,6 +49,23 @@ const SECTIONS = [
     ]],
 ];
 
+/** The same panel on a touchscreen, with the gestures where the keys were. */
+const SECTIONS_TOUCH = [
+    ["surfing", [
+        ["look", "drag"],
+        ["walk · push out to surf", "stick"],
+        ["zoom", "two·fingers"],
+        ["pause · this menu", "⚙"],
+    ]],
+    ["the five powers", [
+        ["solar flare", "flare"],
+        ["ion stream · hold", "ion"],
+        ["supernova", "nova"],
+        ["asteroid · storms stack", "asteroid"],
+        ["gravity well", "gravity"],
+    ]],
+];
+
 const CSS = `
 #pause {
     position: fixed;
@@ -363,15 +380,18 @@ function keycaps(spec) {
  *   settings tab when present
  * @param {{ nowPlaying: {title:string,artist:string}|null }} [audio] read by
  *   the sound tab's now-playing line
- * @returns {{ readonly paused: boolean }}
+ * @param {boolean} [touch] touchscreen: gesture rows instead of keycaps, no
+ *   esc chip (there is no Escape key to advertise — the ⚙ button opens this),
+ *   and no pointer-lock dance on resume
+ * @returns {{ readonly paused: boolean, show(): void }}
  */
-export function initPauseMenu(canvas, overlay, audio) {
+export function initPauseMenu(canvas, overlay, audio, touch) {
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
 
     let rows = "";
-    for (const [title, list] of SECTIONS) {
+    for (const [title, list] of (touch ? SECTIONS_TOUCH : SECTIONS)) {
         rows += `<div class="pm-h">${title}</div><dl>`;
         for (const [what, keys] of list) {
             rows += `<div class="pm-row"><dt>${what}</dt><dd>${keycaps(keys)}</dd></div>`;
@@ -392,9 +412,9 @@ export function initPauseMenu(canvas, overlay, audio) {
             <div class="pm-body">
                 <div class="pm-page" data-page="controls">
                     ${rows}
-                    <div class="pm-row" style="margin-top:1.2em">
+                    ${touch ? "" : `<div class="pm-row" style="margin-top:1.2em">
                         <dt>pause · this menu</dt><dd>${keycaps("esc")}</dd>
-                    </div>
+                    </div>`}
                     <div class="pm-seed">world <b>${S.worldSeed}</b> · add
                         <b>?seed=${S.worldSeed}</b> to the address to come back
                         to it</div>
@@ -429,12 +449,15 @@ export function initPauseMenu(canvas, overlay, audio) {
     document.body.appendChild(root);
 
     // The invitation the menu needs to be found at all: a corner chip while
-    // riding. It is mounted here rather than in the HTML because it is
-    // desktop-shaped — a touchscreen has no Escape key to advertise.
-    const escHint = document.createElement("button");
-    escHint.id = "esc-hint";
-    escHint.innerHTML = `<span class="pm-key">esc</span> pause · menu`;
-    document.body.appendChild(escHint);
+    // riding. Desktop only — a touchscreen has no Escape key to advertise,
+    // and its ⚙ button is already on screen doing this job.
+    let escHint = null;
+    if (!touch) {
+        escHint = document.createElement("button");
+        escHint.id = "esc-hint";
+        escHint.innerHTML = `<span class="pm-key">esc</span> pause · menu`;
+        document.body.appendChild(escHint);
+    }
 
     const tabs = /** @type {HTMLElement[]} */ ([...root.querySelectorAll(".pm-tab")]);
     const pages = /** @type {HTMLElement[]} */ ([...root.querySelectorAll(".pm-page")]);
@@ -515,24 +538,24 @@ export function initPauseMenu(canvas, overlay, audio) {
     const show = () => {
         open = true;
         root.classList.add("show");
-        escHint.classList.add("off");
+        escHint?.classList.add("off");
     };
     const hide = () => {
         open = false;
         root.classList.remove("show");
-        escHint.classList.remove("off");
+        escHint?.classList.remove("off");
         // Hand the overlay back undocked and closed, and land the next open
         // on the player's page — the depth is opt-in per visit.
         selectTab("controls");
     };
-    escHint.addEventListener("click", () => { if (!open) show(); });
+    escHint?.addEventListener("click", () => { if (!open) show(); });
 
     // Resume re-locks the pointer, because a click is a real user activation
     // and Escape is not — the browser refuses a lock request made from the
-    // very key that just broke one.
+    // very key that just broke one. On touch there is no lock to restore.
     const resume = () => {
         hide();
-        canvas.requestPointerLock?.();
+        if (!touch) canvas.requestPointerLock?.();
     };
     root.querySelector("#pm-resume")?.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -557,5 +580,5 @@ export function initPauseMenu(canvas, overlay, audio) {
         else if (document.pointerLockElement !== canvas) { show(); }
     });
 
-    return { get paused() { return open; } };
+    return { get paused() { return open; }, show };
 }

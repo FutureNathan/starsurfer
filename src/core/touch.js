@@ -350,7 +350,7 @@ const ARC = [
  * Mount the controls and start feeding `touch`.
  *
  * @param {HTMLCanvasElement} canvas the look pad
- * @param {{ input: any, onToggleOverlay?: () => void }} hooks
+ * @param {{ input: any, onToggleOverlay?: () => void, onMenu?: () => void }} hooks
  */
 export function initTouch(canvas, hooks) {
     const input = hooks.input;
@@ -366,7 +366,7 @@ export function initTouch(canvas, hooks) {
         <div id="tc-ring"></div>
         <div id="tc-knob"></div>
         <div id="tc-pad"></div>
-        <button class="tc-btn" id="tc-gear" aria-label="Settings"><span>⚙</span></button>
+        <button class="tc-btn" id="tc-gear" aria-label="Menu"><span>⚙</span></button>
     `;
     document.body.appendChild(root);
     document.body.classList.add("tc-on");
@@ -523,7 +523,11 @@ export function initTouch(canvas, hooks) {
 
     gear.addEventListener("pointerdown", (e) => {
         e.preventDefault();
-        hooks.onToggleOverlay?.();
+        // The ⚙ opens the pause menu when one is mounted — controls, sound
+        // and the settings overlay in one tabbed place — and falls back to
+        // toggling the raw overlay where it is not.
+        if (hooks.onMenu) hooks.onMenu();
+        else hooks.onToggleOverlay?.();
     });
 
     /**
