@@ -1,1 +1,5 @@
-[]
+[
+  { "file": "drift.mp3", "title": "Drift", "artist": "a STARSURFER original" },
+  { "file": "low-gravity.mp3", "title": "Low Gravity", "artist": "a STARSURFER original" },
+  { "file": "afterglow.mp3", "title": "Afterglow", "artist": "a STARSURFER original" }
+]

@@ -189,7 +189,7 @@ export function initAudio() {
             g.gain.exponentialRampToValueAtTime(0.17, t + 0.18);
             o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
             o1.start(t); o2.start(t); lfo.start(t);
-            ionNodes = { o1, o2, lfo, g };
+            ionNodes = { o1, o2, lfo, lp, g };
         } else if (!onNow && ionNodes) {
             const t = ctx.currentTime;
             const n = ionNodes;
@@ -197,6 +197,28 @@ export function initAudio() {
             n.g.gain.setTargetAtTime(0.0001, t, 0.09);
             n.o1.stop(t + 0.5); n.o2.stop(t + 0.5); n.lfo.stop(t + 0.5);
         }
+    }
+
+    /**
+     * The held hum is *ridden*, so it answers the ride: pitch climbs with
+     * speed, the filter opens with both speed and altitude, and the wobble
+     * quickens as the board does. Standing still in a hollow it is a low
+     * idling growl; flat out across a summit it is a bright electric whine —
+     * the one effect that continuously tells you the state of your own run.
+     */
+    function ionRide(ch) {
+        if (!ionNodes) return;
+        const t = ctx.currentTime;
+        const sp = ch.speed01;
+        const alt = Math.min(1, Math.max(0, ch.position.y / 90));
+        const base = 96 * (1 + 0.55 * sp) * (1 + 0.18 * alt);
+        ionNodes.o1.frequency.setTargetAtTime(base, t, 0.10);
+        ionNodes.o2.frequency.setTargetAtTime(base * 1.017, t, 0.10);
+        ionNodes.lp.frequency.setTargetAtTime(
+            650 + 2100 * sp + 900 * alt, t, 0.12
+        );
+        ionNodes.lfo.frequency.setTargetAtTime(5.2 + 8.5 * sp, t, 0.15);
+        ionNodes.g.gain.setTargetAtTime(0.17 + 0.07 * sp, t, 0.12);
     }
 
     function sfxNova(t) {
@@ -373,6 +395,7 @@ export function initAudio() {
 
             if (input.spellPressed) power(input.spellPressed);
             ionSet(input.spellHeld2);
+            ionRide(ch);
         },
         get nowPlaying() { return nowPlaying; },
         /** How many tracks survived the manifest — 0 means none installed. */

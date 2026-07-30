@@ -48,15 +48,21 @@ knows. The two halves are deliberately different technologies. The effects are
 *synthesised live* in `core/audio.js`: the surf is filtered noise keyed to
 speed, a footfall is seventy milliseconds of it fired on the frame the gait
 actually plants a boot, and each power has its own few lines — a bandpass
-sweep for the Flare, a held detuned hum for the Ion Stream, a sine dropping
-two octaves for the Supernova, a rumble that swells for exactly the asteroid's
-exported fall time and lands its boom with the rock. No files, no licences,
-and they can never go missing. The music is *real tracks*, played one at a
-time with minutes of vacuum between, shuffled without repeats — but the repo
-ships only the player and an empty manifest, never audio it does not own:
-`public/music/README.md` is a three-minute recipe for dropping in CC0
-public-domain tracks (freepd.com's calming shelf is the intended source), and
-the player quietly skips anything missing.
+sweep for the Flare, a sine dropping two octaves for the Supernova, a
+four-layer impact for the asteroid whose rumble swells for exactly the
+exported fall time and lands its boom with the rock. The Ion Stream's held
+hum is *ridden*: its pitch climbs with speed, its filter opens with speed and
+altitude, and its wobble quickens with the board, so the one held sound
+continuously reports the state of your own run. No files, no licences, and
+they can never go missing.
+
+The music is *real tracks*, played one at a time with minutes of vacuum
+between, shuffled without repeats. Three ship with the project — **Drift**,
+**Low Gravity**, **Afterglow** — composed and rendered offline for it
+(additive felt-piano, generated reverb, slow diatonic phrases with long
+rests) and released CC0 like the rest of the repo's own work.
+`public/music/README.md` is the three-minute recipe for swapping in other
+tracks; the player quietly skips anything missing from the folder.
 
 The controls are also on the loading screen, which is the one moment anybody is
 going to read them — there is a captive audience there for as long as the
@@ -931,10 +937,10 @@ GPU: the sky is a handful of noise calls, the grain map and the landform are
 noise, the crater field is three grids of hashes, the astronaut is lofted from
 a table of numbers, and the suit's weave and the insulation fibres are
 evaluated in the fragment shader. Sound effects are synthesised live in
-WebAudio. Background music is the one deliberate exception: the repo ships a
-player and an empty playlist, and `public/music/README.md` explains how to
-drop in CC0 public-domain tracks — the project never ships audio it does not
-own. The
+WebAudio, and the three background-music tracks were composed and rendered
+offline *for* the project (see `public/music/README.md`) and are CC0 like the
+rest of its own work — swap them for anything you prefer without touching
+code. The
 favicon — a white star on black, nothing else — is a hand-written SVG in
 `public/`, served with a `?v=` bump because browsers hold favicons far longer
 than any other asset.
