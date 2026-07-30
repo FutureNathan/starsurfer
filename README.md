@@ -377,6 +377,30 @@ bright pass thresholds at 3.
    comes from the body's own ignition-front channel instead, which is exactly what
    that channel is for.
 
+   The trail is a streak, not a shape, and the first playable build got that
+   wrong in an instructive way. Its radius *grew toward the tail*, and the body
+   shader's optical depth saturates over about a quarter of a metre — so the fat
+   old wake glowed at full radiance 16, which AgX flattens into one pastel
+   salmon, while the head was the dimmest part of the object. On screen it was a
+   big orange capsule. The profile is now a hard nose, a slight coma, and a
+   monotonic taper to nothing at 52:1 — and because emission goes as
+   `1 − e^−depth`, the taper is simultaneously the shape, the brightness ramp
+   and the colour ramp: the trail dims and deepens from white through real
+   orange as it thins, with no second mechanism. The head sputters as it comes —
+   burning fragments shed into the spray pool that streak forward, fall out of
+   the line and die — and the whole thing flickers on two incommensurate sines,
+   hashed per rock so a storm never pulses in unison.
+
+   The impact is built to be seen from ninety metres, because that is where it
+   happens. A four-metre crater and centimetre grains are a handful of pixels at
+   that range, and half the time a swell is in front of them — what carries is
+   radiance and height. So the moment the rock lands its strand becomes a
+   fireball: a dome of incandescent vapour that pops to nine metres, spikes at
+   nearly twice the trail's own gain — four stops over the bloom knee, so it
+   blooms from any distance — and collapses back through the ember hue in under
+   a second. The ground answers with a 24 m pool of light sweeping out and dying
+   back, which places the impact even when the crater itself is behind a crest.
+
    Its ejecta obeys vacuum. Every grain is launched with a drag coefficient of
    zero, so it flies a clean parabola and lands — no hang, no settling curtain, no
    billow. That absence is more of the read than any amount of hanging dust would
