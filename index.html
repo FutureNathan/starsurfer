@@ -134,10 +134,16 @@
     }
 
     .wordmark {
-        font-size: clamp(26px, 4.2vw, 50px);
+        /* Both of these are clamped rather than fixed because ten characters at
+           0.56em of tracking is 400 px wide, which overflows a 320 px phone —
+           the wordmark was losing its last letter off the right edge long before
+           anyone was asked to read anything else on this screen. */
+        font-size: clamp(21px, 4.2vw, 50px);
         font-weight: 200;
-        letter-spacing: 0.56em;
-        text-indent: 0.56em; /* optical re-centre against the trailing track */
+        letter-spacing: clamp(0.10em, 1.1vw, 0.56em);
+        /* Optical re-centre against the trailing track — same value, so it
+           follows the clamp above. */
+        text-indent: clamp(0.10em, 1.1vw, 0.56em);
         color: var(--star);
         text-shadow: 0 0 34px rgba(255, 196, 107, 0.28);
         opacity: 0;
@@ -190,6 +196,73 @@
         font-variant-numeric: tabular-nums;
     }
 
+    /*
+     * The controls, on the loading screen.
+     *
+     * There is a captive audience here for as long as the shaders take, and
+     * nothing else to read. A demo whose controls are a line of small text that
+     * appears for six seconds *after* the loading screen has gone is a demo where
+     * a fair number of people never find the powers at all.
+     *
+     * A definition list because that is what it is, laid out as a two-column
+     * grid: keys right-aligned in the accent, actions left-aligned in the dim
+     * grey, so the eye can run down either column on its own.
+     */
+    .keys {
+        display: grid;
+        grid-template-columns: auto auto;
+        justify-content: center;
+        align-items: baseline;
+        column-gap: 1.6em;
+        row-gap: 0.62em;
+        margin: 2.9em 0 0;
+        font-size: 10px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        opacity: 0;
+        animation: rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) 760ms forwards;
+    }
+
+    .keys dt {
+        margin: 0;
+        text-align: right;
+        color: var(--accent);
+        white-space: nowrap;
+    }
+
+    .keys dd {
+        margin: 0;
+        text-align: left;
+        color: var(--dim);
+    }
+
+    /* A narrow phone. At 320 px the inner column is 250 px and the longest row
+       is nearer 300, so every second line wraps and the list stops being
+       scannable — which is the only thing it is for. Wider column, tighter
+       tracking, and it fits on one line each. */
+    @media (max-width: 400px) {
+        .boot-inner { width: 92vw; }
+        .keys {
+            font-size: 9px;
+            letter-spacing: 0.05em;
+            column-gap: 1.1em;
+        }
+    }
+
+    /* Landscape on a phone. The whole boot screen is about 285 px tall with the
+       list on it, which is more than a 320 px viewport has once the safe area is
+       taken off, so the list gives back what it can. */
+    @media (max-height: 460px) {
+        .keys {
+            margin-top: 1.8em;
+            row-gap: 0.42em;
+            column-gap: 1.2em;
+            font-size: 9px;
+        }
+        .bar { margin-top: 2.2em; }
+        .phase { margin-top: 1em; }
+    }
+
     /* --------------------------------------------------------- hard failure */
 
     #nogpu {
@@ -240,14 +313,14 @@
 
     @media (prefers-reduced-motion: reduce) {
         #boot::before, #boot::after { animation: none; }
-        .wordmark, .tagline { animation-duration: 1ms; }
+        .wordmark, .tagline, .keys { animation-duration: 1ms; }
     }
 </style>
 </head>
 <body>
     <canvas id="view" tabindex="0"></canvas>
 
-    <div id="hint">click to look &nbsp;·&nbsp; wasd to move &nbsp;·&nbsp; right mouse to surf &nbsp;·&nbsp; f1 for settings</div>
+    <div id="hint"></div>
 
     <div id="boot">
         <div class="boot-inner">
@@ -255,6 +328,14 @@
             <div class="tagline">a study in stars</div>
             <div class="bar"><div class="bar-fill" id="boot-bar"></div></div>
             <div class="phase" id="boot-phase">initialising</div>
+            <!--
+                The controls, filled in by core/loading.js from the one table
+                that also writes the in-game hint. Empty here rather than
+                duplicated in markup: there are two lists, one for a keyboard and
+                one for a touchscreen, and which of them is right is a question
+                only the JS can answer.
+            -->
+            <dl class="keys" id="boot-keys"></dl>
         </div>
     </div>
 

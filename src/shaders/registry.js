@@ -22,7 +22,6 @@ import charSkinLib from "./lib/charSkin.wgsl?raw";
 import wakeLib from "./lib/wake.wgsl?raw";
 import spellLightsLib from "./lib/spellLights.wgsl?raw";
 import waterLib from "./lib/water.wgsl?raw";
-import crystalLib from "./lib/crystal.wgsl?raw";
 import postCommonLib from "./lib/postCommon.wgsl?raw";
 import ridgeLib from "./lib/ridge.wgsl?raw";
 
@@ -52,16 +51,12 @@ import wakeDepthVert from "./wakeDepth.vertex.wgsl?raw";
 import wakeDepthFrag from "./wakeDepth.fragment.wgsl?raw";
 import waterVert from "./water.vertex.wgsl?raw";
 import waterFrag from "./water.fragment.wgsl?raw";
-import crystalVert from "./crystal.vertex.wgsl?raw";
-import crystalFrag from "./crystal.fragment.wgsl?raw";
-import crystalDepthVert from "./crystalDepth.vertex.wgsl?raw";
 
 import prepassFrag from "./prepass.fragment.wgsl?raw";
 import terrainPrepassVert from "./terrainPrepass.vertex.wgsl?raw";
 import charPrepassVert from "./charPrepass.vertex.wgsl?raw";
 import wakePrepassVert from "./wakePrepass.vertex.wgsl?raw";
 import wakePrepassFrag from "./wakePrepass.fragment.wgsl?raw";
-import crystalPrepassVert from "./crystalPrepass.vertex.wgsl?raw";
 
 
 const INCLUDES = {
@@ -76,7 +71,6 @@ const INCLUDES = {
     starWake: wakeLib,
     starSpellLights: spellLightsLib,
     starWater: waterLib,
-    starCrystal: crystalLib,
     starPostCommon: postCommonLib,
     starRidge: ridgeLib,
 };
@@ -111,9 +105,6 @@ const SHADERS = {
 
     waterVertexShader: waterVert,
     waterPixelShader: waterFrag,
-    crystalVertexShader: crystalVert,
-    crystalPixelShader: crystalFrag,
-    crystalDepthVertexShader: crystalDepthVert,
 
     // The camera-space depth prepass. One fragment stage shared by everything
     // that has nothing to discard; the wake carries its own because it does.
@@ -122,7 +113,6 @@ const SHADERS = {
     charPrepassVertexShader: charPrepassVert,
     wakePrepassVertexShader: wakePrepassVert,
     wakePrepassPixelShader: wakePrepassFrag,
-    crystalPrepassVertexShader: crystalPrepassVert,
 };
 
 let registered = false;

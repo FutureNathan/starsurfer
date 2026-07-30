@@ -105,6 +105,16 @@ export const HEX = {
     nebulaFill: "#595d6a",
     /** Warm gold. Faceplate, wake lip, trim, UI accent. The signature. */
     accent: "#ffc46b",
+    /**
+     * Hot orange — ablation. The red end of the same warm ramp the accent sits
+     * on, and the only place it is used is the Asteroid's entry trail.
+     *
+     * A separate entry rather than a darkened accent because the two have to be
+     * *distinguishable*: the Solar Flare is the accent, and a bolide rendered in
+     * the same hue reads as a Solar Flare going off in the distance rather than
+     * as something arriving.
+     */
+    ember: "#ff7a33",
     /** Starlight white, very slightly warm so it sits with the gold. */
     star: "#fff6e0",
     /**

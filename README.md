@@ -28,6 +28,13 @@ are no textures, no meshes, no HDRIs and no animation data in this repository.
 | `1` – `5` | the five powers (`2` is a held cast) |
 | `F1` or `` ` `` | settings and performance overlay |
 
+The controls are also on the loading screen, which is the one moment anybody is
+going to read them — there is a captive audience there for as long as the
+pipelines take and nothing else on screen. The list and the one-line hint under
+the frame come from the same table in `core/loading.js`, and which of the two
+lists you get is decided by the same coarse-pointer test that mounts the touch
+controls.
+
 On a touchscreen the on-screen controls appear instead, and nothing else changes —
 they write into the same input struct the keyboard and mouse do.
 
@@ -297,8 +304,8 @@ smeared along its own path, stated at the radiance that smear leaves it with.
 
 ### The five powers
 
-One plasma material, one mesh, one draw, eight strands of 64 columns. Four of the
-five move a coherent body of ignited dust and are structurally the same object: a
+One plasma material, one mesh, one draw, eight strands of 64 columns. All five
+move a coherent body of ignited dust and are structurally the same object: a
 swept surface along a spine, with a radius, a parallel-transported frame and an
 ignition-front channel — the same construction as the surf wake. A strand that is
 not in use is switched off by zeroing its rows, so the draw count does not depend
@@ -327,12 +334,34 @@ bright pass thresholds at 3.
    them — collapses back down its own axis, and leaves four seconds of fallout lit
    from below. Body radiance 26, three stops over the bloom knee, cooling down the
    same warm ramp the ground's own discharge sits on.
-4. **Star Crystal** — loose regolith snaps into a lattice. Hexagonal prisms grown
-   along a golden-angle spiral, alpha-blended *and* depth-writing, so you see the
-   dust through the crystal but never one prism through another. Facet normals
-   come from screen-space derivatives, so every facet is exactly flat and every
-   edge exactly hard. The patch it grew from stays charged long after the prisms
-   are gone.
+4. **Asteroid** — a rock comes in from orbit and hits the ground where you are
+   looking. A hundred and fifty metres of entry over a second and a half, on a
+   fifty-nine degree path that puts it over your shoulder and away from the
+   camera, accelerating the whole way; then a crater twice the Supernova's, an
+   ejecta curtain, and the hardest camera shake in the project.
+
+   It is the only power you *watch arrive*. Everything else here is instantaneous
+   — press a key and a thing is already happening — and a second of anticipation
+   turns the impact from something that occurred into something you saw coming.
+
+   Body radiance 16 in a hot orange that is not in the palette anywhere else: the
+   Flare is the house gold and the Supernova is white, so an entry trail in either
+   would read as one of those going off in the distance. The white the head runs
+   comes from the body's own ignition-front channel instead, which is exactly what
+   that channel is for.
+
+   Its ejecta obeys vacuum. Every grain is launched with a drag coefficient of
+   zero, so it flies a clean parabola and lands — no hang, no settling curtain, no
+   billow. That absence is more of the read than any amount of hanging dust would
+   be, and it costs one argument. The curtain reaches about 28 m and peaks 14 m
+   up; ninety-three per cent of it touches down inside its own lifetime, which is
+   the number that decides the launch speeds.
+
+   It replaced *Star Crystal*, which grew a lattice of violet prisms out of the
+   ground. That power was built for a sea of cosmic dust and did not survive the
+   ground becoming rock — a crystal formation on a cratered regolith plain reads
+   as decoration rather than as something that happened to the place. Its
+   renderer, its four shaders and its depth-prepass caster went with it.
 5. **Gravity Well** — three helices of lifted dust winding around the player, with
    the airborne mass emitted along those same helices at their own tangential
    velocity. The only system here that writes a *negative* depression — a brush
@@ -348,13 +377,13 @@ direction. Three lookups at three indices of refraction give the chromatic
 dispersion, and absorption over the path length gives the tint.
 
 Four pooled dynamic lights are declared per frame, and every one of them runs the
-identical subsurface term the star runs — so a power lights the dust *through* a
+identical subsurface term the star runs — so a power lights the ground *through* a
 berm crest rather than putting a bright patch on the near face of it. A light's
 gain is an order of magnitude above the body it belongs to, and that is geometry
 rather than preference: a light gain is measured at the emitter, falls off as the
-inverse square, and is then multiplied by an albedo of 0.116. The ground, the suit,
-the wake, the airborne grains, the plasma and the crystal all read the same pool
-out of one include.
+inverse square, and is then multiplied by an albedo of 0.116. The ground, the
+suit, the wake, the airborne grains and the plasma all read the same pool out of
+one include.
 
 ### The galaxy
 
@@ -460,8 +489,8 @@ reshuffles which texture every remaining pass renders into.
   metres has infinity inside its depth of field already, and defocusing the sky
   would erase a star field drawn two pixels at a time.
 - **Screen-space reflections** — on the mirrors only, gated on the prepass mask: the
-  astronaut's gold faceplate, and what a Star Crystal leaves — the prisms and the
-  glaze around them. One untinted pass serves both, because the Fresnel term
+  astronaut's gold faceplate, and the impact glass a power or the board's own rail
+  fuses into the ground. One untinted pass serves both, because the Fresnel term
   confines it to grazing angles, where every material, metal and dielectric alike,
   climbs to a reflectance of one and loses its tint. The surface normal is
   reconstructed from the nearer of two depth taps on each axis rather than a
@@ -469,6 +498,11 @@ reshuffles which texture every remaining pass renders into.
   rim does not build a normal out of the silhouette. A miss writes the source pixel
   back untouched rather than black: the ray has not discovered that the reflection is
   dark, only that it is the galaxy, which the material already put there.
+
+  There used to be a third mirror, the crystal prisms, and they are the reason the
+  normal reconstruction is two-sided: a prism facet is flat by construction so a
+  one-sided difference was enough, and the faceplate is a curved dome with the
+  helmet right behind its rim, where it is not.
 - **AgX / ACES tonemapping**, contrast-adaptive sharpen, grain, vignette. AgX by
   default — the frame runs from empty sky at a thousandth of middle grey to a star
   disc three orders of magnitude above it, and a short shoulder clips the star, the
@@ -487,11 +521,13 @@ structure, the render-target budget and the draw count are unchanged, so they ar
 indicative rather than invented — but they are not a measurement of what is in this
 repository now.
 
-Two things have moved since in ways worth naming. The cloth solver, its render
+Three things have moved since in ways worth naming. The cloth solver, its render
 mesh and its three pipelines are gone, which removes a draw call, a shadow caster,
-a prepass caster and a per-frame CPU solve. And the crater field adds twenty-seven
-hashed cell tests per sample to the height bake — a one-off load cost, paid behind
-the loading screen, and nothing at all per frame.
+a prepass caster and a per-frame CPU solve. The crystal renderer went the same way
+with the power that used it — another draw call, another prepass caster, and four
+shaders that no longer compile at load. And the crater field adds twenty-seven
+hashed cell tests per sample to the height bake, which is a one-off load cost paid
+behind the loading screen and nothing at all per frame.
 
 | | |
 |---|---|
@@ -500,8 +536,8 @@ the loading screen, and nothing at all per frame.
 | — post chain | ~1.1 ms |
 | — far range | ~1.2 ms |
 | — character (skeleton, pose solve, nap, grains) | < 0.02 ms |
-| Draw calls | 14–18 |
-| Triangles | ~350,000 |
+| Draw calls | 13–17 |
+| Triangles | ~348,000 |
 | Headroom against a 90 FPS budget | **7.9 ms** |
 
 Two changes push in opposite directions and have not been weighed against each

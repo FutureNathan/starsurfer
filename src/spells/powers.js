@@ -98,12 +98,23 @@ export const POWERS = {
     nova: { hue: hue(LIN.star), body: 26.0, light: 220.0 },
 
     /**
-     * 4 — Star Crystal. Nebula violet, pulled most of the way toward the lit
-     * dust colour for the same reason the dust field's own resting glow is:
-     * pure nebula-violet has almost no green in it, and a body whose only light
-     * is that colour reads as flat magenta rather than as violet-lit matter.
+     * 4 — Asteroid. Hot orange, and the only entry in the table that is not gold,
+     * white or violet.
+     *
+     * That is deliberate and it is doing a specific job. The Solar Flare is the
+     * house gold and the Supernova is white, so an entry trail rendered in either
+     * would read as one of those two happening a long way away. Ablation is
+     * neither: it is rock and iron boiling off a surface, which sits at the red
+     * end of the warm ramp, well below a detonation. The white the head runs is
+     * not in this hue at all — it comes from the body's own ignition-front
+     * channel, which is exactly what that channel is for.
+     *
+     * Sixteen puts the trail between the Flare and the Supernova standing, and
+     * the power multiplies it again on the way down. The light is the second
+     * highest here because for most of the cast it is a hundred metres up, and
+     * the inverse square does not care how dramatic the object is.
      */
-    lattice: { hue: hue(blend(LIN.nebulaBright, LIN.dust, 0.45)), body: 8.0, light: 120.0 },
+    impact: { hue: hue(LIN.ember), body: 16.0, light: 200.0 },
 
     /**
      * 5 — Gravity Well. The deep end of the nebula ramp, and deliberately the

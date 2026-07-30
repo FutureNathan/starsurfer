@@ -1,14 +1,14 @@
 /**
  * The powers — dispatch, shared context, and the casting pose.
  *
- * Owns the five powers, the plasma bodies they draw into, the lattices they
- * leave, and the light pool every material reads. One `update()` per frame, in
- * this order, and the order is load-bearing:
+ * Owns the five powers, the plasma bodies they draw into, and the light pool
+ * every material reads. One `update()` per frame, in this order, and the order
+ * is load-bearing:
  *
  *   1. clear the light pool
  *   2. dispatch input
  *   3. update every power — they declare lights and write brushes here
- *   4. upload the bodies and the crystals
+ *   4. upload the bodies
  *
  * The lights have to be cleared before the powers run and uploaded after, or a
  * power that ended last frame keeps lighting the sea. The brushes have to be
@@ -26,11 +26,10 @@ import { S } from "../core/settings.js";
 import { expDamp } from "../core/camera.js";
 import { SpellLights } from "./spellLights.js";
 import { WaterBody } from "./waterBody.js";
-import { CrystalField } from "./crystals.js";
 import { Sweep } from "./sweep.js";
 import { Ribbon } from "./ribbon.js";
 import { Bloom } from "./bloom.js";
-import { Crystallize } from "./crystallize.js";
+import { Asteroid } from "./asteroid.js";
 import { Vortex } from "./vortex.js";
 import { aimPoint, clamp01 } from "./bending.js";
 
@@ -43,7 +42,6 @@ import { aimPoint, clamp01 } from "./bending.js";
  *   deform: import("../terrain/deformation.js").DeformationField,
  *   spray: import("../vfx/particles.js").SprayField,
  *   water: WaterBody,
- *   crystals: CrystalField,
  *   lights: SpellLights,
  *   time: number,
  *   sprayScale: number,
@@ -68,7 +66,6 @@ export class SpellSystem {
     constructor(scene, sky, shadows, terrain, controller, figure, rig, spray) {
         this.lights = new SpellLights();
         this.water = new WaterBody(scene, sky, shadows, this.lights);
-        this.crystals = new CrystalField(scene, sky, shadows, this.lights);
 
         /** @type {SpellContext} */
         this.ctx = {
@@ -79,7 +76,6 @@ export class SpellSystem {
             deform: terrain.deform,
             spray,
             water: this.water,
-            crystals: this.crystals,
             lights: this.lights,
             time: 0,
             sprayScale: 1,
@@ -89,10 +85,10 @@ export class SpellSystem {
         this.sweep = new Sweep(this.ctx);
         this.ribbon = new Ribbon(this.ctx);
         this.bloom = new Bloom(this.ctx);
-        this.crystallize = new Crystallize(this.ctx);
+        this.asteroid = new Asteroid(this.ctx);
         this.vortex = new Vortex(this.ctx);
 
-        this.spells = [this.sweep, this.ribbon, this.bloom, this.crystallize, this.vortex];
+        this.spells = [this.sweep, this.ribbon, this.bloom, this.asteroid, this.vortex];
 
         /**
          * Materials outside this system that shade with the power lights.
@@ -189,7 +185,6 @@ export class SpellSystem {
         }
 
         this.water.update(dt, cameraPos);
-        this.crystals.update(dt, cameraPos);
     }
 
     _dispatch() {
@@ -236,11 +231,17 @@ export class SpellSystem {
             // explanation and no reticle.
             //
             // Capped at 22 m of ray, not the 40 the terrain could answer for.
-            // Looking out across the sea the first surface the ray meets is often
-            // forty metres away on the next swell, and a Supernova that goes off
-            // over there is an event the player has to squint at. Beyond the cap
-            // the power lands at the cap distance instead, which is always in
-            // front of them and always at a size worth looking at.
+            // Looking out across the field the first surface the ray meets is
+            // often forty metres away on the far side of a crater, and a
+            // detonation that goes off over there is an event the player has to
+            // squint at. Beyond the cap the power lands at the cap distance
+            // instead, which is always in front of them and always at a size
+            // worth looking at.
+            //
+            // The Asteroid uses the same rule and gains something the Supernova
+            // does not: the cap keeps the impact close enough that the shake, the
+            // ejecta and the crater all land on the player rather than being
+            // watched from outside.
             const eye = rig.camera.position;
             aimPoint(
                 _aim, ctx.terrain,
@@ -249,7 +250,7 @@ export class SpellSystem {
                 22, 13
             );
             if (key === 3) this.bloom.trigger(_aim[0], _aim[1], _aim[2]);
-            else this.crystallize.trigger(_aim[0], _aim[1], _aim[2]);
+            else this.asteroid.trigger(_aim[0], _aim[1], _aim[2]);
             return;
         }
 
@@ -283,21 +284,22 @@ export class SpellSystem {
     }
 
     /**
-     * Register the lattices with the depth prepass.
+     * Nothing this system draws belongs in the depth prepass.
      *
-     * Only the crystals: a plasma body is translucent and emissive, so a depth
-     * for it would tell every screen-space consumer that the sea behind it is not
-     * there — which is exactly wrong for a medium you can see through and which
-     * is putting light *into* what is behind it.
+     * A plasma body is translucent and emissive, so a depth for it would tell
+     * every screen-space consumer that the ground behind it is not there — which
+     * is exactly wrong for a medium you can see through and which is putting
+     * light *into* what is behind it. The crystal lattices used to be the
+     * exception and they are gone; the glaze a power leaves is still in the
+     * prepass, but it is written by the terrain, which registers itself.
      *
-     * @param {import("../render/depthPass.js").DepthPass} depth
+     * Kept as a no-op rather than deleted from the call site, because "the powers
+     * are asked and decline" is a different statement from "somebody forgot".
      */
-    registerPrepass(depth) {
-        this.crystals.registerPrepass(depth);
-    }
+    registerPrepass() {}
 
     get triangles() {
-        return this.water.triangles + this.crystals.triangles;
+        return this.water.triangles;
     }
 
     /**
@@ -305,13 +307,12 @@ export class SpellSystem {
      *
      * The first cast of any power must not hitch, and this is the only thing
      * standing between that and a multi-hundred-millisecond freeze the first
-     * time somebody presses 3. Both body profiles and the lattice material are
-     * exercised with real geometry — a pipeline compiled against an empty draw
-     * is a warm-up that quietly covers nothing.
+     * time somebody presses 3. Both body profiles are exercised with real
+     * geometry — a pipeline compiled against an empty draw is a warm-up that
+     * quietly covers nothing.
      */
     async warmUp(x, y, z) {
         await this.water.warmUp(x, y, z);
-        await this.crystals.warmUp(x, y, z);
     }
 
     /**
@@ -320,11 +321,9 @@ export class SpellSystem {
      */
     finishWarmUp() {
         this.water.finishWarmUp();
-        this.crystals.finishWarmUp();
     }
 
     dispose() {
         this.water.dispose();
-        this.crystals.dispose();
     }
 }

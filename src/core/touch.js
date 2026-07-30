@@ -316,7 +316,7 @@ const POWERS = [
     { n: 1, label: "FLARE" },
     { n: 2, label: "ION" },
     { n: 3, label: "NOVA" },
-    { n: 4, label: "CRYST" },
+    { n: 4, label: "ROCK" },
     { n: 5, label: "WELL" },
 ];
 
@@ -561,13 +561,6 @@ export function initTouch(canvas, hooks) {
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) release();
     });
-
-    // The hint the loading screen reveals talks about a mouse and a keyboard.
-    const hint = document.getElementById("hint");
-    if (hint) {
-        hint.textContent =
-            "drag to look · nudge the stick to walk · push it out to surf";
-    }
 
     touch.active = true;
     // One frame later, so the fade-in is a transition rather than a paint.

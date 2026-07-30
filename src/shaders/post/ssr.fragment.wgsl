@@ -3,13 +3,12 @@
 //
 // Very little in this scene is a mirror, so the pass is gated on the prepass's
 // reflectivity channel and the channel is non-zero on precisely those pixels. The
-// dust field is a rough dielectric — there is nothing to reflect off it that the
+// regolith is a rough dielectric — there is nothing to reflect off it that the
 // sky lookup in its own material does not already give exactly. What is left is
-// the astronaut's gold faceplate, which is a mirror all the time, and what the
-// crystal power leaves: the prisms themselves, and the glaze they lay over the
-// dust around them. On a frame with none of those in view this costs a texture
-// fetch and a branch, which is why it can afford to march at full resolution when
-// it fires.
+// the astronaut's gold faceplate, which is a mirror all the time, and the impact
+// glass a power or the board's own rail fuses into the ground. On a frame with
+// neither in view this costs a texture fetch and a branch, which is why it can
+// afford to march at full resolution when it fires.
 //
 // What it buys: both mirrors already reflect the *galaxy* correctly and cheaply,
 // from their own material's sky lookup. What neither can know analytically is
@@ -73,10 +72,10 @@ fn reflectionAt(uv: vec2f, pix: vec2f, z: f32, mask: f32) -> vec4f {
     // Surface normal from the depth buffer, taking the nearer neighbour on each
     // axis rather than always the forward one.
     //
-    // One-sided differences were enough when the only mirror was a crystal
-    // facet: those are flat by construction, either side gives the same answer,
-    // and the crystal material builds its own shading normal the same way. The
-    // faceplate is not flat. It is a curved dome a few dozen pixels across at
+    // One-sided differences were enough when the only mirror was a patch of
+    // glaze: that is a heightfield, locally near-flat, and either side gives
+    // effectively the same answer. The faceplate is not flat. It is a curved dome
+    // a few dozen pixels across at
     // surfing distance, with the helmet shell right behind its rim, so a forward
     // difference taken near that rim straddles the silhouette and returns a
     // tangent belonging to neither surface — and a normal built from that points
@@ -128,8 +127,8 @@ fn reflectionAt(uv: vec2f, pix: vec2f, z: f32, mask: f32) -> vec4f {
     // angle, and against an inward normal that cosine is never positive, which
     // pins the term at one everywhere and quietly turns a grazing-angle gate
     // into a full-strength replacement of whatever the material had underneath.
-    // Face it toward the eye, the same way the crystal material does with its
-    // own facet normal.
+    // Face it toward the eye, the same way the character material does with its
+    // own two-sided shells.
     var N = normalize(cross(dx, dy));
     if (dot(N, V) > 0.0) { N = -N; }
 

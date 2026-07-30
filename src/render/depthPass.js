@@ -9,11 +9,10 @@
  * Babylon's own `DepthRenderer` cannot supply it. Nothing in this scene has CPU
  * geometry that matches what is drawn: the terrain's vertices are grid indices
  * placed by the clipmap vertex shader, the character is skinned from a transform
- * texture, the wake is a lattice evaluated from a spine, and the crystals are
- * generated from a growth curve. A generic depth pass would render five
- * undisplaced lattices. So this owns the pass, exactly as the shadow cascades do,
- * and for the same reason — a caster registers the vertex program it is actually
- * drawn with.
+ * texture, and the wake is a lattice evaluated from a spine. A generic depth pass
+ * would render three undisplaced lattices. So this owns the pass, exactly as the
+ * shadow cascades do, and for the same reason — a caster registers the vertex
+ * program it is actually drawn with.
  *
  * Channels, RGBA16F:
  *
@@ -21,11 +20,10 @@
  *       projection *is* the view-space z, carried through as a varying rather
  *       than reconstructed from the depth buffer. Exact, and it costs one
  *       interpolant.
- *   g   reflectivity: 0 matte, 1 mirror. Three things write it — the astronaut's
- *       gold faceplate and the crystal prisms, both flatly 1, and the glaze the
- *       crystal power lays over the dust around them, which writes a partial
- *       weight that fades out with the deformation buffer's own falloff.
- *       Everything else writes 0. Only the reflection pass reads it, and only
+ *   g   reflectivity: 0 matte, 1 mirror. Two things write it — the astronaut's
+ *       gold faceplate, flatly 1, and the impact glass a power or the board's own
+ *       rail fuses into the ground, which writes a partial weight that fades out
+ *       with the deformation buffer's own falloff. Everything else writes 0. Only the reflection pass reads it, and only
  *       where it is non-zero; it is a *weight*, not a material index, so a new
  *       mirror needs no new branch downstream.
  *   ba  spare.
