@@ -101,13 +101,19 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // Angular weight — the phase function, standing in for one. Dust scatters
     // strongly forward, so the glow is brightest along the line to the star and
-    // falls away from it; the wings are wider here than an atmosphere's because
-    // the scattering volume extends the whole depth of the frame rather than
-    // being a shallow layer near the ground. Still bounded well short of the
-    // corner: letting it reach there turns the frame into a radial blur, which
-    // is the failure mode that makes this effect look cheap.
+    // falls away from it.
+    //
+    // 0.42 in UV, which at a sixty-degree vertical field is twenty-five degrees
+    // off the star. It reached 0.80 and that was the wrong end of the trade:
+    // eighty per cent of the frame height is not a phase function, it is a
+    // radial blur of the whole image, and because clear sky gives every ray full
+    // visibility there was nothing in it to read as a shaft — just a vast even
+    // disc of light with the star in the middle of it. Pulling it in to
+    // twenty-five degrees keeps every shaft the geometry can actually cast (a
+    // crest that occludes the star is within a few degrees of it by definition)
+    // and gives the effect an edge inside the frame instead of running off it.
     let d = (uv - uniforms.sunUV) * vec2f(uniforms.aspect, 1.0);
-    let radial = 1.0 - smoothstep(0.03, 0.80, length(d));
+    let radial = 1.0 - smoothstep(0.02, 0.42, length(d));
 
     var v = 0.0;
     if (uniforms.enabled > 0.5 && uniforms.sunOnScreen > 0.5 && radial > 0.001) {

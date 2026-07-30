@@ -1,9 +1,8 @@
 # STARSURFER
 
-An astronaut surfing a sea of cosmic dust through a galaxy of stars. WebGPU,
-Babylon.js, hand-written WGSL. Everything you see is generated on the GPU at load
-time — there are no textures, no meshes, no HDRIs and no animation data in this
-repository.
+An astronaut surfing the moon under a galaxy of stars. WebGPU, Babylon.js,
+hand-written WGSL. Everything you see is generated on the GPU at load time — there
+are no textures, no meshes, no HDRIs and no animation data in this repository.
 
 **▶ [starsurfer.nathantowianski.com](https://starsurfer.nathantowianski.com)**
 
@@ -25,7 +24,7 @@ repository.
 | `W` `A` `S` `D` | move, relative to the camera |
 | Mouse | look · **Wheel** zoom |
 | `Shift` | sprint |
-| **Right mouse (hold)** | star-surf — carve across the dust sea and throw a luminous wake |
+| **Right mouse (hold)** | star-surf — carve across the regolith and throw a luminous wake |
 | `1` – `5` | the five powers (`2` is a held cast) |
 | `F1` or `` ` `` | settings and performance overlay |
 
@@ -58,8 +57,8 @@ Append `?touch=1` to force the controls on for a look at the layout from a
 desktop, or `?touch=0` to force them off.
 
 The overlay exposes every art parameter as a live slider — the star's bearing and
-elevation, the galactic band's tilt and core bearing, aurora strength, the dust's
-own glow, displacement depth, tonemap curve, exposure — plus a frame-time graph
+elevation, the galactic band's tilt and core bearing, aurora strength, the nebula
+fill on the ground, displacement depth, tonemap curve, exposure — plus a frame-time graph
 with median / 95th / 1% low, draw calls, triangles and a per-system CPU
 breakdown. Every system can be toggled off individually, and there are debug
 views for surface normals, fine normals, depth, cascade coverage, the
@@ -69,53 +68,89 @@ displacement buffer and the footprint field.
 
 ## What it does
 
-### The dust sea
+### The moon
 
 A nested-ring geometry clipmap: 8 rings, 8.5 cm inner spacing, ~870 m radius,
 333k triangles — **one static mesh, one draw call**. Vertices carry only
 `(gridIndex, ringLevel)`; world placement, CDLOD morphing and displacement all
 happen in the vertex shader, so there is no CPU rebuild and no per-frame upload.
 
-The heightfield underneath it is layered gradient noise with analytic
-derivatives, split across two layers that take opposite positions on anisotropy —
-and that split is what makes the surface read as drifting grains rather than as a
-wind-carved field. The macro layer is near-isotropic: broad rolling swells with
-no prevailing grain, because nothing out here blows. The fine layer is stretched
-hard along the drift bearing, so metre-scale filaments stream across those swells
-the way gas does in a nebula. The macro half bakes once into a 4096² R32F texture
-over a 2048 m field (0.5 m per texel) plus a 2048² RGBA16F auxiliary of slopes,
-outcrop mask and exposure, and is mirrored back to the CPU — so character
-grounding samples exactly the surface that is drawn rather than a
-re-implementation of it. The fine half is evaluated live, with exact analytic
-derivatives, and is never baked at all. (Every figure here is the desktop tier;
-the mobile tier halves each of these — see [On a phone](#on-a-phone).)
+The landform under it is isotropic at every scale, and that is the whole shape of
+it. Anisotropy is a wind signature: stretch a noise layer along one bearing and
+you get transverse ridges, which is what a dune sea or a snowfield looks like
+because that is what wind does to one. There is no atmosphere here, so there is no
+bearing. What carved this ground is impact, which arrives from every direction
+equally and leaves circles.
 
-### Dust shading
+So: broad rolling swells and hundred-metre highland massifs, with a **crater
+field** cut into them on three jittered grids — basins 60–165 m across, craters
+14–46 m, bowls down to 3.6 m. Each has a flat floor out to just over half its
+radius, a raised rim standing on the radius itself, and the outer half of that
+rim's falloff serving as the ejecta blanket. The rim matters more than the hole:
+with the star at thirteen degrees, the shadow a crater throws inside itself and
+the highlight on its far lip are a far stronger read than the depression is.
+Radii are biased small, because a real size-frequency distribution is, and a
+uniform draw gives a field of same-size holes that reads as a pattern. Between
+them the three scales cover a little over half the ground, so nothing is flat and
+almost nothing is a clean circle — every crater is sitting in the wreckage of
+older ones. The fine layer on top is knobbly rather than streaked: metre-scale
+rubble and half-metre secondary pitting.
 
-Cosmic dust is a hard material to light: its albedo is **0.085 / 0.062 / 0.155**,
-so reflected light alone leaves it with no readable form under one small star.
-The material answers that the way the real thing would — it glows. A
-nebula-violet emission wells out of the cavities and up the shaded flanks, and
-freshly thrown or charged mass burns warm gold on top of it. The star's own
-contribution is layered over that: multi-scale normals (baked macro slope,
-analytic filaments and ripples, three tiled detail scales, triplanar on steep
-faces) over wrapped diffuse, a back-scatter subsurface term, GGX specular, SH
-ambient with an iteratively-solved dust bounce, and procedural view-dependent
-glints gated on grazing angle. Compression, displacement and crystalline charge
-are surface state channels the material reads rather than separate materials.
+The macro half bakes once into a 4096² R32F texture over a 2048 m field (0.5 m per
+texel) plus a 2048² RGBA16F auxiliary of slopes, bedrock mask and exposure, and is
+mirrored back to the CPU — so character grounding samples exactly the surface that
+is drawn rather than a re-implementation of it. The crater field is part of that
+bake and costs nothing at runtime. The fine half is evaluated live, with exact
+analytic derivatives, and is never baked at all. (Every figure here is the desktop
+tier; the mobile tier halves each of these — see [On a phone](#on-a-phone).)
 
-The lighting split is deliberately two-sided: the star is warm and what fills the
-shadows is violet. With the sky black, almost none of that fill comes from above —
-sky irradiance is a fraction of a percent of direct on an upward-facing normal, and
-the dominant source is the glowing sea itself, arriving from below at around 20%.
-The ground lights the astronaut, not the other way round, and nothing in the frame
-goes black.
+### Regolith shading
+
+Almost nobody guesses how dark the moon is. It looks white because it is the only
+thing in the sky and the eye has nothing to compare it against; a full moon's disc
+reflects about as much as worn asphalt. Getting that right is most of the
+difference between a moon and a snowfield, and it is very hard to unsee once the
+mistake is made — a bright diffuse ground under a hard raking light reads as snow
+whatever hue it is tinted.
+
+Two terrains, mixed by a slow field about six hundred metres across: **highland
+anorthosite at 0.128 / 0.118 / 0.107** and **mare basalt at 0.068 / 0.066 /
+0.069**, roughly half as reflective and a touch bluer. That contrast is why the
+moon has visible markings from a quarter of a million miles away, and at ground
+level it is what stops a crater field reading as one flat grey plane with holes in
+it. Bedrock shows on the massif faces too steep to hold anything, and it is
+*brighter* than the regolith rather than darker — unweathered highland rock is the
+most reflective thing there — so the mountains keep a pale edge against the sky
+instead of falling to silhouette.
+
+On top of that: multi-scale normals (baked macro slope, analytic rubble and
+pitting, three tiled detail scales, triplanar on steep faces) over wrapped
+diffuse, a back-scatter subsurface term, GGX specular, SH ambient with an
+iteratively-solved ground bounce, and procedural view-dependent glints gated on
+grazing angle — the moon really does glitter, a third of the Apollo soil by weight
+being impact glass. Compression, displacement and charge are surface state
+channels the material reads rather than separate materials: compacted regolith
+goes *darker*, because crushing the fluffy top layer is exactly what destroys the
+structure that makes it bright, which is why rover tracks are visible from orbit.
+Freshly turned ground goes brighter, because space weathering only reaches the top
+few millimetres and opening the surface exposes immature material underneath.
+
+The ground carries a small amount of its own light, and it has to. One star at
+thirteen degrees and a sky whose integrated irradiance is a rounding error beside
+it means a shadow here is as black as the void above it — which is what a shadow
+on the real moon is, and which would leave half of most frames with nothing in
+them. So a neutral, cold nebula fill wells out of the low ground and up the shaded
+flanks. The gradient runs *opposite* to N·L, which is why the relief still reads
+where the star cannot reach it. Sunlit highland lands at output level 172 and a
+shadowed crater floor at 38 — a four-and-a-half-stop split, brutal by the
+standards of a scene with an atmosphere and about right for one without.
 
 Shadows are three hand-rolled cascades with world-space PCSS — blocker search,
 penumbra estimate, rotated Poisson filter — texel-snapped in world space and
 stabilised against a rotation-invariant bounding sphere. One distant star means
-one hard shadow, and with no sky dome to soften the terminator that shadow is the
-strongest single form cue in the frame. Babylon's own cascade generator can't be
+one hard shadow, and with no sky to soften the terminator that shadow is the
+strongest single form cue in the frame — it is what makes a crater a crater rather
+than a grey ring. Babylon's own cascade generator can't be
 used here: the terrain has no CPU geometry matching what is drawn, so every
 caster registers the vertex program it is actually rendered with.
 
@@ -128,10 +163,10 @@ UV is `fract(worldXZ / size)` — so the window follows the player without ever
 copying the buffer, and newly exposed texels are detected and zeroed by the same
 pass.
 
-Channels are depression depth, displaced mass, compression and crystalline
-charge. That second channel is what separates a trail with raised berms from a
-flat footprint decal; the fourth is what a power leaves behind, and it drives
-both a vitrified violet albedo and a gold emission, so a scar stays visible from
+Channels are depression depth, displaced mass, compression and charge. That second
+channel is what separates a trail with raised berms from a flat footprint decal;
+the fourth is what a power and the board's own rail leave behind, and it drives
+both a dark impact-glass albedo and a gold emission, so a scar stays visible from
 across the field. Refill is anisotropic diffusion (loose berms slump three times
 faster than a packed trench floor) plus berm-into-depression slump, drift-driven
 infill from upwind, and slow exponential decay: **~71% of trail depth survives a
@@ -161,27 +196,40 @@ Seven of the eight resolve their colour through the shared palette module; the
 metals do not, on purpose, because a conductor's normal-incidence reflectance is
 a measured optical constant rather than a design choice.
 
+**There is no cloth.** There was — a Verlet solver over tubes of particles,
+feeding a Catmull-Rom surface reconstruction in the vertex shader — and it was
+removed rather than retuned, because the thing it was simulating does not exist. A
+pressure suit is a laminate held between hard bearings; every panel authored
+against it read as loose fabric no matter how hard the pins were driven, and a
+figure in loose fabric is not an astronaut. What the suit needed instead was bulk
+and a metal band at every joint, and both of those are lofted geometry: the arms
+took over the sleeves' silhouette outright, which is why their radii look large
+for the limbs inside them. A suit arm is far fatter than an arm. What survives of
+the soft goods is the frayed nap of multi-layer insulation at the neck seam and
+the glove cuffs — a partial torus emitted ten times per band and alpha-tested
+against a hashed fibre field, 14 mm long, which is why ten shells is already past
+visible banding — and that is bone-bound, not simulated.
+
 Feet plant. A distance-driven stance/swing machine writes a foot's world position
 exactly once, on touchdown, and holds it absolutely fixed while two-bone IK
 reaches for it — a planted foot cannot slide because nothing in the code is able
 to move it. Gait phase advances with ground travelled, so stride length and
 ground speed are the same number by construction.
 
-The soft goods are Verlet cloth on three panels — the lower torso and two sleeves
-— with distance, bending and shape-memory constraints, nine body collision
-capsules, and apparent wind that is the field drift minus the character's own
-velocity. Every pin rate is high, deliberately: a pressure garment does not
-billow, and what the solver is buying here is not motion but the collision pass
-keeping a panel off the leg capsules when the legs cross under it, plus a couple
-of centimetres of lag so the hem does not look welded to the hips. 516 simulated
-nodes render as 3,462 surface vertices through Catmull-Rom reconstruction in the
-vertex shader, so tessellation and simulation cost are fully decoupled. The
-frayed nap of multi-layer insulation at the neck seam and the glove cuffs is a
-partial torus emitted ten times per band and alpha-tested against a hashed fibre
-field — 14 mm long, which is why ten shells is already past visible banding.
+On the board the stance is a real one. A surfer does not face the way the board is
+pointing: both feet stand on the stringer, one behind the other, and the body is
+turned across the deck. Regular-footed, so the left foot is forward — 26 cm ahead
+of the waist against 30 behind, a 56 cm stance on a deck that runs 94 cm forward
+of the bone. The pelvis opens 66° toward the toe-side rail and the shoulders about
+eight degrees further, each boot takes its own angle across the deck (50° at the
+front, 85° at the back, which is the asymmetry every stance has — the front foot
+steers and the back foot drives), and the neck takes 80% of the turn back so the
+visor keeps looking down the line. The stance is applied about the body's own
+*up* axis after pitch and roll rather than being folded into the yaw, so leaning
+into a carve still tips the rider over the inside rail instead of toward the nose.
 
-One small 48×64 texture carries everything to the GPU: rows 0–3 are bone
-matrices, rows 4+ are simulated cloth nodes. One upload per frame, no allocation.
+One small 48×4 texture carries everything to the GPU: four rows of bone matrices,
+one column per bone. One upload per frame, no allocation.
 
 ### Star-surf
 
@@ -202,8 +250,8 @@ full-speed carve and collapses 0.88 s after it is laid, which makes wake length
 
 The wake is luminous, and its brightness is a readout of how hard the board is
 being driven. The wall wells nebula violet at a linear radiance of 8; the lip —
-the hottest, freshest mass — reaches warm gold at 10, which clears both the lit
-dust at 5 and the bloom threshold at 3, so the crest is the brightest and the
+the hottest, freshest mass — reaches warm gold at 10, which clears both sunlit
+ground at 5.5 and the bloom threshold at 3, so the crest is the brightest and the
 warmest point on the whole structure. On a straight run the crest sits at 3,
 right in the bloom's soft knee, and barely glows.
 
@@ -226,10 +274,10 @@ on how many powers are up.
 Each power's identity is one hue and two radiance gains, in a single table read
 by the power, by the body renderer and by the light pool alike — so a power
 cannot be one colour close up and another at range. The gains are stated against
-two measured numbers: lit dust sits near 5 in linear units, and the bloom bright
-pass thresholds at 3.
+two measured numbers: sunlit ground sits near 5.5 in linear units, and the bloom
+bright pass thresholds at 3.
 
-1. **Solar Flare** — a crescent of ignited dust rises out of the sea and runs
+1. **Solar Flare** — a crescent of ignited dust rises out of the ground and runs
    outward, ploughing a channel and throwing glowing berms. Body radiance 12: the
    hottest sustained thing on the ground, above the wake's own crest.
 2. **Ion Stream** — a held stream tracking the hand and camera aim, drawing
@@ -242,11 +290,11 @@ pass thresholds at 3.
    the one thing here that can sit on screen for ten seconds, and a tether at
    detonation brightness stops being an event and becomes the exposure.
 3. **Supernova** — a targeted detonation. A white-hot column bursts up out of the
-   sea, blows a crater with a raised rim, collapses back down its own axis, and
-   leaves four seconds of fallout lit from below. Body radiance 26, three stops
-   over the bloom knee, cooling down the same warm ramp the dust's own discharge
-   sits on.
-4. **Star Crystal** — loose dust snaps into a lattice. Hexagonal prisms grown
+   regolith, blows a crater with a raised rim — a fresh one, on a surface made of
+   them — collapses back down its own axis, and leaves four seconds of fallout lit
+   from below. Body radiance 26, three stops over the bloom knee, cooling down the
+   same warm ramp the ground's own discharge sits on.
+4. **Star Crystal** — loose regolith snaps into a lattice. Hexagonal prisms grown
    along a golden-angle spiral, alpha-blended *and* depth-writing, so you see the
    dust through the crystal but never one prism through another. Facet normals
    come from screen-space derivatives, so every facet is exactly flat and every
@@ -255,13 +303,13 @@ pass thresholds at 3.
 5. **Gravity Well** — three helices of lifted dust winding around the player, with
    the airborne mass emitted along those same helices at their own tangential
    velocity. The only system here that writes a *negative* depression — a brush
-   that takes a ring of the sea away is the same code path as one that puts it
+   that takes a ring of the ground away is the same code path as one that puts it
    back, with a sign on it. Body radiance 4, the dimmest of the five: a well is a
    thing light falls into, so what is in the air is lifted mass rather than plasma
    and wells at about the brightness of the ground it tore up.
 
 Refraction needs no scene copy and no second opaque pass: the sky LUT already
-stores the dust sea's solved radiance below the horizon, so one lookup along the
+stores the ground's solved radiance below the horizon, so one lookup along the
 refracted ray is a physically-derived estimate of what is behind the body in any
 direction. Three lookups at three indices of refraction give the chromatic
 dispersion, and absorption over the path length gives the tint.
@@ -271,7 +319,7 @@ identical subsurface term the star runs — so a power lights the dust *through*
 berm crest rather than putting a bright patch on the near face of it. A light's
 gain is an order of magnitude above the body it belongs to, and that is geometry
 rather than preference: a light gain is measured at the emitter, falls off as the
-inverse square, and is then multiplied by an albedo of 0.085. The dust, the suit,
+inverse square, and is then multiplied by an albedo of 0.116. The ground, the suit,
 the wake, the airborne grains, the plasma and the crystal all read the same pool
 out of one include.
 
@@ -298,12 +346,12 @@ everything is fog — and its peak is held at output level 128 against a bloom
 threshold it never reaches, because an aurora that glows is a light source and
 this one is meant to be scenery.
 
-The lower hemisphere of that LUT is not sky. It holds the dust sea's own solved
+The lower hemisphere of that LUT is not sky. It holds the ground's own solved
 radiance, and the solve is a genuine iteration: bake, project to SH, work out what
 the ground is now radiating, bake again. It converges in three passes, faster than
 a bright ground would, because each round trip through the reflected term is
-multiplied by 0.085 rather than 0.85 — and because the emissive term is a constant
-that does not iterate at all.
+multiplied by 0.116 rather than 0.85 — and because the fill term is a constant that
+does not iterate at all.
 
 Point stars are drawn in the skybox fragment shader only and never enter the bake:
 at the 64×32 the SH readback runs at, a star is far smaller than a texel and what
@@ -318,16 +366,27 @@ read as a point, large enough that the temporal resolve does not treat it as
 sub-pixel noise.
 
 The near star is a third of a degree across with limb darkening: smaller and harder
-than the sun seen from Earth, because there is no air to soften its edge. What is
-left of its aureole is not atmospheric — in vacuum a bright point source has no
-halo in the scene, only in the instrument watching it, which is the same thing the
-bloom pass downstream is modelling.
+than the sun seen from Earth, because there is no air to soften its edge. Its
+aureole is not atmospheric — in vacuum a bright point source has no halo in the
+scene, only in the instrument watching it, which is the same thing the bloom pass
+downstream is modelling — so it is deliberately tiny: a one-degree lobe hugging the
+disc and a four-degree haze half a linear unit tall that never blooms at all.
 
-The far range of crystalline debris is a heightfield raymarched on the skybox — no
-geometry, behind everything by construction, with analytic normals, ridges
-occluding ridges, and a second short march toward the star for its own cast
-shadows. It is lit by the dust field's own material logic and hazed by the same
-nebula, so the two meet at one colour instead of two.
+Getting that number wrong is worth recording, because it took three passes to find
+and none of the first two were looking in the right place. The thing making the
+sky near the star unbearably bright was not the star. It was the shaft pass: over
+clear sky every sample along every ray is visible, so its integral is flat and what
+it draws is not shafts but a *disc* of light as wide as its radial weight allows.
+At the old settings that disc peaked at 5.9 linear and was still at 2.9 twenty-five
+degrees out — the sky within half a screen of the star sat at output 150–190
+against ground lit to 172. No amount of retuning the star's own glow could have
+fixed that, because the star's own glow was not doing it.
+
+The far range is a heightfield raymarched on the skybox — no geometry, behind
+everything by construction, with analytic normals, ridges occluding ridges, and a
+second short march toward the star for its own cast shadows. It is lit by the
+ground's own material logic and hazed by the same nebula, so the two meet at one
+colour instead of two.
 
 ### Post-processing
 
@@ -343,7 +402,7 @@ reshuffles which texture every remaining pass renders into.
   alive, since a bright point on black is otherwise clipped below the value the
   renderer just produced, every frame.
 - **Bloom** — three levels, thresholded at 3.0 in linear scene radiance, before
-  exposure. That number is the line between the dust's resting glow at 1 and the
+  exposure. That number is the line between the ground's resting fill at 0.4 and the
   scene's actual sources: the visor, the suit trim, the wake, the thrown grains and
   the star. The mix is weighted toward the *tight* level, the opposite of what an
   atmosphere wants — the broad lobe of a glare pattern is forward scattering off
@@ -356,11 +415,12 @@ reshuffles which texture every remaining pass renders into.
 - **Volumetric light shafts** — integrating sky visibility out of the prepass along
   the ray to the star. A shaft needs a medium and vacuum is not one, so what these
   are is the star lighting the nebula the field is drifting through, with the dust
-  swells cutting shadows through it. A nebula is thin and uniform along the ray
+  crater rims cutting shadows through it. A nebula is thin and uniform along the ray
   rather than piled up near the ground, so the beams run further than an
   atmosphere's and come out proportionally far dimmer — the star's spectrum through
-  a scattering albedo, which lands the root of a shaft at about 3.2 against dust lit
-  to 5.
+  a scattering albedo of 2%, which lands the root of a shaft at about 1.4 against
+  ground lit to 5.5. Reaching 25° off the star rather than 80% of the frame height,
+  for the reason under [The galaxy](#the-galaxy).
 - **Depth of field** — deliberately slight, focal plane tracking the spring arm's
   own length, weighted by each tap's own circle of confusion. The far side is capped
   at a third of the near side's: a wide lens at a small aperture focused at six
@@ -394,15 +454,21 @@ structure, the render-target budget and the draw count are unchanged, so they ar
 indicative rather than invented — but they are not a measurement of what is in this
 repository now.
 
+Two things have moved since in ways worth naming. The cloth solver, its render
+mesh and its three pipelines are gone, which removes a draw call, a shadow caster,
+a prepass caster and a per-frame CPU solve. And the crater field adds twenty-seven
+hashed cell tests per sample to the height bake — a one-off load cost, paid behind
+the loading screen, and nothing at all per frame.
+
 | | |
 |---|---|
 | GPU frame | **3.22 ms** |
 | — base scene (clipmap, surface, 3 cascades, sky, character, displacement, prepass) | 1.64 ms |
 | — post chain | ~1.1 ms |
 | — far range | ~1.2 ms |
-| — character (skeleton, cloth, nap, grains) | < 0.02 ms |
-| Draw calls | 15–19 |
-| Triangles | ~353,000 |
+| — character (skeleton, pose solve, nap, grains) | < 0.02 ms |
+| Draw calls | 14–18 |
+| Triangles | ~350,000 |
 | Headroom against a 90 FPS budget | **7.9 ms** |
 
 Two changes push in opposite directions and have not been weighed against each
@@ -485,7 +551,7 @@ src/
   core/              settings, palette, input, camera rig, perf, loading, GPU helpers
   terrain/           heightfield, clipmap mesh, terrain state buffer
   render/            sky + IBL, shadow cascades, depth prepass
-  character/         skeleton, procedural geometry, cloth solver, dust contact
+  character/         skeleton, procedural geometry, locomotion, ground contact
   vfx/               pooled stardust grains, the star-surf wake
   spells/            the five powers, the shared plasma body, the light pool
   post/              the post-processing chain
@@ -494,14 +560,22 @@ src/
 ```
 
 `core/brand.js` is the one place the palette lives: near-black indigo void,
-violet-magenta nebula, warm gold accent. Every material, LUT bake, particle system
-and post pass reads its linear triples, and it carries the same colours as hex for
-anything a human reads. Emissives are kept separate from reflectances there,
-because they are the values that are *supposed* to exceed 1.0 — a hex code can only
-describe an albedo, and clamping a radiance into [0,1] would flatten exactly the
-parts the bloom pass exists to catch. The gains it lists are not free-floating:
-they are stated against two measured numbers, lit dust at 5 and the bloom threshold
-at 3, so reading one tells you whether the thing it belongs to glows.
+violet-magenta nebula, warm gold accent, and the three greys the ground is made
+of. Every material, LUT bake, particle system and post pass reads its linear
+triples, and it carries the same colours as hex for anything a human reads.
+Emissives are kept separate from reflectances there, because they are the values
+that are *supposed* to exceed 1.0 — a hex code can only describe an albedo, and
+clamping a radiance into [0,1] would flatten exactly the parts the bloom pass
+exists to catch. The gains it lists are not free-floating: they are stated against
+two measured numbers, sunlit ground at 5.5 and the bloom threshold at 3, so
+reading one tells you whether the thing it belongs to glows.
+
+The regolith entries are a different kind of entry from the rest. Everything else
+in that file is a design decision; those are measurements, and they are in there
+because the ground is most of the frame and the one thing that must not be
+redesigned by accident. Both the surface material and the bounce solve derive from
+the same two, so they cannot disagree — a bounce that disagrees with the surface it
+is bouncing off is invisible right up until the horizon splits in two.
 
 Two identifiers are worth explaining rather than renaming. `sun` throughout the
 code and the shaders means the one distant star — it is what every WGSL uniform
@@ -510,19 +584,22 @@ block already calls its single directional source. And a settings key beginning
 names are read by a dozen files and appear in no user-visible string.
 
 The word *snow* survives in a handful of comments, always as a comparison and
-never as a description. The macro layer gives up its anisotropy specifically so
-the field stops reading as wind-carved dunes; the albedo is held genuinely dark
-because a pale diffuse ground reads as snow whatever hue it is tinted. Those
-comments are the reasoning behind a number, which is what the comments in this
-repository are for.
+never as a description. Both noise layers give up their anisotropy specifically so
+the ground stops reading as wind-carved; the albedo is held genuinely dark because
+a pale diffuse ground reads as snow whatever hue it is tinted. Those comments are
+the reasoning behind a number, which is what the comments in this repository are
+for. The same goes for `dust` in a few identifiers — `dustGlow`, `dustEmissive`,
+`dust.fragment.wgsl` — which mean the regolith. Renaming them would touch a dozen
+files and change nothing a user can see.
 
 ## Assets and licences
 
 There are no third-party assets. Every texture, environment map and piece of
 geometry in the running demo is generated at load time on the GPU: the sky is a
-handful of noise calls, the dust grain and the landform are noise, the astronaut
-is lofted from a table of numbers, and the suit's weave and the insulation fibres
-are evaluated in the fragment shader.
+handful of noise calls, the grain map and the landform are noise, the crater field
+is three grids of hashes, the astronaut is lofted from a table of numbers, and the
+suit's weave and the insulation fibres are evaluated in the fragment shader. The
+favicon is a hand-written SVG in `public/`.
 
 Runtime dependencies are `@babylonjs/core` and `@babylonjs/materials`
 (Apache-2.0). The only build dependency is Vite (MIT), which does not ship in the

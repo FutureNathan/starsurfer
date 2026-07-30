@@ -23,7 +23,7 @@ uniform shR: array<vec4f, 9>;
 uniform ambientIntensity: f32;
 /// Peak height of the far range, metres. Zero switches it off entirely.
 uniform ridgeAmp: f32;
-/// The dust field's own emission. The range is covered in the same dust and has
+/// The ground's own emission. The range is covered in the same regolith and has
 /// to glow by the same amount, or it draws as a black cut-out in front of the
 /// galaxy while the ground in front of it shines.
 uniform dustEmission: vec3f;
@@ -35,11 +35,11 @@ uniform fogHeightFalloff: f32;
 uniform fogStart: f32;
 uniform aerialStrength: f32;
 
-/// Shade a point on the far range — a ridge of crystalline debris standing out
-/// of the dust sea, drawn on the skybox rather than as geometry.
+/// Shade a point on the far range — the highland wall on the horizon, drawn on
+/// the skybox rather than as geometry.
 ///
-/// Deliberately the *dust field's* material logic, not a separate one: the same
-/// wrapped diffuse, the same SH ambient, the same dark violet albedo, the same
+/// Deliberately the *ground's* material logic, not a separate one: the same
+/// wrapped diffuse, the same SH ambient, the same regolith albedo, the same
 /// emission. A distant massif rendered with its own ad-hoc lighting is the
 /// classic way a matte painting announces itself — it does not sit in the same
 /// light as the ground in front of it.
@@ -47,16 +47,23 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     let N = hit.normal;
     let L = uniforms.sunDir;
 
-    // Settled dust almost everywhere, bare shard only on the faces too steep to
-    // hold it. Nothing sweeps this range clear, so there is no line to speak of;
-    // the bare rock is here for the *break* it gives the silhouette, not as a
-    // ground cover.
+    // Regolith on the shallow faces, bare rock on the ones too steep to hold it.
+    // Nothing sweeps this range clear, so there is no line to speak of; the
+    // exposed rock is here for the *break* it gives the silhouette.
+    //
+    // The rock is the brighter of the two, which is the way round it is on the
+    // moon: fresh highland anorthosite is the most reflective thing there, and
+    // four billion years of space weathering darkens whatever settles on top of
+    // it. So the range keeps a pale edge against the sky instead of falling to
+    // silhouette — which is the whole reason it is worth drawing at all at this
+    // distance. Both numbers track `brand.js`: regolith is `LIN.regolith` and the
+    // rock the same value the near field's massifs carry.
     let steep = 1.0 - N.y;
     let dustMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
-    let shard = vec3f(0.026, 0.024, 0.038);
-    let dust  = vec3f(0.085, 0.062, 0.155);
-    let albedo = mix(shard, dust, dustMask);
+    let rock  = vec3f(0.128, 0.122, 0.114);
+    let fines = vec3f(0.106, 0.099, 0.093);
+    let albedo = mix(rock, fines, dustMask);
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
 
@@ -68,34 +75,34 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // Without this the range reads as a different material from the field it
     // stands behind.
     //
-    // The dust is translucent — it is a loose aggregate of ice and silicate
+    // The fines are weakly translucent — a loose aggregate of glass and mineral
     // grains, and light entering one side of a drift leaves the other. A ridge of
-    // it with the star behind *glows* along its edge rather than going to a flat
-    // silhouette, and that rim is most of what separates it from the void it is
+    // it with the star behind keeps a faint edge rather than going to a flat
+    // silhouette, and that rim is part of what separates it from the void it is
     // drawn against.
     //
     // The identical term the ground runs, so the two cannot disagree about what
-    // back-lit dust does.
+    // back-lit regolith does.
     let V = -dir;
     col += dustSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 1.0)
          * albedo * mix(0.5, 1.0, shadow);
 
     // Ambient fill. At this distance it is most of what is left after
-    // extinction, and out here it is the reason a distant ridge reads violet
-    // rather than black: the nebula above and the dust sea below are the only
-    // things illuminating the faces the star cannot reach.
+    // extinction, and out here it is the reason a distant ridge reads as
+    // anything at all rather than black: the nebula above and the lit ground
+    // below are the only things reaching the faces the star cannot.
     col += albedo * INV_PI * shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
-    // Near-field bounce off the range's own dust — the same small correction the
-    // ground makes, for the same reason. The sky LUT's lower hemisphere already
-    // carries the dust sea's solved radiance, so the sphere integral above has
-    // most of this; what is added here is the part a distant uniform sea cannot
-    // account for, weighted onto the downward-facing slopes it reaches.
+    // Near-field bounce off the range's own slopes — the same small correction
+    // the ground makes, for the same reason. The sky LUT's lower hemisphere
+    // already carries the ground's solved radiance, so the sphere integral above
+    // has most of this; what is added here is the part a distant uniform plain
+    // cannot account for, weighted onto the downward-facing slopes it reaches.
     col += albedo * INV_PI * shIrradiance(vec3f(0.0, -1.0, 0.0), uniforms.shR)
          * uniforms.ambientIntensity * 0.25 * clamp(-N.y * 0.5 + 0.5, 0.0, 1.0)
          * dustMask;
 
-    // The same emission the near field carries, weighted by how much dust the
+    // The same fill the near field carries, weighted by how much regolith the
     // face is actually holding. See `DUST_EMISSION` in sky.js — the two are one
     // number, published from there, so they cannot drift apart.
     col += uniforms.dustEmission * dustMask * 0.55;
@@ -238,35 +245,50 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the sun seen from Earth, because this one is further away and there is no
     // air to soften its edge.
     //
-    // Its radiance is set by what the bloom pass will do with it, not by what a
-    // star's surface is actually worth.
+    // Its radiance is arbitrary. Anything that clears the AgX shoulder reads as
+    // pure white, and the disc clears it by two orders of magnitude at any value
+    // that has ever been in here — so what this number sets is not the star's
+    // brightness but what the rest of the chain does with it downstream.
     //
-    // The disc is a handful of pixels and the bloom pyramid spreads whatever is in
-    // them across a couple of hundred, so the halo's brightness is very nearly the
-    // disc's radiance times the ratio of those two areas — about 1:250. Anything
-    // that clears the AgX shoulder reads as pure white regardless, and the disc
-    // clears it by two orders of magnitude at any value here, so the *only* thing
-    // this number changes is how far the glare reaches. At the old 42 it put
-    // roughly 36 linear into the halo against dust lit to 5, and the star became a
-    // hole in the middle of the frame with a hundred-pixel skirt.
+    // The Karis average on the prefilter level is what makes the disc's own value
+    // nearly irrelevant, and it took measuring to see it. The disc is eight pixels
+    // across at 1440p — two at the quarter-resolution bright pass — so it is an
+    // isolated bright sample in a group of thirteen taps that are otherwise void,
+    // and weighting each group by 1/(1+luma) before averaging pulls the group's
+    // result down to order 1. The threshold at 3.0 then removes it entirely. The
+    // disc contributes essentially nothing to the glare pattern at any value here,
+    // which is exactly the mechanism the point-star field relies on.
     //
-    // At 4.0 the halo lands near 3.5 — under the bloom threshold it came from, so
-    // it cannot feed itself a second time — and the star stays a small hard white
-    // point with a glow around it rather than a floodlight.
+    // So this number is now set by the temporal resolve rather than by the bloom:
+    // 1.6 puts the disc at ~370 linear, still far above the AgX shoulder and so
+    // still a hard white point, without handing TAA a value three orders of
+    // magnitude off its neighbours to reproject.
     let mu = dot(dir, uniforms.sunDir);
     let discCos = cos(0.0029);
     if (mu > discCos) {
         let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0029;
         let limb = pow(max(0.0, 1.0 - r * r * 0.72), 0.42);
-        col += uniforms.sunColor * uniforms.sunIntensity * 4.0 * limb;
+        col += uniforms.sunColor * uniforms.sunIntensity * 1.6 * limb;
     }
-    // What is left of the aureole is not atmospheric. In vacuum a bright point
-    // source has no halo *in the scene*; the halo is in the instrument, and this
-    // scene is being watched through one. So the wide lobe is all but gone and the
-    // tight one is a two-degree flare: glare in the optics, which is also what the
-    // bloom pass downstream is modelling, and there is no reason to pay for it
-    // twice.
-    let aureole = pow(max(0.0, mu), 2600.0) * 0.5 + pow(max(0.0, mu), 220.0) * 0.012;
+    // The aureole is not atmospheric. In vacuum a bright point source has no halo
+    // *in the scene*; the halo is in the instrument, and this scene is being
+    // watched through one.
+    //
+    // Which is the argument for keeping it small, and the previous pair were not.
+    // `pow(mu, 2600)` has a two-and-a-half-degree full width — sixty pixels at
+    // 1440p — and at 0.5 its peak was 59 in linear, so the star came with a
+    // hundred-pixel-wide patch of near-white (output 219 at two degrees out,
+    // against ground lit to 175) before the bloom pass had even seen it. Then the
+    // bloom pass did see it: 227,000 px-linear over the threshold, spread across
+    // the frame.
+    //
+    // The pair below is the same idea at the right scale. The tight lobe is one
+    // degree wide, hugging the eight-pixel disc, and peaks at 7.5 — a bright ring
+    // on the disc's edge, over the threshold across a couple of hundred pixels
+    // rather than tens of thousands. The wide one is a four-degree,
+    // half-a-linear-unit haze that never blooms at all and exists only so the
+    // star sits in the nebula rather than being pasted on top of it.
+    let aureole = pow(max(0.0, mu), 20000.0) * 0.070 + pow(max(0.0, mu), 300.0) * 0.0030;
     col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5;
 
     // --------------------------------------------------------------- stars
@@ -274,8 +296,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // Stars sit *in front of* the nebula from here, and a nebula that occludes
     // its own foreground stars is the single most common tell in a painted
     // space background.
+    // The gain is stated against `sunIntensity` so the field tracks the star it
+    // is drawn beside. 0.0138 rather than the 0.010 it was, which is the
+    // reciprocal of the drop in `SUN_SCALE_BASE` — the star scale came down when
+    // the ground stopped being dust and started being rock, and the point of that
+    // change was to move the ground, not to dim the sky.
     col += starField(dir, uniforms.starDensity, uniforms.time)
-         * uniforms.starBrightness * uniforms.sunIntensity * 0.010;
+         * uniforms.starBrightness * uniforms.sunIntensity * 0.0138;
 
     fragmentOutputs.color = vec4f(col, 1.0);
 }

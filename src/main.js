@@ -122,7 +122,7 @@ async function boot() {
     const depthPass = new DepthPass(scene);
 
     // -------------------------------------------------------------- terrain
-    await loading.phase("baking the dust field", 0.34);
+    await loading.phase("cratering the moon", 0.34);
     const terrain = new Terrain(scene, sky, shadows);
     terrain.mesh.renderingGroupId = 1;
     await terrain.build();
@@ -159,8 +159,7 @@ async function boot() {
     );
     // Every surface a spell can light.
     spells.addConsumers(
-        terrain.material, figure.bodyMat, figure.clothMat,
-        wake.material, spray.material
+        terrain.material, figure.bodyMat, wake.material, spray.material
     );
     spells.registerPrepass(depthPass);
 

@@ -1,4 +1,4 @@
-// Bakes the macro landform (broad dunes + medium drifts + rock outcrops) into a
+// Bakes the macro landform (swells, the crater field, highland massifs) into a
 // single-channel float texture covering the whole playable field.
 //
 // Baked rather than evaluated live for one reason: the CPU needs the same
@@ -23,8 +23,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     var h = terrainMacro(p, uniforms.windAngle, uniforms.heightAmp);
 
-    // A shard displaces the dust upward; dust then re-settles on the flatter
-    // faces, which the material resolves from the mask in the aux bake.
+    // A massif pushes the regolith up with it; the fines then creep back onto
+    // the shallow faces, which the material resolves from the mask in the aux
+    // bake.
     let rock = rockField(p, uniforms.windAngle);
     h += rock.x;
 

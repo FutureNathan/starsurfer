@@ -18,6 +18,10 @@ Thumbs.db
 
 # the repo is source only — no binaries, no captures
 *.png
+# ...with exactly one exception. iOS will not take an SVG for a home-screen
+# icon, so this PNG has to be committed. It is a build product rather than an
+# asset: tools/make-apple-touch-icon.py is its source and regenerates it.
+!public/apple-touch-icon.png
 *.jpg
 *.jpeg
 *.gif

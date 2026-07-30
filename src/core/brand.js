@@ -48,6 +48,11 @@ export function linear(hex) {
  * The palette as authored. Black indigo void, violet and teal aurora, warm gold
  * accent — warm rather than the usual cold sci-fi cyan, which is the whole point:
  * this is meant to read as optimistic.
+ *
+ * The three greys at the bottom are a different kind of entry from the rest.
+ * Everything above them is a design decision; those are measurements, and they
+ * are in here because the ground is most of the frame and the one thing that
+ * must not be redesigned by accident.
  */
 export const HEX = {
     /** Near-black indigo. The colour of empty sky between stars. */
@@ -56,10 +61,37 @@ export const HEX = {
     nebulaDeep: "#2a1a4d",
     /** The bright end of it, where the aurora's violet curtains sit. */
     nebulaBright: "#6b2f7a",
-    /** Lit cosmic dust — the surface being surfed. */
+    /** Lit stardust — the wake, the spray, the powers. Not the ground. */
     dust: "#b8a2ff",
-    /** The dust in shadow, cooled and darkened. */
+    /** Stardust in shadow, cooled and darkened. */
     dustShade: "#3b2f66",
+    /**
+     * Highland regolith — the ground, and about two thirds of it.
+     *
+     * 0.128 linear in red. Almost nobody guesses the moon this dark, because it
+     * is the only thing in the sky and the eye has nothing to compare it
+     * against; a full moon's disc reflects about as much as worn asphalt.
+     * Getting it right is most of the difference between a moon and a snowfield.
+     */
+    regolith: "#64605c",
+    /**
+     * Mare basalt — the dark flood plains, roughly half as reflective and a
+     * touch bluer. That contrast is why the moon has visible markings from a
+     * quarter of a million miles away, and at ground level it is what stops a
+     * crater field reading as one flat plane with holes in it.
+     */
+    regolithDark: "#4a494a",
+    /**
+     * The nebula fill the ground glows with in shadow.
+     *
+     * A radiance and not a reflectance, and the only reason it is a hex code at
+     * all is that its *hue* is a design decision even though its magnitude is
+     * not — the magnitude lives in `S.dustGlow`. Neutral and barely cool: it
+     * used to be a saturated violet, which was right when the ground was made of
+     * violet dust and was most of what made this read as lava once the ground
+     * was made of rock.
+     */
+    nebulaFill: "#595d6a",
     /** Warm gold. Faceplate, wake lip, trim, UI accent. The signature. */
     accent: "#ffc46b",
     /** Starlight white, very slightly warm so it sits with the gold. */

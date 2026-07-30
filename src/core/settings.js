@@ -43,10 +43,15 @@ export const S = {
     // lights both flanks identically and the fine structure reads as flat.
     windDirection: 42,
     windStrength: 1.0,
-    /** Far-field ridge of crystalline debris on the skybox. */
+    /** The highland wall on the horizon, ray-marched on the skybox. */
     showMountains: true,
-    /** Peak height of that ridge, metres. */
-    mountainHeight: 2150,
+    /**
+     * Peak height of that range, metres. Raised with the near field's own relief
+     * — the ground the player rides now carries hundred-metre massifs and
+     * twenty-metre crater rims, and a horizon that did not grow with it would
+     * have read as a step down rather than as distance.
+     */
+    mountainHeight: 2900,
     /** Strength of the volumetric shafts spilling past the dust crests. */
     shaftStrength: 0.30,
 
@@ -64,19 +69,20 @@ export const S = {
     /** Strength of the auroral curtains hanging around the galactic band. */
     nebulaStrength: 1.0,
 
-    // ----------------------------------------------------------- cosmic dust
+    // -------------------------------------------------------------- the moon
     /**
-     * Master scale on the light the dust field emits. This is not a stylistic
-     * nicety — reflected light alone leaves a 0.09-albedo surface under one
-     * small star with no readable form, so at zero the ground goes essentially
-     * black and only its lit rim survives.
+     * Master scale on the nebula fill the ground carries.
      *
-     * Held below unity because the sky behind it is black. The glow's whole job
-     * is to keep shadowed dust legible, and how much it needs to do that depends
-     * entirely on what it is being compared against: against a lit sky it could
-     * afford to be generous, against a void it reads as luminous long before it
-     * runs out of detail. At 0.75 a shadowed trough lands near output level 116
-     * against a lit slope at 179 — present, clearly a glow, not a light source.
+     * Not a stylistic nicety. One small star at thirteen degrees and a sky whose
+     * integrated irradiance is a rounding error beside it means a shadow here is
+     * as black as the void above it — which is exactly what a shadow on the real
+     * moon is, and which would leave half of most frames with nothing in them.
+     * At zero the ground goes to a lit rim and nothing else.
+     *
+     * The hue is `nebulaFill` in brand.js and this is only its magnitude. At 0.75
+     * a shadowed crater floor lands near output level 38 against sunlit highland
+     * at 172 — a four-and-a-half-stop split, which is brutal by the standards of
+     * a scene with an atmosphere in it and about right for one without.
      */
     dustGlow: 0.75,
     glintIntensity: 0.55,
@@ -139,15 +145,24 @@ export const S = {
     //
     //     the void                  0        median sky pixel         0
     //     auroral curtain, 99th    90        curtain peak           128
-    //     dust in shadow          116        dust lit by the star   179
+    //     crater floor, shadowed   38        mare, shadowed          49
+    //     mare, sunlit            145        highland, sunlit       172
     //     wake crest, full carve  211        brightest thrown grain 236
     //     sunlit suit             244
     //
     // Which is the ladder this scene wants. The sky is *black* — not dark, black,
     // at the median and at the void both — so the curtains and the star field are
     // read against nothing, and no part of the backdrop reaches the bloom
-    // threshold and glows. Everything with form in it sits in the top half of the
-    // range, and the suit is the brightest thing in frame without touching clip.
+    // threshold and glows. The ground occupies the whole middle of the range with
+    // an enormous gap across the terminator, which is the single most lunar thing
+    // about the frame, and the suit is the brightest thing in it without touching
+    // clip.
+    //
+    // The ground's own numbers moved twice and landed back where they started.
+    // Regolith reflects a third more than the violet dust it replaced, so
+    // `SUN_SCALE_BASE` in render/sky.js came down by a third to compensate and
+    // sunlit ground sits at 172 where lit dust sat at 179. Nothing else in this
+    // table had to move, which was the entire point of doing it that way.
     //
     // The ceiling is the AgX shoulder, and it is closer than it looks — a stop
     // over this and the wake crest, the grains and the suit all land in the region
@@ -207,23 +222,23 @@ export const SCHEMA = [
             { k: "aerialStrength", l: "Depth haze", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "windDirection", l: "Drift dir", t: "f", min: 0, max: 360, step: 1 },
             { k: "windStrength", l: "Drift strength", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "showMountains", l: "Far ridges", t: "b" },
-            { k: "mountainHeight", l: "Ridge height", t: "f", min: 0, max: 2500, step: 10 },
+            { k: "showMountains", l: "Far range", t: "b" },
+            { k: "mountainHeight", l: "Range height", t: "f", min: 0, max: 4000, step: 10 },
             { k: "showLightShafts", l: "Light shafts", t: "b" },
             { k: "shaftStrength", l: "Shaft amt", t: "f", min: 0, max: 2, step: 0.01 },
         ],
     },
     {
-        group: "Cosmic dust",
+        group: "The moon",
         items: [
-            { k: "dustGlow", l: "Dust glow", t: "f", min: 0, max: 3, step: 0.01 },
+            { k: "dustGlow", l: "Nebula fill", t: "f", min: 0, max: 3, step: 0.01 },
             { k: "glintIntensity", l: "Sparkle", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "glintGrazing", l: "Sparkle gate", t: "f", min: 0, max: 1, step: 0.01 },
             { k: "sssStrength", l: "Glow strength", t: "f", min: 0, max: 3, step: 0.01 },
             { k: "sssRadius", l: "Glow radius", t: "f", min: 0.1, max: 3, step: 0.01 },
             { k: "detailNormalStrength", l: "Detail normals", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "macroHeightScale", l: "Swell height", t: "f", min: 0, max: 2, step: 0.01 },
-            { k: "sastrugiStrength", l: "Ripples", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "macroHeightScale", l: "Relief height", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "sastrugiStrength", l: "Rubble", t: "f", min: 0, max: 2, step: 0.01 },
         ],
     },
     {

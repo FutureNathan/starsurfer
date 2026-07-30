@@ -41,9 +41,7 @@ import skyFrag from "./sky.fragment.wgsl?raw";
 
 import charVert from "./char.vertex.wgsl?raw";
 import charFrag from "./char.fragment.wgsl?raw";
-import clothVert from "./cloth.vertex.wgsl?raw";
 import charDepthVert from "./charDepth.vertex.wgsl?raw";
-import clothDepthVert from "./clothDepth.vertex.wgsl?raw";
 import furVert from "./fur.vertex.wgsl?raw";
 import furFrag from "./fur.fragment.wgsl?raw";
 import sprayVert from "./spray.vertex.wgsl?raw";
@@ -61,7 +59,6 @@ import crystalDepthVert from "./crystalDepth.vertex.wgsl?raw";
 import prepassFrag from "./prepass.fragment.wgsl?raw";
 import terrainPrepassVert from "./terrainPrepass.vertex.wgsl?raw";
 import charPrepassVert from "./charPrepass.vertex.wgsl?raw";
-import clothPrepassVert from "./clothPrepass.vertex.wgsl?raw";
 import wakePrepassVert from "./wakePrepass.vertex.wgsl?raw";
 import wakePrepassFrag from "./wakePrepass.fragment.wgsl?raw";
 import crystalPrepassVert from "./crystalPrepass.vertex.wgsl?raw";
@@ -102,9 +99,7 @@ const SHADERS = {
 
     charVertexShader: charVert,
     charPixelShader: charFrag,
-    clothVertexShader: clothVert,
     charDepthVertexShader: charDepthVert,
-    clothDepthVertexShader: clothDepthVert,
     furVertexShader: furVert,
     furPixelShader: furFrag,
     sprayVertexShader: sprayVert,
@@ -125,7 +120,6 @@ const SHADERS = {
     prepassPixelShader: prepassFrag,
     terrainPrepassVertexShader: terrainPrepassVert,
     charPrepassVertexShader: charPrepassVert,
-    clothPrepassVertexShader: clothPrepassVert,
     wakePrepassVertexShader: wakePrepassVert,
     wakePrepassPixelShader: wakePrepassFrag,
     crystalPrepassVertexShader: crystalPrepassVert,

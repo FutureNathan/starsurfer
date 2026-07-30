@@ -86,7 +86,13 @@ fn spaceSky(
     // Everything here is a fraction of the star's own radiance. Tying the
     // backdrop to `sunIntensity` is not physics — it is what keeps one exposure
     // calibration valid when the intensity slider moves, which matters more.
-    const SKY_SCALE: f32 = 0.036;
+    //
+    // It is also why this number has to move whenever `SUN_SCALE_BASE` in sky.js
+    // does. That constant came down from 55 to 40 when the ground became rock and
+    // its albedo went up; this went up by the same factor, so the product — which
+    // is all the backdrop ever sees — is exactly what it was. The ground moved.
+    // The sky did not.
+    const SKY_SCALE: f32 = 0.0495;
 
     // The void, and it is meant to *be* the void: black to within a fraction of
     // an output level once the display transform has had it. Not identically

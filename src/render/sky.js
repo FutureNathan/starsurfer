@@ -22,6 +22,7 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { S } from "../core/settings.js";
+import { LIN } from "../core/brand.js";
 import { whenReady } from "../core/gpuUtil.js";
 
 const LUT_W = 512;
@@ -35,15 +36,22 @@ const SH_H = 32;
  * exposure handles overall brightness — but it must be *one* number, applied to
  * both, or the star/sky ratio stops meaning anything.
  *
- * Ten times what a scene over a bright diffuse ground would want, and for one
- * reason: this ground's albedo is 0.085. Scaling the source by the factor the
- * surface lacks puts lit dust in a workable linear range,
- * which is what lets the post chain's whole calibration — the AgX exposure, the
- * bloom threshold in linear units — carry over untouched. Raising the exposure
- * instead would have moved the scene without moving the bloom threshold with it,
- * and nothing in the frame would ever have bloomed again.
+ * Seven times what a scene over a bright diffuse ground would want, and for one
+ * reason: this ground's albedo is 0.116. Scaling the source by the factor the
+ * surface lacks puts lit regolith in a workable linear range, which is what lets
+ * the post chain's whole calibration — the AgX exposure, the bloom threshold in
+ * linear units — carry over untouched. Raising the exposure instead would have
+ * moved the scene without moving the bloom threshold with it, and nothing in the
+ * frame would ever have bloomed again.
+ *
+ * It was 55, against an albedo of 0.085. When the ground became rock rather than
+ * violet dust its reflectance went up by a third, and this came down by exactly
+ * that third so sunlit ground lands back on the same 5-to-6 linear the whole
+ * chain has always been calibrated at. `SKY_SCALE` in atmosphere.wgsl carries
+ * the reciprocal, so the backdrop is untouched by the move — only the ground and
+ * the star are rescaled, and they are rescaled together.
  */
-const SUN_SCALE_BASE = 55.0;
+const SUN_SCALE_BASE = 40.0;
 
 const _dir = new Vector3();
 
@@ -71,7 +79,7 @@ export class Sky {
         this.sunRadiance = new Color3(1, 1, 1);
         /** Shared radiometric scale for the sun and the baked sky. */
         this.sunScale = 1;
-        /** Radiance leaving the dust sea, solved iteratively. */
+        /** Radiance leaving the ground, solved iteratively. */
         this.groundBounce = new Color3(0, 0, 0);
         /** Unit normal of the galactic plane. */
         this.galaxyPole = new Vector3(0, 1, 0);
@@ -440,18 +448,27 @@ const _irrTmp = new Float32Array(3);
 const _dustEmit = new Color3(0, 0, 0);
 
 /**
- * Cosmic dust reflects very little of what hits it, and what it does reflect is
- * violet. These are the same numbers the dust material carries in
- * `dust.fragment.wgsl`, lifted a little because the bounce integrates over a
- * whole hemisphere of field including its brighter disturbed patches.
+ * What the ground reflects, averaged over the field, for the bounce solve.
+ *
+ * Derived from the same two brand entries the surface itself is mixed from
+ * rather than restated, because a bounce that disagrees with the surface it is
+ * bouncing off is invisible right up until the horizon splits in two. The
+ * weighting is the mean of the shader's own `smoothstep(0.35, 0.78)` over a
+ * symmetric field, which spends about 62% of its area at the highland end — then
+ * lifted five per cent, because the hemisphere the bounce integrates over
+ * includes the brighter freshly-turned ground a run leaves behind it.
  */
-const DUST_ALBEDO = [0.10, 0.075, 0.18];
+const DUST_ALBEDO = (() => {
+    const h = LIN.regolith, m = LIN.regolithDark;
+    return [0, 1, 2].map((i) => (h[i] * 0.62 + m[i] * 0.38) * 1.05);
+})();
 
 /**
- * The dust field's own average emission, per unit of `S.dustGlow`. Derived from
- * the emissive block in `dust.fragment.wgsl`: the nebula-violet base colour
- * times the mean of its drift and welling weights, times the emissive scale the
- * terrain publishes. If that block is retuned, this has to move with it or the
- * horizon separates.
+ * The ground's own average emission, per unit of `S.dustGlow`.
+ *
+ * Derived from the emissive block in `dust.fragment.wgsl`: the nebula fill times
+ * the mean of that block's two weights — `(0.30 + 0.70 * drift)` averages 0.65
+ * and `welling` averages 0.752 — times the emissive scale the terrain publishes.
+ * If that block is retuned, this has to move with it or the horizon separates.
  */
-const DUST_EMISSION = [0.91, 0.55, 1.70];
+const DUST_EMISSION = LIN.nebulaFill.map((c) => c * 0.65 * 0.752 * 10.0);

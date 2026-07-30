@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// The cosmic dust material.
+// The regolith material.
 //
 // Normals arrive from four independent sources and have to be combined in the
 // right order or the surface stops holding together:
@@ -85,14 +85,19 @@ uniform deformDepthScale: f32;
 
 uniform ambientIntensity: f32;
 
-// --- the dust's own light ----------------------------------------------------
-// Master scale on everything the surface emits, and the two ends of its
-// emission ramp: `dustGlowColor` is what freshly disturbed and charged dust
-// burns at, `dustCoolColor` is the slow nebula glow it sits in at rest. Both
-// are radiances, so both are expected to run above 1.0.
+// --- the ground's own light --------------------------------------------------
+// Master scale on everything the surface emits, and the two ends of its emission
+// ramp: `dustCoolColor` is the neutral nebula fill the regolith sits in at rest,
+// `dustGlowColor` is what charged ground burns at. Both are radiances rather
+// than reflectances.
 uniform dustEmissive: f32;
 uniform dustGlowColor: vec3f;
 uniform dustCoolColor: vec3f;
+
+/// The two regolith terrains, from `brand.js`. Highland anorthosite and mare
+/// basalt — see the note where they are mixed.
+uniform regolithHigh: vec3f;
+uniform regolithLow: vec3f;
 
 uniform debugMode: f32;
 uniform screenSize: vec2f;
@@ -325,73 +330,86 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     ).z;
 
     // ------------------------------------------------------------- material
-    // Cosmic dust is a hard material to light. Its albedo is so low that
-    // reflected light alone leaves the field unreadable — It is dark
-    // violet — grains of silicate and ice condensing out of a nebula, seen
-    // against a sky with almost nothing in it — and what gives it form is the
-    // emissive block further down, not this.
+    // Lunar regolith: pulverised anorthosite and basalt, four billion years of
+    // it, ground to a powder by impact and darkened further by space weathering.
     //
-    // Keeping it genuinely dark matters. A pale ground under a hard raking light
-    // reads as snow no matter what hue it is tinted, because the eye takes
-    // "bright diffuse surface, low saturation" as snow before anything else.
-    var albedo = vec3f(0.085, 0.062, 0.155);
+    // Almost nobody guesses how dark it is. The moon looks white because it is
+    // the only thing in the sky and the eye has nothing to compare it against; a
+    // full moon's disc is about as reflective as worn asphalt. Getting that right
+    // is most of the difference between a moon and a snowfield, and the mistake
+    // is very hard to unsee once it is made — a bright diffuse ground under a
+    // hard raking light reads as snow whatever hue it is tinted.
+    //
+    // Two terrains, mixed by a slow field about six hundred metres across:
+    //
+    //   highland  anorthositic, the brighter and slightly warmer of the two, and
+    //             what most of this field is.
+    //   mare      flood basalt, roughly half as reflective and a touch bluer.
+    //
+    // That contrast is not decoration. It is the reason the moon has visible
+    // markings from a quarter of a million miles away, and at ground level it is
+    // what stops a crater field reading as one flat grey plane with holes in it.
+    let mare = noise2(world.xz * 0.0016) * 0.5 + 0.5;
+    var albedo = mix(
+        uniforms.regolithHigh, uniforms.regolithLow, smoothstep(0.35, 0.78, mare)
+    );
     var roughness = 0.78;
     var f0 = vec3f(0.020);
-    var thickness = 1.0; // 1 = deep drift, 0 = thin crust
+    var thickness = 1.0; // 1 = deep fines, 0 = thin over bedrock
 
-    // Packed dust: compressed under the board, denser and darker still. It does
-    // not become glossy — there is no melt layer out here to smooth it.
-    albedo = mix(albedo, vec3f(0.045, 0.035, 0.088), compression * 0.85);
+    // Compacted regolith: pressed under the board. Darker, because compressing
+    // the fluffy surface layer is exactly what destroys the structure that makes
+    // it bright — this is why rover tracks are visible from orbit. It does not
+    // become glossy; there is nothing here to melt.
+    albedo = mix(albedo, vec3f(0.062, 0.058, 0.055), compression * 0.85);
     roughness = mix(roughness, 0.52, compression);
     thickness = mix(thickness, 0.35, compression);
 
-    // Charged dust: the fourth deformation channel. Where the board's edge or a
-    // power has dumped energy into the field, the grains fuse into a smooth
-    // vitrified glaze — genuinely mirror-like, and the one thing in the scene
-    // that still feeds the screen-space reflection pass.
-    albedo = mix(albedo, vec3f(0.16, 0.10, 0.34), iceAmount * 0.8);
+    // Impact glass: the fourth deformation channel. Where the board's rail or a
+    // power has dumped energy into the ground, the fines fuse into agglutinate —
+    // a dark, genuinely mirror-like glaze, and the one thing in the scene that
+    // still feeds the screen-space reflection pass. Real, too: a third of the
+    // Apollo soil samples by weight is exactly this.
+    albedo = mix(albedo, vec3f(0.105, 0.108, 0.118), iceAmount * 0.8);
     roughness = mix(roughness, 0.07, iceAmount);
     f0 = mix(f0, vec3f(0.045), iceAmount);
     thickness = mix(thickness, 0.15, iceAmount);
 
-    // Asteroid shards standing out of the dust sea. Dust settles on the flatter
-    // faces, so the mask is gated by slope rather than applied flat.
+    // Bedrock, on the massif faces too steep to hold anything. Brighter than the
+    // regolith rather than darker, which is the right way round and the more
+    // useful one: unweathered highland rock is the most reflective thing on the
+    // moon, so the mountains carry a pale edge against the sky instead of going
+    // to silhouette.
     let rockExposed = rockMask * smoothstep(0.32, 0.66, 1.0 - N.y);
     if (rockExposed > 0.001) {
         let rn = noise2(world.xz * 2.3) * 0.5 + 0.5;
-        let rockCol = mix(vec3f(0.030, 0.028, 0.042), vec3f(0.072, 0.062, 0.088), rn);
+        let rockCol = mix(vec3f(0.078, 0.074, 0.069), vec3f(0.155, 0.148, 0.137), rn);
         albedo = mix(albedo, rockCol, rockExposed);
         roughness = mix(roughness, 0.85, rockExposed);
         thickness = mix(thickness, 0.0, rockExposed);
     }
 
     // --- freshly thrown mass -----------------------------------------------
-    // Displaced dust is the opposite of packed dust: it has just been broken up
-    // and thrown, so it is loose, bright and rough. Without this the berms shade
-    // identically to the trench and the whole trail flattens into one smear.
+    // Displaced regolith is the opposite of compacted regolith: it has just been
+    // broken open and thrown, so it is loose, bright and rough. Without this the
+    // berms shade identically to the trench and the whole trail flattens into
+    // one smear.
     //
-    // Neither number here may make a worked patch *less violet*, which is the
-    // one axis this material cannot afford to lose. Drain the cast out of a
-    // heavily carved patch and it reads as bare ground even while its luminance
-    // goes up — a neutral-grey scar across a violet field is not the same
-    // material, and the eye reads it as a texturing error rather than as a trail.
+    // Brighter, and that is the honest answer as well as the legible one. Space
+    // weathering only reaches the top few millimetres — the implanted iron that
+    // darkens a mature surface is a skin — so turning it over exposes immature
+    // material underneath. Apollo trenching photographs show exactly this: a
+    // pale streak where the surface has been opened.
     //
-    //  1. The loose colour is brighter than settled dust in every channel and
-    //     slightly more saturated, not less. That is also the truer answer:
-    //     freshly broken grains have far more surface per unit volume and
-    //     scatter more, and scattering is where the dust's colour comes from in
-    //     the first place.
-    //  2. Roughness goes *up* on loose mass, unlike snow, where a berm packs
-    //     under its own weight almost immediately. There is no melt layer out
-    //     here and nothing to press it, so broken dust stays broken — and the
-    //     high roughness is what keeps the emissive glow reading as coming from
-    //     inside the mass rather than off its surface.
+    // Roughness goes *up* on loose mass, unlike snow, where a berm packs under
+    // its own weight almost immediately. In a sixth of a gravity with no water
+    // and no air, broken ground stays broken.
     if (deformBerm > 0.002) {
         let loose = clamp(deformBerm * 5.0, 0.0, 1.0);
-        albedo = mix(albedo, vec3f(0.155, 0.115, 0.265), loose * 0.55);
+        albedo = mix(albedo, vec3f(0.170, 0.158, 0.146), loose * 0.55);
         roughness = mix(roughness, 0.86, loose * 0.7);
         thickness = mix(thickness, 1.0, loose * 0.6);
-        // Broken dust has facets pointing everywhere, which is where the chunky
+        // Broken ground has facets pointing everywhere, which is where the chunky
         // granular read at a trail edge actually comes from.
         let chunk = noise2(world.xz * 34.0) * 0.5 + 0.5;
         albedo *= 1.0 - loose * 0.10 * chunk;
@@ -428,10 +446,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     const INV_PI: f32 = 0.31830988618;
 
     // --- direct diffuse, wrapped -------------------------------------------
-    // The mean free path through packed grains is millimetres, so light wraps
-    // well past the geometric terminator. This is why the terminator on a swell
-    // is soft even where the shadow map is pin sharp. It is also the *only*
-    // thing softening it: one hard star, and no sky dome behind it.
+    // The mean free path through the fines is under a millimetre, so light wraps
+    // a little past the geometric terminator. This is why the terminator on a
+    // crater rim is not a razor line even where the shadow map is pin sharp. It
+    // is also the *only* thing softening it: one hard star, and no sky behind it.
     let wrapAmount = mix(0.62, 0.15, max(compression, rockExposed));
     let diff = wrapDiffuse(NdotL, wrapAmount);
     var direct = albedo * INV_PI * sunRadiance * diff * shadow;
@@ -458,9 +476,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     // --- ambient -----------------------------------------------------------
-    // Sky irradiance from SH. Violet by construction — it is the nebula and the
-    // sea's own glow — which is the other half of the warm-star / cool-shadow
-    // split the whole look rests on.
+    // Sky irradiance from SH. Cool by construction — it is the nebula overhead
+    // and the ground's own fill — which is the other half of the warm-star /
+    // cool-shadow split the whole look rests on.
     var irradiance = shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
     // Near-field bounce, and deliberately small.
@@ -536,50 +554,55 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     //     it is a *brown* trench, and it lands there because AgX stops rolling
     //     saturation off half a stop below its shoulder.
     //
-    //  2. Wherever it does darken, it goes violet in proportion. Light reaching
-    //     into a hollow has scattered through the dust to get there, and the dust
-    //     absorbs red over any appreciable path — the same mechanism that makes a
-    //     real snow cave blue, on a medium whose own colour is violet. The tint
-    //     is the same `deepTint` the subsurface term uses, and tying it to the
-    //     darkening rather than to `deformDepth` means the two cannot drift.
-    let caveTint = mix(vec3f(1.0), vec3f(0.62, 0.48, 1.0), (1.0 - ao) * 0.95);
+    //  2. Wherever it does darken, it cools in proportion. The only thing that
+    //     reaches into a hollow here is the nebula overhead, and the nebula is
+    //     blue-violet, so the deeper the crevice the more completely its light is
+    //     that and not the star's. Far weaker than it was: the tint used to run
+    //     to a saturated violet, which was right for a violet medium and is
+    //     plainly wrong for grey rock. Tying it to the darkening rather than to
+    //     `deformDepth` means the two cannot drift apart.
+    let caveTint = mix(vec3f(1.0), vec3f(0.74, 0.76, 0.88), (1.0 - ao) * 0.95);
     color *= ao * caveTint;
 
-    // ---------------------------------------------------- the dust's own light
-    // Deep space gives this surface almost nothing. One small hard star, and a
-    // sky whose integrated irradiance is a rounding error beside it. Lit alone,
-    // the field would be a black plane with a bright rim and no readable form
-    // anywhere between the crests.
+    // ------------------------------------------------------- the ground's glow
+    // Deep space gives this surface almost nothing. One small hard star at
+    // thirteen degrees, and a sky whose integrated irradiance is a rounding error
+    // beside it. Lit alone, a shadow here would be as black as the sky behind it
+    // — which is what a shadow on the real moon is, and which would leave half of
+    // every frame with nothing in it at all.
     //
-    // So it emits. Three sources, largest scale first:
+    // So the ground carries a small amount of its own light. Two sources:
     //
-    //   drift   A slow violet glow keyed to a very low-frequency noise: the
-    //           nebula the field is condensing out of, seen *through* the grains
-    //           rather than reflected off them. Weighted into the cavities, so
-    //           the troughs well up and the crests stay dark except where the
-    //           star rakes them. That inversion is what makes the swells read —
-    //           the eye takes form from the emission gradient where it would
-    //           normally take it from N·L, and the two run in opposite
-    //           directions, which is exactly why the surface does not flatten
+    //   fill    The nebula overhead, seen through the top millimetre of fines
+    //           rather than reflected off them. Neutral and cold, and weighted
+    //           into the cavities so the low ground wells up and the high ground
+    //           stays dark except where the star rakes it. That inversion is what
+    //           makes the relief read — the eye takes form from the fill gradient
+    //           where it would normally take it from N·L, and the two run in
+    //           opposite directions, which is why the surface does not flatten
     //           the way an emissive-plus-lit surface usually does.
-    //   fresh   Mass the board has just thrown. Freshly broken grains have far
-    //           more surface per unit volume and shed their charge at once, so a
-    //           carve is the brightest thing on the ground.
-    //   charge  The deformation buffer's fourth channel — refrozen ice once,
-    //           accumulated energy now. It burns gold and it lingers, which is
-    //           what leaves a trail behind the board rather than a flash.
+    //   charge  The deformation buffer's fourth channel: energy the board's rail
+    //           or a power has dumped into the ground. Gold, and it lingers,
+    //           which is what leaves a trail rather than a flash.
+    //
+    // Both were several times brighter, and between them they were most of what
+    // made this ground read as lava — a violet field with a gold glow welling out
+    // of every carved edge. The fill is now neutral and about a third of what it
+    // was, and the berm glow is gone entirely: freshly turned ground is brighter
+    // because it is *more reflective*, which is handled in the albedo above,
+    // where a material property belongs. What is left of the charge glow is a
+    // trail that clears the bloom knee and nothing else does.
     //
     // Added after the occlusion multiply and before aerial perspective. A hollow
-    // that glows must not be dimmed by its own hollowness; it must still haze
-    // out with distance like everything else, or the far field becomes a band of
-    // flat violet pasted in front of the sky.
+    // that glows must not be dimmed by its own hollowness; it must still haze out
+    // with distance like everything else, or the far field becomes a flat band
+    // pasted in front of the sky.
     var emissive = vec3f(0.0);
     {
         let drift = noise2(world.xz * 0.035) * 0.5 + 0.5;
         let welling = mix(0.55, 1.0, 1.0 - cavity) * mix(0.7, 1.0, 1.0 - ao);
         emissive += uniforms.dustCoolColor * (0.30 + 0.70 * drift) * welling;
-        emissive += uniforms.dustGlowColor * clamp(deformBerm * 5.0, 0.0, 1.0) * 1.2;
-        emissive += uniforms.dustGlowColor * iceAmount * 1.8;
+        emissive += uniforms.dustGlowColor * iceAmount * 0.45;
         emissive *= uniforms.dustEmissive * (1.0 - rockExposed * 0.8);
     }
     color += emissive;

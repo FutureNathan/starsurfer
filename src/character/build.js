@@ -5,16 +5,18 @@
  * swept ring or a sphere evaluated from the bind-pose skeleton, so the whole
  * astronaut is a few hundred lines of tables and a smooth-normal pass.
  *
- * Three meshes come out, because three different vertex programs drive them:
+ * Two meshes come out, because two different vertex programs drive them:
  *
  *   body   linearly blend-skinned to the bones — helmet, faceplate, pressure
  *          suit, life-support pack, gloves, boots, and the board under them.
- *   cloth  driven from the simulated soft goods — the two sleeves — sampled
- *          with Catmull-Rom in the vertex shader so a
- *          coarse solve renders as a smooth surface.
  *   nap    shell layers of multi-layer insulation: the same seam ring emitted N
  *          times, each pushed further along its normal, alpha-tested into
  *          fibres.
+ *
+ * There was a third, driven by a cloth solve. Everything it carried is now lofted
+ * geometry here: the arms below took over the sleeves' silhouette outright, which
+ * is why their radii look large for the arms inside them. A suit arm is far fatter
+ * than an arm, and the bulk has to come from somewhere.
  *
  * Normals are never derived analytically. Everything is built as positions plus
  * indices and then run through one area-weighted smooth-normal pass, which is
@@ -410,9 +412,13 @@ export function buildBody(scene) {
         const fo = a === 0 ? B_FORE_L : B_FORE_R;
         const hd = a === 0 ? B_HAND_L : B_HAND_R;
 
+        // 92 mm at the shoulder down to 79 mm at the elbow, which is the loose
+        // sleeve's own profile rather than the arm's: with the sleeve gone this
+        // tube *is* the outside of the suit, and an arm drawn at the size of the
+        // limb inside a pressure garment reads as a wetsuit.
         const upper = limbRings(
             s * 0.185, 1.400, 0, s * 0.230, 1.123, 0,
-            0.078, 0.064, 4, up, fo, 0.62, 0.72, 1.0
+            0.092, 0.079, 4, up, fo, 0.62, 0.72, 1.0
         );
         loft(B, upper, M_SUIT, [0, 0, 1], true, false);
 
@@ -420,31 +426,31 @@ export function buildBody(scene) {
         // limbs are otherwise two smooth tubes, and without a break at each
         // joint the arm reads as a length of pipe no matter how it is posed.
         const shoulder = [
-            ring(s * 0.187, 1.386, 0, 0.085, 0.081, 0.52, [up, 1, 0, 0]),
-            ring(s * 0.193, 1.350, 0, 0.088, 0.084, 0.50, [up, 1, 0, 0]),
-            ring(s * 0.199, 1.314, 0, 0.084, 0.080, 0.52, [up, 1, 0, 0]),
+            ring(s * 0.187, 1.386, 0, 0.099, 0.095, 0.52, [up, 1, 0, 0]),
+            ring(s * 0.193, 1.350, 0, 0.102, 0.098, 0.50, [up, 1, 0, 0]),
+            ring(s * 0.199, 1.314, 0, 0.098, 0.094, 0.52, [up, 1, 0, 0]),
         ];
         loft(B, shoulder, M_SOFT, [0, 0, 1], false, false);
 
         const elbow = [
-            ring(s * 0.226, 1.152, 0, 0.070, 0.066, 0.50, [up, 0.7, fo, 0.3]),
-            ring(s * 0.230, 1.123, 0, 0.074, 0.070, 0.48, [up, 0.4, fo, 0.6]),
-            ring(s * 0.234, 1.094, 0.002, 0.070, 0.066, 0.50, [up, 0.1, fo, 0.9]),
+            ring(s * 0.226, 1.152, 0, 0.084, 0.080, 0.50, [up, 0.7, fo, 0.3]),
+            ring(s * 0.230, 1.123, 0, 0.088, 0.084, 0.48, [up, 0.4, fo, 0.6]),
+            ring(s * 0.234, 1.094, 0.002, 0.084, 0.080, 0.50, [up, 0.1, fo, 0.9]),
         ];
         loft(B, elbow, M_SOFT, [0, 0, 1], false, false);
 
         const fore = limbRings(
             s * 0.230, 1.123, 0, s * 0.243, 0.866, 0.016,
-            0.062, 0.054, 4, fo, hd, 0.62, 0.75, 1.0
+            0.076, 0.068, 4, fo, hd, 0.62, 0.75, 1.0
         );
         loft(B, fore, M_SUIT, [0, 0, 1], false, false);
 
         // Wrist bearing: the glove disconnect. Straddles the hand bone so the
         // band turns with the glove rather than shearing across the joint.
         const wrist = [
-            ring(s * 0.242, 0.906, 0.014, 0.062, 0.058, 0.55, [fo, 0.5, hd, 0.5]),
-            ring(s * 0.243, 0.880, 0.016, 0.064, 0.060, 0.55, [hd, 1, 0, 0]),
-            ring(s * 0.244, 0.860, 0.018, 0.060, 0.056, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.242, 0.906, 0.014, 0.076, 0.072, 0.55, [fo, 0.5, hd, 0.5]),
+            ring(s * 0.243, 0.880, 0.016, 0.078, 0.074, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.244, 0.860, 0.018, 0.074, 0.070, 0.55, [hd, 1, 0, 0]),
         ];
         loft(B, wrist, M_METAL, [0, 0, 1], false, false);
 
@@ -452,10 +458,10 @@ export function buildBody(scene) {
         // noise; a clean silhouette reads better and costs nothing, and a
         // pressurised glove barely articulates anyway.
         const hand = [
-            ring(s * 0.243, 0.866, 0.016, 0.050, 0.043, 0.55, [hd, 1, 0, 0]),
-            ring(s * 0.245, 0.818, 0.025, 0.057, 0.046, 0.55, [hd, 1, 0, 0]),
-            ring(s * 0.247, 0.776, 0.034, 0.052, 0.041, 0.52, [hd, 1, 0, 0]),
-            ring(s * 0.248, 0.748, 0.040, 0.034, 0.030, 0.50, [hd, 1, 0, 0]),
+            ring(s * 0.243, 0.866, 0.016, 0.064, 0.055, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.245, 0.818, 0.025, 0.070, 0.058, 0.55, [hd, 1, 0, 0]),
+            ring(s * 0.247, 0.776, 0.034, 0.063, 0.050, 0.52, [hd, 1, 0, 0]),
+            ring(s * 0.248, 0.748, 0.040, 0.042, 0.036, 0.50, [hd, 1, 0, 0]),
         ];
         loft(B, hand, M_GLOVE, [0, 0, 1], false, true);
     }
@@ -759,10 +765,9 @@ const CUFF_SHELLS = 10;
  * pelt, and at that length ten shells is plenty — which matters, because these
  * are the only alpha-tested layers on the character.
  *
- * Bone-bound rather than cloth-bound, deliberately: the neck seam rides the
- * head and the cuffs ride the gloves, both of which are rigid. Binding nap to a
- * simulated surface would need the shell direction to come out of the cloth
- * solve — a second vertex program, for very little visible gain.
+ * Bone-bound, which is now the only option and was always the right one: the
+ * neck seam rides the head and the cuffs ride the gloves, and both of those are
+ * rigid parts.
  */
 export function buildFur(scene) {
     const B = new Builder();
@@ -801,9 +806,9 @@ export function buildFur(scene) {
             // Just below the wrist bearing, on the glove side of it, where the
             // blanket is clamped hard enough that a bone-bound band cannot
             // visibly separate from what it is meant to be attached to.
-            cb[c * 3] = s * 0.244 + rx * 0.058;
+            cb[c * 3] = s * 0.244 + rx * 0.072;
             cb[c * 3 + 1] = 0.848;
-            cb[c * 3 + 2] = 0.018 + rz * 0.058;
+            cb[c * 3 + 2] = 0.018 + rz * 0.072;
             co[c * 3] = rx; co[c * 3 + 1] = 0; co[c * 3 + 2] = rz;
         }
         emitFurBand(B, n, cb, co, 0.010, 0.016, CUFF_SHELLS, bone, 0.60);
@@ -933,72 +938,5 @@ function finishSkinned(scene, name, B, isFur) {
     mesh.freezeWorldMatrix();
     mesh.doNotSyncBoundingInfo = true;
     mesh.metadata = { triangles: idx.length / 3, vertices: pos.length / 3, fur: !!isFur };
-    return mesh;
-}
-
-// -----------------------------------------------------------------------------
-//  Cloth render mesh
-// -----------------------------------------------------------------------------
-
-/**
- * The render mesh for the simulated soft goods.
- *
- * It carries no positions of its own — `position` is `(u, v, panelIndex)` and
- * the vertex shader reconstructs the surface by Catmull-Rom interpolation of the
- * panel's simulated node grid. That decoupling is what lets a 24x14 verlet solve
- * render as a smooth 48x28 surface, and it means the sim cost is independent of
- * how finely the panel is tessellated.
- *
- * @param {import("./cloth.js").ClothPanel[]} panels
- */
-export function buildClothMesh(scene, panels) {
-    const pos = [];
-    const uv = [];
-    const aux = [];
-    const idx = [];
-
-    for (let pi = 0; pi < panels.length; pi++) {
-        const p = panels[pi];
-        const cu = p.renderCols;
-        const cv = p.renderRows;
-        const base = pos.length / 3;
-
-        for (let j = 0; j <= cv; j++) {
-            const v = j / cv;
-            for (let i = 0; i <= cu; i++) {
-                const u = i / cu;
-                pos.push(u, v, pi);
-                uv.push(u * p.weaveU, v * p.weaveV);
-                // (matId, ao). Panels darken toward their free edge, where they
-                // sit in their own folds.
-                aux.push(p.matId, p.aoTop + (p.aoBottom - p.aoTop) * v);
-            }
-        }
-
-        const stride = cu + 1;
-        for (let j = 0; j < cv; j++) {
-            for (let i = 0; i < cu; i++) {
-                const a = base + j * stride + i;
-                const b = a + 1;
-                const c = a + stride;
-                const d = c + 1;
-                idx.push(a, b, d, a, d, c);
-            }
-        }
-    }
-
-    const mesh = new Mesh("charCloth", scene);
-    const vd = new VertexData();
-    vd.positions = new Float32Array(pos);
-    vd.indices = new Uint32Array(idx);
-    vd.uvs = new Float32Array(uv);
-    vd.applyToMesh(mesh, false);
-    mesh.setVerticesData("aux", new Float32Array(aux), false, 2);
-
-    mesh.alwaysSelectAsActiveMesh = true;
-    mesh.isPickable = false;
-    mesh.freezeWorldMatrix();
-    mesh.doNotSyncBoundingInfo = true;
-    mesh.metadata = { triangles: idx.length / 3, vertices: pos.length / 3 };
     return mesh;
 }

@@ -118,9 +118,55 @@ const BOOT_SOLE = 0.022;
  */
 const BOARD_STAND = 2 * BOARD_HALF_T + BOOT_SOLE - 0.004;
 
-/** Board footprint: half the stance width and half its fore-aft stagger. */
-const STANCE_LATERAL = 0.100;
-const STANCE_ALONG = 0.240;
+/**
+ * The surf stance, in board-local metres and radians.
+ *
+ * A surfer does not face the way the board is pointing. Both feet stand *on* the
+ * stringer, one behind the other, and the body is turned across the deck — which
+ * is the read that separates surfing from standing on a plank, and it is what the
+ * earlier stance was missing: two feet either side of the centreline with the
+ * chest pointed down the nose is a snowboarder's beginner traverse at best.
+ *
+ * Regular-footed, so the left foot is the front one. `STANCE_OPEN` is how far the
+ * pelvis turns toward the toe-side rail, and the derivation for its sign is worth
+ * keeping: with the nose along +Z the toe side is +X, a body facing +X has its
+ * left flank toward +Z, and +X is `facing` rotated by +90 degrees about the up
+ * axis in this left-handed frame. So a *positive* open angle is what puts the left
+ * foot forward.
+ *
+ * Sixty-six degrees rather than a full ninety. Ninety is a photograph of a bottom
+ * turn, not a cruise, and it also puts the figure's own forward axis exactly
+ * across the direction of travel, where every fore-aft term in the pose — the
+ * speed lean, the acceleration pitch — would be applied sideways.
+ */
+const STANCE_OPEN = 1.15;
+/**
+ * How much of the open angle the neck takes back, so the visor keeps looking
+ * down the line rather than out at the rail. Anything much under this and the
+ * astronaut is riding blind, which reads instantly as wrong even at fifteen
+ * metres — the helmet is the one part of the silhouette that says where the
+ * attention is.
+ */
+const STANCE_LOOK = 0.80;
+/**
+ * Each foot's own angle across the deck, as a multiple of `STANCE_OPEN`. The
+ * front foot sits open at about fifty degrees and the back foot nearly square
+ * across at eighty-five, which is the asymmetry every stance actually has: the
+ * front foot steers and the back foot drives.
+ */
+const FOOT_OPEN_FRONT = 0.76;
+const FOOT_OPEN_BACK = 1.28;
+/** Front and back foot positions along the stringer, metres from the waist. */
+const STANCE_FRONT = 0.260;
+const STANCE_BACK = 0.300;
+/**
+ * How far off the stringer each foot sits. Almost nothing, and in opposite
+ * directions: the front foot a little toward the toe-side rail, the back foot a
+ * little toward the heel. Both are inside the boot's own half-width, so what this
+ * actually does is stop the two boots reading as one line.
+ */
+const STANCE_TOE = 0.045;
+const STANCE_HEEL = 0.028;
 
 // ------------------------------------------------------- module-scope scratch
 const _axes = new Float32Array(9);   // X, Y, Z of a composed basis
@@ -132,12 +178,22 @@ const _gnd = new Vector3(0, 1, 0);   // terrain normal under the board
 
 /**
  * Compose an orthonormal basis from yaw, then pitch about its own right axis,
- * then roll about its own forward axis. Writes X, Y, Z into `_axes`.
+ * then roll about its own forward axis, then `open` about its own up axis.
+ * Writes X, Y, Z into `_axes`.
  *
  * Positive pitch leans forward, positive roll tips the head to the character's
  * right — which is the sign the controller's `lean` already uses.
+ *
+ * `open` is the surf stance, and it is deliberately applied *last* rather than
+ * folded into `yaw`. Everything the pose computes about pitch and roll is stated
+ * relative to the direction of travel: the speed lean, the acceleration lean, the
+ * bank into a carve. Turning the figure by adding to `yaw` would rotate those
+ * axes with it, so leaning into a turn would tip the surfer toward the nose
+ * instead of over the inside rail. Turning it about the already-leaned up axis
+ * keeps travel-relative attitude travel-relative and makes the stance a pure
+ * twist on top of it.
  */
-function composeBasis(yaw, pitch, roll) {
+function composeBasis(yaw, pitch, roll, open) {
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
     let xx = cy, xy = 0, xz = -sy;
     let yx = 0, yy = 1, yz = 0;
@@ -154,6 +210,15 @@ function composeBasis(yaw, pitch, roll) {
         const nxx = xx * c - yx * s, nxy = xy * c - yy * s, nxz = xz * c - yz * s;
         const nyx = yx * c + xx * s, nyy = yy * c + xy * s, nyz = yz * c + xz * s;
         xx = nxx; xy = nxy; xz = nxz; yx = nyx; yy = nyy; yz = nyz;
+    }
+    if (open) {
+        // Z' = Z cos + X sin, and X' = Y x Z' works out to X cos - Z sin. Both
+        // stay unit-length and mutually perpendicular for free, which is why this
+        // is written out rather than run through a re-orthogonalisation.
+        const c = Math.cos(open), s = Math.sin(open);
+        const nzx = zx * c + xx * s, nzy = zy * c + xy * s, nzz = zz * c + xz * s;
+        const nxx = xx * c - zx * s, nxy = xy * c - zy * s, nxz = xz * c - zz * s;
+        xx = nxx; xy = nxy; xz = nxz; zx = nzx; zy = nzy; zz = nzz;
     }
 
     _axes[0] = xx; _axes[1] = xy; _axes[2] = xz;
@@ -257,6 +322,9 @@ export class Figure {
         this.headPitch = 0;
         this.helmetYaw = 0;
         this.helmetPitch = 0;
+        /** How far the head and helmet are turned off the direction of travel. */
+        this.headOpen = 0;
+        this.helmetOpen = 0;
         this.armPhase = 0;
         /** How far the figure has settled into the dust, metres. */
         this.sink = 0.04;
@@ -325,6 +393,15 @@ export class Figure {
 
         const rootY = groundY - this.sink + this.hipY + this.bob;
 
+        // How far across the board the figure is standing this frame. Eased by
+        // `surf` exactly like the crouch and the board's own attitude, so the
+        // astronaut turns into the stance as the board comes under the feet
+        // rather than snapping into it.
+        const open = surf * STANCE_OPEN;
+
+        // The travel-aligned frame. The legs and the feet are solved in this one
+        // — a planted foot points where the figure is going, and while surfing
+        // each boot is turned off it by its own angle in `_poseLeg`.
         composeBasis(ch.facing, this.pitch, this.roll);
         const rX = _axes[0], rY = _axes[1], rZ = _axes[2];
         const uX = _axes[3], uY = _axes[4], uZ = _axes[5];
@@ -333,20 +410,26 @@ export class Figure {
         // Pelvis. Its yaw counter-rotates against the shoulders during a stride,
         // which is most of what stops a procedural walk reading as a shop dummy.
         const twist = (1 - surf) * 0.13 * run * Math.sin(2 * Math.PI * ch.gaitPhase);
-        composeBasis(ch.facing + twist, this.pitch, this.roll);
-        this._setBone(B_ROOT, gx, rootY, gz, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
+        composeBasis(ch.facing + twist, this.pitch, this.roll, open);
+        const pRx = _axes[0], pRy = _axes[1], pRz = _axes[2];
+        const pUx = _axes[3], pUy = _axes[4], pUz = _axes[5];
+        const pFx = _axes[6], pFy = _axes[7], pFz = _axes[8];
+        this._setBone(B_ROOT, gx, rootY, gz, pUx, pUy, pUz, pFx, pFy, pFz);
 
         // Spine and chest lift along the pelvis up-axis, with the chest twisting
         // the opposite way and leaning a little further forward.
         const spineY = rootY + uY * 0.11;
         this._setBone(
             B_SPINE, gx + uX * 0.11, spineY, gz + uZ * 0.11,
-            uX, uY, uZ, fX, fY, fZ
+            pUx, pUy, pUz, pFx, pFy, pFz
         );
 
         const chestTwist = -twist * 1.5;
         const chestPitch = this.pitch + 0.05 * run + surf * 0.10;
-        composeBasis(ch.facing + chestTwist, chestPitch, this.roll * 1.15);
+        // The shoulders open a little further than the hips — about eight degrees
+        // at a full stance. A surfer's chest leads the pelvis round, and the small
+        // difference is what stops the torso reading as one rigid block.
+        composeBasis(ch.facing + chestTwist, chestPitch, this.roll * 1.15, open * 1.12);
         const cUx = _axes[3], cUy = _axes[4], cUz = _axes[5];
         const cFx = _axes[6], cFy = _axes[7], cFz = _axes[8];
         const cRx = _axes[0], cRy = _axes[1], cRz = _axes[2];
@@ -362,7 +445,14 @@ export class Figure {
         // it sits on. Real necks do this and it is very obvious when missing.
         this.headPitch = damp(this.headPitch, -chestPitch * 0.62 + surf * 0.10, 9, h);
         this.headYaw = damp(this.headYaw, ch.lean * -0.22, 6, h);
-        composeBasis(ch.facing + chestTwist + this.headYaw, chestPitch + this.headPitch, this.roll * 0.5);
+        // The neck takes most of the stance back, so what is left is a head
+        // turned about fifteen degrees off the direction of travel — looking down
+        // the line, which is where a surfer looks.
+        this.headOpen = damp(this.headOpen, open * (1 - STANCE_LOOK), 9, h);
+        composeBasis(
+            ch.facing + chestTwist + this.headYaw, chestPitch + this.headPitch,
+            this.roll * 0.5, this.headOpen
+        );
         const headX = neckX + cUx * 0.09, headY = neckY + cUy * 0.09, headZ = neckZ + cUz * 0.09;
         this._setBone(B_HEAD, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
 
@@ -374,15 +464,22 @@ export class Figure {
         // sixty hertz, and it is enough to keep the helmet from feeling welded.
         this.helmetYaw = damp(this.helmetYaw, ch.facing + chestTwist + this.headYaw, 60, h);
         this.helmetPitch = damp(this.helmetPitch, chestPitch + this.headPitch, 60, h);
-        composeBasis(this.helmetYaw, this.helmetPitch, this.roll * 0.5);
+        this.helmetOpen = damp(this.helmetOpen, this.headOpen, 60, h);
+        composeBasis(this.helmetYaw, this.helmetPitch, this.roll * 0.5, this.helmetOpen);
         this._setBone(B_HELMET, headX, headY, headZ, _axes[3], _axes[4], _axes[5], _axes[6], _axes[7], _axes[8]);
 
         // -------------------------------------------------------------- arms
         this._poseArms(h, ch, chestX, chestY, chestZ, cRx, cRy, cRz, cUx, cUy, cUz, cFx, cFy, cFz);
 
         // -------------------------------------------------------------- legs
-        this._poseLeg(0, gx, rootY, gz, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ);
-        this._poseLeg(1, gx, rootY, gz, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ);
+        // The hips are carried by the *pelvis* frame, so with the stance open the
+        // left hip sits toward the nose and the right toward the tail — which is
+        // what keeps the leg IK short and natural in a sideways stance instead of
+        // making each leg reach diagonally across the board.
+        this._poseLeg(0, gx, rootY, gz, pRx, pRy, pRz, uX, uY, uZ, fX, fY, fZ,
+                      open * FOOT_OPEN_FRONT);
+        this._poseLeg(1, gx, rootY, gz, pRx, pRy, pRz, uX, uY, uZ, fX, fY, fZ,
+                      open * FOOT_OPEN_BACK);
 
         // ------------------------------------------------------------- board
         this._poseBoard(ch, gx, groundY, gz, chestX, chestY, chestZ,
@@ -490,14 +587,14 @@ export class Figure {
         // Surfing: both feet ride the board. Blended in, never snapped.
         if (surf > 0.001) {
             for (let f = 0; f < 2; f++) {
-                // A surf stance: the feet run *down* the stringer, the left
-                // forward and the right back, only a hand's width apart across
-                // the board — not planted across it at either end the way a
-                // strapped-in board is ridden. `STANCE_ALONG` is what decides
-                // how long the deck has to be, and `STANCE_LATERAL` plus the
-                // boot's own half-width is what decides how wide.
-                const lateral = f === 0 ? -STANCE_LATERAL : STANCE_LATERAL;
-                const along = f === 0 ? STANCE_ALONG : -STANCE_ALONG;
+                // Both feet on the stringer, one behind the other: left foot
+                // forward of the waist, right foot behind it, and each only a
+                // few centimetres off the centreline in opposite directions.
+                // `STANCE_FRONT + STANCE_BACK` is what decides how long the deck
+                // has to be — 56 cm here, against a deck that runs 94 cm forward
+                // of the bone and 88 back.
+                const lateral = f === 0 ? STANCE_TOE : -STANCE_HEEL;
+                const along = f === 0 ? STANCE_FRONT : -STANCE_BACK;
                 const sx = ch.position.x + fwdX * along + rgtX * lateral;
                 const sz = ch.position.z + fwdZ * along + rgtZ * lateral;
                 // Standing on the deck, which is itself planing on the dust the
@@ -519,8 +616,15 @@ export class Figure {
      * The knee pole tilts outward as well as forward, because a knee that bends
      * in a perfectly sagittal plane looks mechanical — real legs track slightly
      * wide of the hip.
+     *
+     * `rX/rY/rZ` is the *pelvis* right axis, so the hips travel round with the
+     * surf stance; `fX..fZ` and `uX..uZ` are the travel-aligned frame, and `open`
+     * is how far this particular boot is turned off it. Rotating the forward
+     * reference rather than the whole frame is what lets one foot sit at fifty
+     * degrees across the deck and the other at eighty-five, which no single body
+     * transform can express.
      */
-    _poseLeg(f, rootX, rootY, rootZ, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ) {
+    _poseLeg(f, rootX, rootY, rootZ, rX, rY, rZ, uX, uY, uZ, fX, fY, fZ, open) {
         const side = f === 0 ? -0.10 : 0.10;
         const hipB = f === 0 ? B_THIGH_L : B_THIGH_R;
         const shinB = f === 0 ? B_SHIN_L : B_SHIN_R;
@@ -535,22 +639,38 @@ export class Figure {
         const ay = this.footPos[f * 3 + 1] + 0.09; // ankle sits above the sole
         const az = this.footPos[f * 3 + 2];
 
+        // This boot's own heading: the travel frame turned about the up axis by
+        // `open`, the same rotation `composeBasis` applies to the body.
+        let tFx = fX, tFy = fY, tFz = fZ;
+        let tRx = uY * fZ - uZ * fY, tRy = uZ * fX - uX * fZ, tRz = uX * fY - uY * fX;
+        if (open) {
+            const c = Math.cos(open), s = Math.sin(open);
+            const nFx = fX * c + tRx * s, nFy = fY * c + tRy * s, nFz = fZ * c + tRz * s;
+            const nRx = tRx * c - fX * s, nRy = tRy * c - fY * s, nRz = tRz * c - fZ * s;
+            tFx = nFx; tFy = nFy; tFz = nFz;
+            tRx = nRx; tRy = nRy; tRz = nRz;
+        }
+
+        // The knee tracks out over the toes, so the pole follows the boot round
+        // rather than staying square to the direction of travel. In a surf stance
+        // that is the difference between two knees bent over the rail and two
+        // bent along the board with the feet pointing across it.
         const outward = f === 0 ? -0.22 : 0.22;
         solveTwoBone(
             _hip[0], _hip[1], _hip[2], ax, ay, az,
-            fX + rX * outward, fY + rY * outward, fZ + rZ * outward,
+            tFx + tRx * outward, tFy + tRy * outward, tFz + tRz * outward,
             THIGH_LEN, SHIN_LEN, _knee
         );
 
         this._setBone(
             hipB, _hip[0], _hip[1], _hip[2],
             _knee[0] - _hip[0], _knee[1] - _hip[1], _knee[2] - _hip[2],
-            fX, fY, fZ
+            tFx, tFy, tFz
         );
         this._setBone(
             shinB, _knee[0], _knee[1], _knee[2],
             ax - _knee[0], ay - _knee[1], az - _knee[2],
-            fX, fY, fZ
+            tFx, tFy, tFz
         );
 
         // The foot rolls: flat while loaded, toe-down through the swing. The
@@ -558,8 +678,8 @@ export class Figure {
         const w = this.footWeight[f];
         const toeDown = (1 - w) * 0.55;
         const c = Math.cos(toeDown), s = Math.sin(toeDown);
-        // Rotate the foot's forward axis down about the body's right axis.
-        const dx = fX * c - uX * s, dy = fY * c - uY * s, dz = fZ * c - uZ * s;
+        // Rotate the boot's own forward axis down about its own right axis.
+        const dx = tFx * c - uX * s, dy = tFy * c - uY * s, dz = tFz * c - uZ * s;
         this._setBone(footB, ax, ay, az, dx, dy, dz, uX, uY, uZ);
     }
 

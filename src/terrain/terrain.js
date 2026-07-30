@@ -34,24 +34,25 @@ const _splits = new Vector4(0, 0, 0, 0);
 const _lod = new Vector2();
 const _screen = new Vector2();
 
-// The dust's emission ramp, straight off the brand palette. `dustGlowColor` is
-// what freshly thrown and charged dust burns at; `dustCoolColor` is the slow
-// nebula glow the field sits in at rest. Built once — neither is animated.
+// The ground's emission ramp, straight off the brand palette. `dustGlowColor`
+// is what charged ground burns at; `dustCoolColor` is the neutral nebula fill it
+// sits in at rest. Built once — neither is animated.
 const _dustGlow = new Color3(...LIN.accent);
-// Halfway between the nebula's own violet and the lit dust colour. Pure
-// nebula-violet has almost no green in it, and a surface whose only light in
-// shadow is that colour reads as flat magenta rather than as violet-lit dust.
-const _dustCool = new Color3(
-    LIN.nebulaBright[0] + 0.45 * (LIN.dust[0] - LIN.nebulaBright[0]),
-    LIN.nebulaBright[1] + 0.45 * (LIN.dust[1] - LIN.nebulaBright[1]),
-    LIN.nebulaBright[2] + 0.45 * (LIN.dust[2] - LIN.nebulaBright[2])
-);
+const _dustCool = new Color3(...LIN.nebulaFill);
+
+// The two regolith terrains, passed in rather than written into the shader, so
+// `brand.js` stays the only place the ground's colour is decided. `DUST_ALBEDO`
+// in render/sky.js is the area-weighted mean of this pair and is derived from
+// the same two entries, so the bounce solve cannot disagree with the surface it
+// is bouncing off.
+const _regHigh = new Color3(...LIN.regolith);
+const _regLow = new Color3(...LIN.regolithDark);
 
 /**
  * Radiance per unit of `S.dustGlow`.
  *
  * The colours above are reflectances — they live in [0,1] because that is what a
- * hex code can express. Emission does not: the star puts lit dust near 5 in
+ * hex code can express. Emission does not: the star puts lit ground near 5 in
  * linear units, so a glow authored in the same range as an albedo would be two
  * orders of magnitude too faint to see. This is the factor that moves it onto
  * the scene's radiance scale, and it is set so the resting glow lands near a
@@ -137,6 +138,7 @@ export class Terrain {
                     "deformCenter", "deformSize", "deformTexel", "deformDepthScale",
                     "ambientIntensity",
                     "dustEmissive", "dustGlowColor", "dustCoolColor",
+                    "regolithHigh", "regolithLow",
                     "debugMode", "screenSize",
                     ...SPELL_LIGHT_UNIFORMS,
                 ],
@@ -352,6 +354,8 @@ export class Terrain {
         m.setFloat("dustEmissive", S.dustGlow * DUST_EMIT_SCALE);
         m.setColor3("dustGlowColor", _dustGlow);
         m.setColor3("dustCoolColor", _dustCool);
+        m.setColor3("regolithHigh", _regHigh);
+        m.setColor3("regolithLow", _regLow);
 
         m.setVector2("deformCenter", deformCenter);
         m.setFloat("deformSize", deformSize);

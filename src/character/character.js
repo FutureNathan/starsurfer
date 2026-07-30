@@ -1,15 +1,22 @@
 /**
  * The character system.
  *
- * Owns the skeleton, the soft-goods simulation, the three meshes and the seven
- * pipelines that draw them, and the single small texture that carries every
- * per-frame transform to the GPU.
+ * Owns the skeleton, the two meshes and the five pipelines that draw them, and
+ * the single small texture that carries every per-frame transform to the GPU.
  *
- * The transform texture is the spine of the whole thing. Rows 0-3 hold bone
- * skinning matrices, rows 4 and beyond hold simulated cloth nodes, and one
- * `update()` per frame writes both into a pre-allocated staging array and
- * uploads it once. Nothing else crosses to the GPU: no per-frame buffers, no
- * matrix uniforms, no vertex data.
+ * The transform texture is the spine of the whole thing: four rows of bone
+ * skinning matrices, written into a pre-allocated staging array by one
+ * `update()` per frame and uploaded once. Nothing else crosses to the GPU: no
+ * per-frame buffers, no matrix uniforms, no vertex data.
+ *
+ * There is no soft-goods simulation. There was — a verlet solver over tubes of
+ * particles, feeding a Catmull-Rom surface reconstruction in the vertex shader —
+ * and it was removed rather than retuned, because the thing it was simulating
+ * does not exist. A pressure suit is a laminate held between hard bearings; every
+ * panel authored against it read as loose fabric no matter how hard the pins were
+ * driven, and a figure in loose fabric is not an astronaut. What the suit needs
+ * instead is bulk and a metal band at every joint, and both of those are lofted
+ * geometry in `build.js`.
  *
  * Allocation per frame: none.
  */
@@ -21,19 +28,22 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector2, Vector3, Vector4, Color3 } from "@babylonjs/core/Maths/math";
 
 import { Figure, BONE_COUNT } from "./figure.js";
-import { makePanels, ClothSolver } from "./cloth.js";
-import { buildBody, buildFur, buildClothMesh } from "./build.js";
+import { buildBody, buildFur } from "./build.js";
 import { LIN, EMIT } from "../core/brand.js";
 import { S } from "../core/settings.js";
 import { whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
 
-/** Transform texture geometry. Width covers the widest of bones or panel cols. */
+/**
+ * Transform texture geometry. Four rows of bone matrices, one column per bone.
+ *
+ * Wider and taller than the nineteen bones need, and left that way on purpose:
+ * the smallest texture that would do the job is 19x4, which is not a shape any
+ * driver has a fast path for, and this is one 12 KB upload per frame either way.
+ */
 const TEX_W = 48;
-const TEX_H = 64;
-/** First texture row available to cloth panels; 0-3 are the bone matrices. */
-const CLOTH_ROW0 = 4;
+const TEX_H = 4;
 
 /** How many cascades the figure casts into. See `ShadowSystem.registerCaster`. */
 const CHAR_CASCADES = 2;
@@ -151,24 +161,10 @@ export class Character {
         this.controller = controller;
 
         this.figure = new Figure(terrain);
-        this.panels = makePanels();
-        this.solver = new ClothSolver(this.panels, terrain);
 
         // ---- transform texture -------------------------------------------
         this._texData = new Float32Array(TEX_W * TEX_H * 4);
-        let row = CLOTH_ROW0;
-        /** Flat (rowBase, cols, rows, 0) per panel, for the vertex shaders. */
-        this._panelParams = new Float32Array(6 * 4);
-        for (let i = 0; i < this.panels.length; i++) {
-            const p = this.panels[i];
-            if (p.cols > TEX_W) throw new Error("panel wider than the transform texture");
-            p.nodeRow = row;
-            this._panelParams[i * 4] = row;
-            this._panelParams[i * 4 + 1] = p.cols;
-            this._panelParams[i * 4 + 2] = p.rows;
-            row += p.rows;
-        }
-        if (row > TEX_H) throw new Error("transform texture too short for the panels");
+        if (BONE_COUNT > TEX_W) throw new Error("more bones than the transform texture is wide");
 
         this.charTex = RawTexture.CreateRGBATexture(
             this._texData, TEX_W, TEX_H, scene,
@@ -193,28 +189,22 @@ export class Character {
 
         // ---- meshes and materials -----------------------------------------
         this.bodyMesh = buildBody(scene);
-        this.clothMesh = buildClothMesh(scene, this.panels);
         this.furMesh = buildFur(scene);
 
-        this.bodyMat = this._makeSurfaceMaterial("charBody", "char", "char", false);
-        this.clothMat = this._makeSurfaceMaterial("charCloth", "cloth", "char", true);
+        this.bodyMat = this._makeSurfaceMaterial("charBody", "char", "char");
         this.furMat = this._makeFurMaterial();
 
         this.bodyMesh.material = this.bodyMat;
-        this.clothMesh.material = this.clothMat;
         this.furMesh.material = this.furMat;
 
-        for (const m of [this.bodyMesh, this.clothMesh, this.furMesh]) {
+        for (const m of [this.bodyMesh, this.furMesh]) {
             m.renderingGroupId = 1;
         }
 
         /** @type {ShaderMaterial[]} */
         this._depthMats = [];
         shadows.registerCaster(
-            this.bodyMesh, (c) => this._makeDepthMaterial("charDepth", c, false), CHAR_CASCADES
-        );
-        shadows.registerCaster(
-            this.clothMesh, (c) => this._makeDepthMaterial("clothDepth", c, true), CHAR_CASCADES
+            this.bodyMesh, (c) => this._makeDepthMaterial("charDepth", c), CHAR_CASCADES
         );
         // The nap is not registered as a caster. Its shadow lands inside the
         // suit's own, an alpha-tested ten-shell depth pass is not free, and what
@@ -222,24 +212,17 @@ export class Character {
         // an order of magnitude softer than that.
 
         this.triangles =
-            this.bodyMesh.metadata.triangles +
-            this.clothMesh.metadata.triangles +
-            this.furMesh.metadata.triangles;
+            this.bodyMesh.metadata.triangles + this.furMesh.metadata.triangles;
 
         this._cameraPos = new Vector3();
         this._splits = new Vector4(0, 0, 0, 0);
-        this._needSettle = true;
 
         this._visible = true;
         this.setVisible(S.showCharacter !== false);
     }
 
-    /**
-     * One surface material. The body and the soft goods differ only in their
-     * vertex program — the shading, the shadow lookup and the aerial
-     * perspective are literally the same code.
-     */
-    _makeSurfaceMaterial(name, vertex, fragment, isCloth) {
+    /** The one surface material the figure has. */
+    _makeSurfaceMaterial(name, vertex, fragment) {
         const uniforms = [
             "viewProjection", "cameraPos",
             "sunDir", "sunRadiance", "shR",
@@ -251,15 +234,10 @@ export class Character {
             "screenSize",
             ...SPELL_LIGHT_UNIFORMS,
         ];
-        const attributes = isCloth
-            ? ["position", "uv", "aux"]
-            : ["position", "normal", "uv", "aux", "boneIdx", "boneWt"];
-        if (isCloth) uniforms.push("panelParams");
-
         const mat = new ShaderMaterial(
             name, this.scene, { vertex, fragment },
             {
-                attributes,
+                attributes: ["position", "normal", "uv", "aux", "boneIdx", "boneWt"],
                 uniforms,
                 samplers: [
                     "charTex", "skyLUT", "cascade0", "cascade1", "cascade2",
@@ -267,9 +245,9 @@ export class Character {
                 shaderLanguage: ShaderLanguage.WGSL,
             }
         );
-        // Every soft-goods panel is an open sheet and the helmet is a shell, so
-        // both faces are visible. The fragment shader turns the normal toward
-        // the viewer rather than trusting winding — see the note there.
+        // The helmet is a shell with a hole in it, so both faces are visible.
+        // The fragment shader turns the normal toward the viewer rather than
+        // trusting winding — see the note there.
         mat.backFaceCulling = false;
         mat.setTexture("charTex", this.charTex);
         mat.setTexture("skyLUT", this.sky.lut);
@@ -305,15 +283,13 @@ export class Character {
         return mat;
     }
 
-    _makeDepthMaterial(vertex, cascade, isCloth) {
-        const uniforms = ["lightViewProjection"];
-        if (isCloth) uniforms.push("panelParams");
+    _makeDepthMaterial(vertex, cascade) {
         const mat = new ShaderMaterial(
             vertex + cascade, this.scene,
             { vertex, fragment: "terrainDepth" },
             {
-                attributes: isCloth ? ["position"] : ["position", "boneIdx", "boneWt"],
-                uniforms,
+                attributes: ["position", "boneIdx", "boneWt"],
+                uniforms: ["lightViewProjection"],
                 samplers: ["charTex"],
                 shaderLanguage: ShaderLanguage.WGSL,
                 // Forces a distinct Effect per cascade, so each can hold its own
@@ -323,84 +299,60 @@ export class Character {
         );
         mat.backFaceCulling = false;
         mat.setTexture("charTex", this.charTex);
-        if (isCloth) mat.setArray4("panelParams", this._panelParams);
         this._depthMats.push(mat);
         return mat;
     }
 
     /**
-     * Depth-prepass materials for the body and the soft goods.
+     * Depth-prepass material for the body.
      *
      * The nap is left out on the same grounds it is left out of the shadow
      * cascades: it is an alpha-tested ten-shell pass, and what it would
      * contribute is a fractionally fuzzier occlusion edge on a seam that is
      * already inside its own baked cavity.
      *
-     * The body pass carries the `aux` attribute the beauty pass does, which the
-     * cloth pass has no use for: the prepass writes the reflection mask, and the
-     * only mirror on the character is the faceplate.
+     * It carries the `aux` attribute the beauty pass does, because the prepass
+     * writes the reflection mask and the only mirror on the character is the
+     * faceplate.
      *
      * @param {import("../render/depthPass.js").DepthPass} depth
      */
     registerPrepass(depth) {
-        this._prepassMats = [];
-        for (const spec of [
-            { mesh: this.bodyMesh, vertex: "charPrepass", cloth: false },
-            { mesh: this.clothMesh, vertex: "clothPrepass", cloth: true },
-        ]) {
-            const uniforms = ["viewProjection"];
-            if (spec.cloth) uniforms.push("panelParams");
-            const mat = new ShaderMaterial(
-                spec.vertex, this.scene,
-                { vertex: spec.vertex, fragment: "prepass" },
-                {
-                    attributes: spec.cloth
-                        ? ["position"]
-                        : ["position", "aux", "boneIdx", "boneWt"],
-                    uniforms,
-                    samplers: ["charTex"],
-                    shaderLanguage: ShaderLanguage.WGSL,
-                }
-            );
-            mat.backFaceCulling = false;
-            mat.setTexture("charTex", this.charTex);
-            if (spec.cloth) mat.setArray4("panelParams", this._panelParams);
-            this._prepassMats.push(mat);
-            depth.registerCaster(spec.mesh, mat);
-        }
+        const mat = new ShaderMaterial(
+            "charPrepass", this.scene,
+            { vertex: "charPrepass", fragment: "prepass" },
+            {
+                attributes: ["position", "aux", "boneIdx", "boneWt"],
+                uniforms: ["viewProjection"],
+                samplers: ["charTex"],
+                shaderLanguage: ShaderLanguage.WGSL,
+            }
+        );
+        mat.backFaceCulling = false;
+        mat.setTexture("charTex", this.charTex);
+        this._prepassMats = [mat];
+        depth.registerCaster(this.bodyMesh, mat);
     }
 
     setVisible(v) {
         this._visible = !!v;
         this.bodyMesh.isVisible = this._visible;
-        this.clothMesh.isVisible = this._visible;
         this.furMesh.isVisible = this._visible;
     }
 
     /**
-     * Advance the figure and the soft goods, then push one texture upload and one
-     * set of uniforms.
-     *
-     * Order matters: the skeleton has to be posed before the cloth can find its
-     * kinematic targets, and both have to be written before the texture goes up,
-     * or the soft goods render one frame behind the body they hang from.
+     * Pose the figure, then push one texture upload.
      *
      * @param {number} dt
      */
     update(dt) {
-        const ch = this.controller;
-        this.figure.update(dt, ch);
-        if (this._needSettle) {
-            this._settleCloth();
-            this._needSettle = false;
-        }
-        this.solver.update(dt, this.figure, ch);
+        this.figure.update(dt, this.controller);
         this._uploadTransforms();
     }
 
     /**
-     * Push this frame's uniforms. Split from `update` because the soft goods have
-     * to be solved before the contact system reads the feet, while the uniforms
+     * Push this frame's uniforms. Split from `update` because the figure has to
+     * be posed before the contact system reads the feet, while the uniforms
      * cannot be written until the camera has moved and the cascades have been
      * refitted. Doing both at one point in the frame means one of them is a
      * frame stale, and the visible symptom — a shadow that lags the figure by a
@@ -412,30 +364,6 @@ export class Character {
     sync(cameraPos) {
         this._cameraPos.copyFrom(cameraPos);
         this._pushUniforms();
-    }
-
-    /**
-     * Drop every soft-goods panel straight onto its kinematic target.
-     *
-     * Done once, on the first update. The panels are authored in bind space at
-     * the world origin, and letting them fall from there to wherever the player
-     * actually spawned takes a second of visible flapping — behind the loading
-     * screen if we are lucky, in shot if we are not.
-     */
-    _settleCloth() {
-        const skin = this.figure.skin;
-        for (let pi = 0; pi < this.panels.length; pi++) {
-            const p = this.panels[pi];
-            for (let k = 0; k < p.count; k++) {
-                const b = p.bone[k] * 16;
-                const o = k * 3;
-                const x = p.bindPos[o], y = p.bindPos[o + 1], z = p.bindPos[o + 2];
-                p.pos[o] = skin[b] * x + skin[b + 4] * y + skin[b + 8] * z + skin[b + 12];
-                p.pos[o + 1] = skin[b + 1] * x + skin[b + 5] * y + skin[b + 9] * z + skin[b + 13];
-                p.pos[o + 2] = skin[b + 2] * x + skin[b + 6] * y + skin[b + 10] * z + skin[b + 14];
-            }
-            p.prev.set(p.pos);
-        }
     }
 
     _uploadTransforms() {
@@ -453,22 +381,6 @@ export class Character {
                 d[o + 1] = skin[s + c * 4 + 1];
                 d[o + 2] = skin[s + c * 4 + 2];
                 d[o + 3] = skin[s + c * 4 + 3];
-            }
-        }
-
-        for (let pi = 0; pi < this.panels.length; pi++) {
-            const p = this.panels[pi];
-            const pos = p.pos;
-            for (let j = 0; j < p.rows; j++) {
-                const rowO = ((p.nodeRow + j) * TEX_W) * 4;
-                for (let i = 0; i < p.cols; i++) {
-                    const s = (j * p.cols + i) * 3;
-                    const o = rowO + i * 4;
-                    d[o] = pos[s];
-                    d[o + 1] = pos[s + 1];
-                    d[o + 2] = pos[s + 2];
-                    d[o + 3] = 1;
-                }
             }
         }
 
@@ -495,7 +407,7 @@ export class Character {
 
         this._splits.set(sh.splits[0], sh.splits[1], sh.splits[2], sh.splits[3]);
 
-        const mats = [this.bodyMat, this.clothMat, this.furMat];
+        const mats = [this.bodyMat, this.furMat];
         for (let i = 0; i < mats.length; i++) {
             const m = mats[i];
             m.setVector3("cameraPos", this._cameraPos);
@@ -525,19 +437,16 @@ export class Character {
         const eng = this.scene.getEngine();
         _screen.set(eng.getRenderWidth(), eng.getRenderHeight());
 
-        for (const m of [this.bodyMat, this.clothMat]) {
-            m.setArray4("matAlbedo", this._matAlbedo);
-            m.setArray4("matParams", this._matParams);
-            m.setArray4("matExtra", this._matExtra);
-            m.setFloat("sssStrength", S.sssStrength);
-            m.setVector2("screenSize", _screen);
-            // Threads per metre. A coarse woven ortho-fabric, which is what puts
-            // the weave right at the edge of visibility at the distance the
-            // figure is normally framed — present in a close-up, gone by ten
-            // metres. The hard slots skip it entirely on their weave depth.
-            m.setFloat("weaveDensity", 210);
-        }
-        this.clothMat.setArray4("panelParams", this._panelParams);
+        this.bodyMat.setArray4("matAlbedo", this._matAlbedo);
+        this.bodyMat.setArray4("matParams", this._matParams);
+        this.bodyMat.setArray4("matExtra", this._matExtra);
+        this.bodyMat.setFloat("sssStrength", S.sssStrength);
+        this.bodyMat.setVector2("screenSize", _screen);
+        // Threads per metre. A coarse woven ortho-fabric, which is what puts the
+        // weave right at the edge of visibility at the distance the figure is
+        // normally framed — present in a close-up, gone by ten metres. The hard
+        // slots skip it entirely on their weave depth.
+        this.bodyMat.setFloat("weaveDensity", 210);
 
         this.furMat.setVector3("furDroop", _droop);
         // Cells per metre. A 2.4 mm pitch: fine enough that the nap reads as the
@@ -550,28 +459,23 @@ export class Character {
     /** Compile every pipeline behind the loading screen. */
     async warmUp() {
         await whenReady(this.bodyMat, "character body material", [this.bodyMesh, false]);
-        await whenReady(this.clothMat, "character cloth material", [this.clothMesh, false]);
         await whenReady(this.furMat, "character nap material", [this.furMesh, false]);
         for (let i = 0; i < this._depthMats.length; i++) {
             const m = this._depthMats[i];
-            const mesh = m.name.indexOf("cloth") === 0 ? this.clothMesh : this.bodyMesh;
-            await whenReady(m, m.name, [mesh, false]);
+            await whenReady(m, m.name, [this.bodyMesh, false]);
         }
         if (this._prepassMats) {
             for (let i = 0; i < this._prepassMats.length; i++) {
                 const m = this._prepassMats[i];
-                const mesh = m.name.indexOf("cloth") === 0 ? this.clothMesh : this.bodyMesh;
-                await whenReady(m, m.name, [mesh, false]);
+                await whenReady(m, m.name, [this.bodyMesh, false]);
             }
         }
     }
 
     dispose() {
         this.bodyMesh.dispose();
-        this.clothMesh.dispose();
         this.furMesh.dispose();
         this.bodyMat.dispose();
-        this.clothMat.dispose();
         this.furMat.dispose();
         this.charTex.dispose();
     }

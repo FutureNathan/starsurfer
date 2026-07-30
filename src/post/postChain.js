@@ -84,15 +84,29 @@ const TONEMAP_MODES = { agx: 0, aces: 1, none: 2 };
  * to the frame would put a beam eight times brighter than the ground it falls
  * across straight through the middle of the image.
  *
- * Eight and a half per cent is the figure that lands the root of a shaft — the
- * default `shaftStrength`, the whole sky visible, the ray pointed straight at
- * the star — at about 3.2 in linear, against dust lit to 5 and a wake crest at
- * 3 on a straight run. Plainly light, and plainly not brighter than the ground
- * it is falling across. Note the shafts are composited *after* the bloom
- * pyramid is built, so nothing here reaches the bright pass however hard it is
- * driven; a shaft can only ever add, never glare.
+ * Two per cent is the figure that lands the root of a shaft — the default
+ * `shaftStrength`, the whole sky visible, the ray pointed straight at the star —
+ * at about 1.4 in linear, against dust lit to 5 and a wake crest at 3 on a
+ * straight run. Note the shafts are composited *after* the bloom pyramid is
+ * built, so nothing here reaches the bright pass however hard it is driven; a
+ * shaft can only ever add, never glare.
+ *
+ * It was 0.085 and that was far too much, for a reason worth writing down
+ * because the arithmetic hides it. This pass is *not* a shaft-shaped thing. It
+ * is a radial integral of sky visibility, and over clear sky every sample
+ * along every ray is visible, so `acc` is 1 and nothing modulates it — what
+ * comes out is a flat disc of light centred on the star, as wide as the radial
+ * weight lets it be. At 0.085 that disc peaked at 5.9 linear and was still at
+ * 2.9 twenty-five degrees out: the sky within half a screen of the star sat at
+ * output 150-190 against ground lit to 175. Looking anywhere near the star
+ * washed the frame out, and no amount of retuning the star's own aureole could
+ * have fixed it, because the star's aureole was not what was doing it.
+ *
+ * The shape is still there — a crest between the eye and the star still cuts a
+ * dark lane through it, which is the entire point — it is now a modulation of
+ * something dimmer than the ground rather than a floodlight over the top of it.
  */
-const SHAFT_SCATTER = 0.085;
+const SHAFT_SCATTER = 0.020;
 
 /**
  * ...and the hue that goes with it: the nebula's own, pulled most of the way
