@@ -5,7 +5,7 @@ Babylon.js, hand-written WGSL. Everything you see is generated on the GPU at loa
 time — there are no textures, no meshes, no HDRIs and no animation data in this
 repository.
 
-**▶ Deployed URL: TBD**
+**▶ [starsurfer.nathantowianski.com](https://starsurfer.nathantowianski.com)**
 
 > Needs WebGPU. Chrome or Edge 113+, Firefox 141+, Safari 26+ on the desktop;
 > Chrome 121+ on Android; iOS 26+ on an iPhone or iPad. There is no WebGL fallback
@@ -429,6 +429,12 @@ Node 20.19+ or 22.12+, which is what Vite 8 wants.
 It is a static build with no server side, so any static host will do. `vercel.json`
 declares the Vite preset, `npm run build`, `dist` as the output, and immutable
 caching on the hashed assets with the entry document left revalidating.
+
+The custom domain is not in this repository and cannot be — it lives in the
+Vercel project's own settings. Add `starsurfer.nathantowianski.com` under
+Settings → Domains, then add the CNAME record Vercel shows you at whoever serves
+DNS for `nathantowianski.com` (host `starsurfer`, pointing at Vercel's target).
+The certificate is issued automatically once the record resolves.
 
 Nothing needs configuring beyond that: there are no environment variables, no API
 routes, no redirects, and no `base` path — the app assumes it is served from the
