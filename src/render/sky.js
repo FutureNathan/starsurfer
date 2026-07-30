@@ -155,6 +155,7 @@ export class Sky {
                     "ambientIntensity",
                     "ridgeAmp",
                     "dustEmission",
+                    "planetDir", "planetAxis", "planetSize", "planetGlow",
                     "fogDensity",
                     "fogHeightFalloff",
                     "fogStart",
@@ -420,6 +421,21 @@ export class Sky {
         m.setArray4("shR", this.sh);
         m.setFloat("ambientIntensity", S.ambientIntensity);
         m.setFloat("ridgeAmp", S.showMountains ? S.mountainHeight : 0);
+
+        // The companion world. Screen-space like the stars, so nothing here
+        // touches the bake. The axis leans 24 degrees off the vertical toward
+        // a fixed bearing, which is what tips the banding into the diagonal
+        // every reference image of a gas giant has.
+        const paz = (S.planetBearing * Math.PI) / 180;
+        const pel = (S.planetElevation * Math.PI) / 180;
+        const pce = Math.cos(pel);
+        _planetDir.set(Math.sin(paz) * pce, Math.sin(pel), Math.cos(paz) * pce);
+        m.setVector3("planetDir", _planetDir);
+        _planetAxis.set(Math.sin(paz + 1.2) * 0.45, 1, Math.cos(paz + 1.2) * 0.45);
+        _planetAxis.normalize();
+        m.setVector3("planetAxis", _planetAxis);
+        m.setFloat("planetSize", (S.planetSize * Math.PI) / 180);
+        m.setFloat("planetGlow", S.showPlanet ? S.planetGlow : 0);
         _dustEmit.set(
             DUST_EMISSION[0] * S.dustGlow,
             DUST_EMISSION[1] * S.dustGlow,
@@ -443,6 +459,8 @@ export class Sky {
     }
 }
 
+const _planetDir = new Vector3();
+const _planetAxis = new Vector3();
 const _shBasis = new Float32Array(9);
 const _irrTmp = new Float32Array(3);
 const _dustEmit = new Color3(0, 0, 0);

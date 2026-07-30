@@ -81,8 +81,9 @@ Append `?touch=1` to force the controls on for a look at the layout from a
 desktop, or `?touch=0` to force them off.
 
 The overlay exposes every art parameter as a live slider — the star's bearing and
-elevation, the galactic band's tilt and core bearing, aurora strength, the nebula
-fill on the ground, displacement depth, tonemap curve, exposure — plus a frame-time graph
+elevation, the galactic band's tilt and core bearing, the planet's bearing and
+size, aurora strength, the nebula fill on the ground, displacement depth,
+tonemap curve, exposure — plus a frame-time graph
 with median / 95th / 1% low, draw calls, triangles and a per-system CPU
 breakdown. Every system can be toggled off individually, and there are debug
 views for surface normals, fine normals, depth, cascade coverage, the
@@ -288,9 +289,9 @@ linear radiance of 7.9 — airborne dust is lit from every side rather than only
 from above, scatters strongly forward, and has just been broken open, so it is
 legitimately far brighter than the ground it came out of. The lip — the hottest,
 freshest mass — reaches gold at 13, which clears both sunlit ground at 5.5 and the
-bloom threshold at 3, so the crest is the brightest and by a long way the warmest
-point on the whole structure. On a straight run the crest sits at 3, right in the
-bloom's soft knee, and barely glows.
+bloom threshold at 6.5, so the crest is the brightest and by a long way the warmest
+point on the whole structure. On a straight run the crest sits at 3, well under
+the bloom pass's reach, and does not glow at all.
 
 The board will not travel tail-first. That reads as a styling rule and is really a
 physics one, and it was a bug for a while: the carve scrub used to be subtracted
@@ -329,7 +330,8 @@ Each power's identity is one hue and two radiance gains, in a single table read
 by the power, by the body renderer and by the light pool alike — so a power
 cannot be one colour close up and another at range. The gains are stated against
 two measured numbers: sunlit ground sits near 5.5 in linear units, and the bloom
-bright pass thresholds at 3.
+bright pass thresholds at 6.5 — above everything that merely *is*, so only events
+glow.
 
 1. **Solar Flare** — a crescent of ignited dust rises out of the ground and runs
    outward, ploughing a channel and throwing glowing berms. Body radiance 12: the
@@ -346,7 +348,7 @@ bright pass thresholds at 3.
 3. **Supernova** — a targeted detonation. A white-hot column bursts up out of the
    regolith, blows a crater with a raised rim — a fresh one, on a surface made of
    them — collapses back down its own axis, and leaves four seconds of fallout lit
-   from below. Body radiance 26, three stops over the bloom knee, cooling down the
+   from below. Body radiance 26, two stops over the bloom knee, cooling down the
    same warm ramp the ground's own discharge sits on.
 4. **Asteroid** — a rock comes in from orbit and hits the ground well ahead of
    you. Three hundred metres of entry over two and a half seconds, on a
@@ -385,46 +387,46 @@ bright pass thresholds at 3.
    they cannot drift. Standing still that is 38 m ahead; flat out it is 89 m ahead
    at the press and 38 m ahead when it lands.
 
-   Body radiance 16 in a hot orange that is not in the palette anywhere else: the
-   Flare is the house gold and the Supernova is white, so an entry trail in either
-   would read as one of those going off in the distance. The white the head runs
-   comes from the body's own ignition-front channel instead, which is exactly what
-   that channel is for.
+   What falls is a rock, and that took three versions to admit. The first two
+   drew an entry burn — a glowing head, an ablation trail, sputtering fragments
+   — and both read on screen as an orange blob, because they were modelling the
+   wrong planet: ablation is what an atmosphere does to a falling rock, and
+   there is no atmosphere here. Nothing burns on the way down. The falling body
+   is a grey tumbling lump, four metres long, its silhouette dented by two slow
+   sine lobes tied to the tumble so it turns over as it comes, held at a flat
+   radiance of 5 — mid-grey regolith in full sunlight, deliberately *under* the
+   bloom knee. It does not glow; it is simply a bright object against a black
+   sky, which is how a real object in vacuum is seen, and its visibility comes
+   from contrast and motion rather than fire. The ignition-front channel stays
+   at zero the whole way down.
 
-   The trail is a streak, not a shape, and the first playable build got that
-   wrong in an instructive way. Its radius *grew toward the tail*, and the body
-   shader's optical depth saturates over about a quarter of a metre — so the fat
-   old wake glowed at full radiance 16, which AgX flattens into one pastel
-   salmon, while the head was the dimmest part of the object. On screen it was a
-   big orange capsule. The profile is now a hard nose, a slight coma, and a
-   monotonic taper to nothing at 52:1 — and because emission goes as
-   `1 − e^−depth`, the taper is simultaneously the shape, the brightness ramp
-   and the colour ramp: the trail dims and deepens from white through real
-   orange as it thins, with no second mechanism. The head sputters as it comes —
-   burning fragments shed into the spray pool that streak forward, fall out of
-   the line and die — and the whole thing flickers on two incommensurate sines,
-   hashed per rock so a storm never pulses in unison.
+   The ember orange this power owns appears only where the physics puts the
+   energy: at the ground. For a third of a second after contact the strand the
+   rock just vacated becomes the impact flash — a squat burst that pops, whites
+   at gain 25, and is embers before half a second is out, the way real lunar
+   impacts photographed from Earth genuinely flash. An earlier pass drew a
+   nine-metre dome of vapour boiling for most of a second here; the review named
+   it precisely — a glowing blob — and it is gone. The lasting event is the
+   crater.
 
    What it leaves is molten. The crater floor is the only thing that writes the
    top of the charge channel, and up there the ground material adds an ember-hued
-   emission that lands at the bolide trail's own radiance — the floor at the
-   moment of landing is made of the thing that just hit it. The cooling needs no
-   clock of its own: the terrain sim decays a hot channel on a 26-second constant
+   emission well over the bloom knee — the floor at the moment of landing is
+   made of the same shocked rock the flash just was. The cooling needs no clock
+   of its own: the terrain sim decays a hot channel on an 18-second constant
    (radiative cooling goes as the fourth power of temperature, so molten rock
    must not linger the way glass does), and as the value walks down through the
-   band the same pixel goes white-orange, is a dim ember inside twenty seconds,
+   band the same pixel goes white-orange, is a dim ember inside ten seconds,
    and fades on as a dark vitrified scar. The surf rail and the ion stream's
    scored lines sit below the band's toe and keep their slow tail.
 
    The impact is built to be seen from ninety metres, because that is where it
    happens. A four-metre crater and centimetre grains are a handful of pixels at
    that range, and half the time a swell is in front of them — what carries is
-   radiance and height. So the moment the rock lands its strand becomes a
-   fireball: a dome of incandescent vapour that pops to nine metres, spikes at
-   nearly twice the trail's own gain — four stops over the bloom knee, so it
-   blooms from any distance — and collapses back through the ember hue in under
-   a second. The ground answers with a 24 m pool of light sweeping out and dying
-   back, which places the impact even when the crater itself is behind a crest.
+   radiance. The flash spikes two stops over the bloom knee, so it blooms from
+   any distance, and the ground answers with a 24 m pool of light sweeping out
+   and dying back, which places the impact even when the crater itself is
+   behind a crest.
 
    Its ejecta obeys vacuum. Every grain is launched with a drag coefficient of
    zero, so it flies a clean parabola and lands — no hang, no settling curtain, no
@@ -494,6 +496,22 @@ everything is fog — and its peak is held at output level 128 against a bloom
 threshold it never reaches, because an aurora that glows is a light source and
 this one is meant to be scenery.
 
+It also now *defaults to nearly off*, with the band at a third of its old
+strength. At the LUT's resolution a broad low-frequency glow reads as smear
+rather than curtain, and the screenshot review called it exactly that. The
+sky's resting state is dark — stars, a faint band, one planet — and the sliders
+still run to two for anyone who wants the weather back.
+
+The planet is the one bright thing that darkness bought. An analytic gas giant
+shaded in the skybox fragment shader — banded latitudes warped by noise, a soft
+terminator lit from the scene's own star bearing, limb darkening, a thin
+atmospheric rim — about eleven degrees across, sitting high off the galactic
+band. Its lit face lands near 1.7 linear: bright enough to read as a world
+against the void, deliberately under the bloom knee so it never grows a glow.
+The far range occludes it like everything else in the sky, and it is gated out
+of the star's aureole and the point-star field, so stars do not twinkle
+through it.
+
 The lower hemisphere of that LUT is not sky. It holds the ground's own solved
 radiance, and the solve is a genuine iteration: bake, project to SH, work out what
 the ground is now radiating, bake again. It converges in three passes, faster than
@@ -544,11 +562,20 @@ The march window is set by the tallest thing the player can stand on, and the
 moon rework moved both of its ends. The near massifs' tops sliced flat against
 the old 13° ceiling; and from a hundred-metre summit the clipmap's far edge sits
 at -10°, where the old -3° floor left a band of raw below-horizon LUT — a flat
-pale smear with the range floating above it. The window now runs 18° down, and
-below the horizon the march is nearly free: the ray starts inside the range's
-empty seven-kilometre bowl, hits its floor on the first sample, and shades as a
-fully hazed distant plain — the same colour the clipmap's far edge converges to,
-so the ground and the range connect at every eye height.
+pale smear with the range floating above it. The window now runs 18° down, with
+a floor that adapts to eye height, and the march starts at 820 m rather than
+five and a half kilometres out.
+
+That last number is the fix for the mountains floating, which survived a first
+pass because the real cause was never the window. Between the clipmap's 870 m
+edge and the massifs' 5.5 km start line there was genuinely *nothing* — the
+range's seven-kilometre bowl was dead flat — so from a summit the eye crossed
+real terrain, then a level fully-hazed band, then mountains, and the level band
+read as the range hovering over a gap. The bowl now carries a mid-field fill:
+two octaves of rolling ground, a few metres high and biased low so it never
+competes with the clipmap in front of it, continuous under the massifs. The eye
+crosses swells all the way out, and the range sits on ground that was always
+there.
 
 ### Post-processing
 
@@ -568,15 +595,21 @@ reshuffles which texture every remaining pass renders into.
   box is widened to contain the current sample — which is what keeps the star field
   alive, since a bright point on black is otherwise clipped below the value the
   renderer just produced, every frame.
-- **Bloom** — three levels, thresholded at 3.0 in linear scene radiance, before
-  exposure. That number is the line between the ground's resting fill at 0.4 and the
-  scene's actual sources: the visor, the suit trim, the wake, the thrown grains and
-  the star. The mix is weighted toward the *tight* level, the opposite of what an
+- **Bloom** — three levels, thresholded at 6.5 in linear scene radiance, before
+  exposure. That number was 3.0, set when the ground was a dim sea of cosmic dust
+  resting at 0.4 — and the moon rework quietly killed that premise, because sunlit
+  regolith sits at 5.5 and the suit's lit shell above 20, so the *entire daylit
+  frame* was feeding the bright pass. That is the halo and the boxy glow around
+  the spacesuit, and the smear across the sky, that the screenshot review
+  objected to. At 6.5 the pass takes events only: the wake's lip, the thrown
+  grains, the power bodies, the impact flash, the molten crater floors and the
+  star. Sunlit ground, the suit and the visor no longer bloom at all. The mix is
+  weighted toward the *tight* level, the opposite of what an
   atmosphere wants — the broad lobe of a glare pattern is forward scattering off
   aerosols and there are none out here, so what is left is the instrument's own
   point spread, whose energy sits in the core. Karis-averaged on the prefilter, so
   that a single grain at many times its neighbours' radiance cannot make the whole
-  glow flicker as the glint field turns over. The point stars sit one to two orders
+  glow flicker as the glint field turns over. The point stars and the planet sit
   below the threshold and never enter it at all, which is deliberate — a halo on
   every star would fog the void they are meant to sit in.
 - **Volumetric light shafts** — integrating sky visibility out of the prepass along
@@ -626,13 +659,18 @@ structure, the render-target budget and the draw count are unchanged, so they ar
 indicative rather than invented — but they are not a measurement of what is in this
 repository now.
 
-Three things have moved since in ways worth naming. The cloth solver, its render
+Four things have moved since in ways worth naming. The cloth solver, its render
 mesh and its three pipelines are gone, which removes a draw call, a shadow caster,
 a prepass caster and a per-frame CPU solve. The crystal renderer went the same way
 with the power that used it — another draw call, another prepass caster, and four
-shaders that no longer compile at load. And the crater field adds twenty-seven
+shaders that no longer compile at load. The crater field adds twenty-seven
 hashed cell tests per sample to the height bake, which is a one-off load cost paid
-behind the loading screen and nothing at all per frame.
+behind the loading screen and nothing at all per frame. And the far range's
+once-empty near bowl now carries a mid-field fill — two gradient-noise
+evaluations per march sample inside seven kilometres, on a march that already
+breaks out early above its own ceiling; the planet is a handful of ALU in the
+same skybox pass and the sky window got *cheaper*, since the march now starts
+closer and quits sooner.
 
 | | |
 |---|---|
@@ -749,7 +787,7 @@ Emissives are kept separate from reflectances there, because they are the values
 that are *supposed* to exceed 1.0 — a hex code can only describe an albedo, and
 clamping a radiance into [0,1] would flatten exactly the parts the bloom pass
 exists to catch. The gains it lists are not free-floating: they are stated against
-two measured numbers, sunlit ground at 5.5 and the bloom threshold at 3, so
+two measured numbers, sunlit ground at 5.5 and the bloom threshold at 6.5, so
 reading one tells you whether the thing it belongs to glows.
 
 The regolith entries are a different kind of entry from the rest. Everything else

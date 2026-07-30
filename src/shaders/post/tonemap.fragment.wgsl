@@ -230,7 +230,11 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // left is the instrument's own point spread, whose energy sits in the
         // core. A star that reads as a point with a hard little halo is a star;
         // the same star under a wide veil is a smudge.
-        c += (near * 0.60 + far * 0.40) * uniforms.bloomAmount * uniforms.exposure;
+        // 0.82/0.18 rather than the earlier 0.60/0.40: the far level is the
+        // sixteenth-resolution one, and it is where a compact bright object
+        // turns into a wide square blob. With the threshold now passing events
+        // only, the tight level carries nearly all of the look.
+        c += (near * 0.82 + far * 0.18) * uniforms.bloomAmount * uniforms.exposure;
     }
 
     // Stardust strands. Stated as a radiance and exposed like everything else,

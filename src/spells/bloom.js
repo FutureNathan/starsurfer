@@ -194,7 +194,7 @@ export class Bloom {
         //
         //   flash   the first third of a second, when the column is a detonation
         //           rather than a plume. Two and a half times the standing gain
-        //           for a moment, which puts it four stops over the bloom knee
+        //           for a moment, which puts it three stops over the bloom knee
         //           and is what makes the burst *hurt* instead of merely appear.
         //   cool    the hue walking from starlight white down to the dust's own
         //           gold over the next couple of seconds. A cooling mass moves

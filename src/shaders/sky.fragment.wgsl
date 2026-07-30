@@ -28,6 +28,14 @@ uniform ridgeAmp: f32;
 /// galaxy while the ground in front of it shines.
 uniform dustEmission: vec3f;
 
+/// The companion world. Direction to its centre, its rotation axis (unit, tips
+/// the banding), its angular radius in radians, and the radiance scale on its
+/// lit face. Glow at zero removes it entirely.
+uniform planetDir: vec3f;
+uniform planetAxis: vec3f;
+uniform planetSize: f32;
+uniform planetGlow: f32;
+
 // The field's own aerial perspective, so the range is hazed by the same nebula
 // the dust in front of it is. See `shadeRidge`.
 uniform fogDensity: f32;
@@ -150,6 +158,62 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     return mix(col, inscatter, ext);
 }
 
+// ------------------------------------------------------------------ planet
+//
+// A banded ice-giant, drawn analytically in the skybox the way the stars are:
+// screen-space, full resolution, never in the bake. That last part is the point
+// of doing it here — the LUT is 512x256 and everything in it comes out as a
+// soft smear, which is exactly the complaint the old aurora curtains earned.
+// An analytic disc is crisp at any resolution for the cost of a few noise
+// calls on the pixels it covers.
+//
+// It is scenery, not a source: the lit face tops out around 1.7 linear, well
+// under the bloom knee, so the one bright beautiful thing in the sky is also
+// the one thing guaranteed never to glow. Deliberately teal-blue — the cool
+// counterweight the palette's warm gold has been missing, and the hue every
+// reference image the request came with had in common.
+
+const PLANET_DEEP: vec3f = vec3f(0.050, 0.115, 0.135);
+const PLANET_PALE: vec3f = vec3f(0.360, 0.640, 0.660);
+const PLANET_STORM: vec3f = vec3f(0.700, 0.860, 0.840);
+
+/// Shade the disc. `dir` must already be inside the angular radius.
+fn shadePlanet(dir: vec3f) -> vec3f {
+    // Disc-local frame, and the view ray's coordinates in it.
+    let U = normalize(cross(uniforms.planetDir, uniforms.planetAxis));
+    let W = cross(uniforms.planetDir, U);
+    let sr = sin(uniforms.planetSize);
+    let px = dot(dir, U) / sr;
+    let py = dot(dir, W) / sr;
+    let rr = px * px + py * py;
+    if (rr >= 1.0) { return vec3f(-1.0); }
+    let pz = sqrt(1.0 - rr);
+
+    // Outward normal of the sphere at the point this ray sees.
+    let N = normalize(U * px + W * py - uniforms.planetDir * pz);
+
+    // Latitude bands, warped so no boundary is a clean line, with pale storm
+    // streaks worked along them. All of it keys off the *normal*, so the
+    // pattern wraps the sphere correctly and forever — there is no texture to
+    // run out of.
+    let lat = dot(N, uniforms.planetAxis);
+    let wob = noise2(vec2f(lat * 6.5, px * 2.3 + py * 0.7) + vec2f(3.1, 8.7)) * 0.55;
+    let bandT = sin(lat * 13.0 + wob * 3.4) * 0.5 + 0.5;
+    let swirl = noise2(vec2f(lat * 21.0 + wob * 5.0, px * 3.1 + 2.4)) * 0.5 + 0.5;
+    var alb = mix(PLANET_DEEP, PLANET_PALE, bandT);
+    alb = mix(alb, PLANET_STORM, swirl * swirl * 0.30);
+
+    // Lit by the same star as everything else, with a soft gas-giant
+    // terminator, limb darkening, and a thin bright arc of atmosphere on the
+    // lit limb — small, because "without a crazy glow effect" was the brief.
+    let ndl = dot(N, uniforms.sunDir);
+    let day = smoothstep(-0.14, 0.38, ndl) * (0.30 + 0.70 * clamp(ndl, 0.0, 1.0));
+    let limbDark = 0.55 + 0.45 * pz;
+    let rim = pow(1.0 - pz, 3.0) * smoothstep(-0.25, 0.45, ndl) * 0.30;
+
+    return (alb * day * limbDark + PLANET_PALE * rim) * uniforms.planetGlow;
+}
+
 /// The point-star field.
 ///
 /// Screen-only, and deliberately so: this never enters the bake. At the 64x32
@@ -240,6 +304,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // floor on the first sample, which shades as a fully hazed distant plain —
     // the same colour the clipmap's own far edge converges to, so the two meet
     // instead of leaving a seam.
+    // ------------------------------------------------------------- the world
+    // Behind the range, in front of the stars — the gates below keep all three
+    // honest. See `shadePlanet`.
+    var planetHit = false;
+    if (uniforms.planetGlow > 0.001 && dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)) {
+        planetHit = true;   // provisional; confirmed against the disc below
+    }
+
     // The floor tracks the eye: the band that has to be covered reaches down to
     // the clipmap's far edge, which from a summit is much lower than from the
     // deck. Computing it from the camera height rather than fixing it at the
@@ -252,7 +324,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         if (hit.hit) {
             col = shadeRidge(hit, dir);
             ridgeHit = true;
+            planetHit = false;   // a mountain in front of a planet wins
         }
+    }
+
+    if (planetHit) {
+        let pc = shadePlanet(dir);
+        if (pc.x < 0.0) { planetHit = false; }   // grazed the corner of the cone
+        else { col = pc; }
     }
 
     // ------------------------------------------------------------- the star
@@ -270,7 +349,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // across at 1440p — two at the quarter-resolution bright pass — so it is an
     // isolated bright sample in a group of thirteen taps that are otherwise void,
     // and weighting each group by 1/(1+luma) before averaging pulls the group's
-    // result down to order 1. The threshold at 3.0 then removes it entirely. The
+    // result down to order 1. The threshold at 6.5 then removes it entirely. The
     // disc contributes essentially nothing to the glare pattern at any value here,
     // which is exactly the mechanism the point-star field relies on.
     //
@@ -280,7 +359,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // magnitude off its neighbours to reproject.
     let mu = dot(dir, uniforms.sunDir);
     let discCos = cos(0.0029);
-    if (mu > discCos && !ridgeHit) {
+    if (mu > discCos && !ridgeHit && !planetHit) {
         let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0029;
         let limb = pow(max(0.0, 1.0 - r * r * 0.72), 0.42);
         col += uniforms.sunColor * uniforms.sunIntensity * 1.6 * limb;
@@ -309,7 +388,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // half-behind a summit still spills over the silhouette the way glare does.
     let aureole = pow(max(0.0, mu), 20000.0) * 0.070 + pow(max(0.0, mu), 300.0) * 0.0030;
     col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5
-         * select(1.0, 0.0, ridgeHit);
+         * select(1.0, 0.0, ridgeHit || planetHit);
 
     // --------------------------------------------------------------- stars
     // Added last and additively, over everything except the star's own disc.
@@ -327,7 +406,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // but they are thousands of times further away than a mountain, and a
     // summit with stars twinkling on its face is the same tell in the other
     // direction.
-    if (!ridgeHit) {
+    if (!ridgeHit && !planetHit) {
         col += starField(dir, uniforms.starDensity, uniforms.time)
              * uniforms.starBrightness * uniforms.sunIntensity * 0.0138;
     }

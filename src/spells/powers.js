@@ -11,12 +11,12 @@
  * Hues come from `brand.js`. Gains do not, because a gain is a *radiance* on the
  * scene's own scale, and that scale is set by two measured numbers:
  *
- *   lit dust sits near 5 in linear, pre-exposure units
- *   the bloom bright pass thresholds at 3.0 in the same units
+ *   lit ground sits near 5 in linear, pre-exposure units
+ *   the bloom bright pass thresholds at 6.5 in the same units
  *
- * So a body gain above 3 blooms, and one near 5 reads as bright as the ground it
- * is standing on. Those two numbers are what every gain below is chosen against,
- * and they are the reason none of these are in [0,1] like a hex code.
+ * So a body gain above 6.5 blooms, and one near 5 reads as bright as the ground
+ * it is standing on. Those two numbers are what every gain below is chosen
+ * against, and they are the reason none of these are in [0,1] like a hex code.
  */
 
 import { LIN } from "../core/brand.js";
@@ -92,7 +92,7 @@ export const POWERS = {
      * 3 — Supernova. White-hot, and the one power allowed outside the violet and
      * gold family: a detonation is defined by being hotter than everything around
      * it, and past a certain temperature everything is white. Five times the lit
-     * ground standing, three stops over the bloom knee, and the power itself
+     * ground standing, two stops over the bloom knee, and the power itself
      * multiplies this again for the third of a second the burst lasts.
      */
     nova: { hue: hue(LIN.star), body: 26.0, light: 220.0 },
@@ -101,18 +101,19 @@ export const POWERS = {
      * 4 — Asteroid. Hot orange, and the only entry in the table that is not gold,
      * white or violet.
      *
-     * That is deliberate and it is doing a specific job. The Solar Flare is the
-     * house gold and the Supernova is white, so an entry trail rendered in either
-     * would read as one of those two happening a long way away. Ablation is
-     * neither: it is rock and iron boiling off a surface, which sits at the red
-     * end of the warm ramp, well below a detonation. The white the head runs is
-     * not in this hue at all — it comes from the body's own ignition-front
-     * channel, which is exactly what that channel is for.
+     * The hue never touches the rock in flight — there is no atmosphere here, so
+     * nothing ablates and nothing burns on the way down; the falling body is a
+     * grey sunlit lump that carries its own colour. This entry exists for the
+     * two moments the power actually makes fire: the impact flash, a third of a
+     * second of shocked rock at the point of arrival, and the molten floor of
+     * the crater it leaves, which cools through the same ember. Molten rock sits
+     * at the red end of the warm ramp, well below a detonation, which keeps the
+     * flash from reading as a distant Flare or Supernova.
      *
-     * Sixteen puts the trail between the Flare and the Supernova standing, and
-     * the power multiplies it again on the way down. The light is the second
-     * highest here because for most of the cast it is a hundred metres up, and
-     * the inverse square does not care how dramatic the object is.
+     * Sixteen is the flash's standing, and the power envelopes it down over the
+     * burst. The light is the second highest here because it fires as a ground
+     * pulse across a whole impact field, and the inverse square does not care
+     * how dramatic the object is.
      */
     impact: { hue: hue(LIN.ember), body: 16.0, light: 200.0 },
 

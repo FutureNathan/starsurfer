@@ -49,19 +49,32 @@ fn ridgeField(p: vec2f, amp: f32) -> vec3f {
     let kq = 0.001;
 
     // ---- the bowl ----------------------------------------------------------
-    // The range is excluded from a seven-kilometre disc centred on the world
-    // origin, and the player is confined to a 620 m play radius inside it — so
-    // the field is guaranteed to be empty everywhere the march begins.
-    //
-    // This is not decoration, it is what makes the march correct. Without it a
-    // massif can start closer than the near plane, the ray begins *inside* the
-    // rock, and every such ray gets clamped to the same distance — which draws
-    // the near faces of those massifs as flat-topped vertical slabs at exactly
-    // the near plane. They looked like buildings on the horizon.
+    // The *massifs* are excluded from a seven-kilometre disc centred on the
+    // world origin, so no mountain can start closer than the near plane and
+    // clamp into a flat-faced slab. The bowl is no longer empty, though — see
+    // the mid-field below.
     let rad = length(p);
     let bt = clamp((rad - 7000.0) / 6000.0, 0.0, 1.0);
     let bowl = bt * bt * (3.0 - 2.0 * bt);
-    if (bowl <= 0.0) { return vec3f(0.0); }
+
+    // ---- the ground between ------------------------------------------------
+    // The clipmap ends 870 m out and the massifs start kilometres later, and
+    // the strip between used to be genuinely empty — a flat floor at zero. From
+    // eye level the haze hid it; from a hundred-metre summit the eye looks
+    // *over* the haze, and the strip showed as a pale featureless band with the
+    // range floating on top of it. That band was the floating-mountains
+    // artefact, both times it was reported.
+    //
+    // So the bowl now holds rolling mid-ground: two octaves at the near
+    // terrain's own swell wavelengths, in absolute metres (the range-height
+    // slider must not inflate the plains), biased four metres low so its seam
+    // with the real terrain hides behind the real silhouette rather than
+    // poking through it.
+    let g1 = noised(p * (1.0 / 380.0));
+    let g2 = noised(p * (1.0 / 155.0) + vec2f(37.1, 11.7));
+    let midH = g1.x * 24.0 + g2.x * 9.0 - 4.0;
+    let midG = g1.yz * (24.0 / 380.0) + g2.yz * (9.0 / 155.0);
+    if (bowl <= 0.0) { return vec3f(midH, midG); }
     let dbowl = select(
         vec2f(0.0),
         (p / max(rad, 1.0)) * (6.0 * bt * (1.0 - bt) / 6000.0),
@@ -128,9 +141,11 @@ fn ridgeField(p: vec2f, amp: f32) -> vec3f {
     let e = 0.06 + 0.94 * env;
     let h = peaks * e;
     let dh = dpeaks * e + peaks * denv * 0.94;
+    // The mid-field continues underneath the massifs — thirty metres of rolling
+    // ground under a three-kilometre mountain is a foothill, not a seam.
     return vec3f(
-        h * bowl * amp,
-        (dh * bowl + h * dbowl) * amp
+        h * bowl * amp + midH,
+        (dh * bowl + h * dbowl) * amp + midG
     );
 }
 
@@ -168,12 +183,11 @@ fn ridgeMarch(camPos: vec3f, dir: vec3f, amp: f32) -> RidgeHit {
     let step = dir.xz / hl;
     let slope = dir.y / hl;          // metres of rise per metre of ground
 
-    // Where the range starts.
-    //
-    // Set by how large a massif should read, not by taste: a 1.8 km peak at
-    // 9 km subtends 11 degrees, which is about what a real range does across a
-    // frame. At 3.8 km the same peak subtends 26 and fills the sky.
-    const D_NEAR: f32 = 5500.0;
+    // Where the march starts: just past the clipmap's own edge, so the
+    // mid-field takes over the frame exactly where the real terrain hands it
+    // off. The *massifs* still start at 7 km — their distance is the bowl's,
+    // not this constant's.
+    const D_NEAR: f32 = 820.0;
     const D_FAR: f32 = 45000.0;
     const STEPS: i32 = 18;
 
@@ -197,7 +211,10 @@ fn ridgeMarch(camPos: vec3f, dir: vec3f, amp: f32) -> RidgeHit {
                 - (ridgeField(camPos.xz + step * D_NEAR, amp).x - ridgeDrop(D_NEAR));
 
     if (prevGap < 0.0) {
-        // Started inside the near face. That is a legitimate hit, at D_NEAR.
+        // Started at or under the field — for a downward ray over the
+        // mid-ground that is the common case, and painting it at D_NEAR puts
+        // the fill directly behind the clipmap's far edge, which is the seam
+        // it exists to close.
         out.dist = D_NEAR;
         out.pos = camPos.xz + step * D_NEAR;
         let f = ridgeField(out.pos, amp);

@@ -492,24 +492,25 @@ export class PostChain {
         //     brightest thrown grains          26        blooms hard
         //     the star's disc                 far above everything
         //
-        // 3.0 is the line between the scene's *resting* radiance and its
-        // sources. Below it is the ground doing nothing in particular; above it
-        // is every emitter — the visor, the suit trim, the wake, the grains, the
-        // star — which is what the gains in brand.js were chosen against.
+        // 6.5, and the reason it moved from 3.0 is that the *premise* under the
+        // old number left with the dust. The violet sea sat at 5 and was stated
+        // to be glowing, so letting it pass the knee was a design decision. The
+        // moon's sunlit rock sits at the same 5-and-a-half and is emphatically
+        // not glowing — and with the knee below it, the entire lit landscape,
+        // the sunlit suit at 23, the visor floor at 4 and the pack strips at 6
+        // all fed the bloom pyramid every frame. The result was the two
+        // artefacts in the screenshots at once: a milky smear over everything,
+        // and a big square halo around the figure — a small bright shape at the
+        // sixteenth-resolution level upsamples as a box.
         //
-        // It also lands exactly on the wake's straight-run crest, which is the
-        // nicest thing about it: cruising, the wake sits in the soft knee and
-        // barely glows; load the carve and it climbs to ten and lights up. The
-        // glow is a readout of how hard the board is being driven, and it costs
-        // nothing to have.
-        //
-        // The dust field at 5 does pass, and that is deliberate rather than
-        // tolerated: a sea that is stated to be glowing should lift the sky
-        // above its own horizon. What stops that becoming the milky veil a
-        // bright field would give is the near-weighted mix in the composite —
-        // the lift stays close to the ground instead of washing the whole void.
-        const th = 3.0;
-        const knee = 1.4;
+        // Above 6.5 is *events only*: a loaded carve's crest at 13, thrown
+        // grains at 14-26, a fresh molten crater at 20, the star. The suit still
+        // crosses (it is genuinely the brightest surface in frame) but at the
+        // reduced strength and near-weighted mix it reads as a soft edge rather
+        // than an aura. Cruising, nothing blooms at all — which is the
+        // "elegant, simple, smooth" the scene is being asked for.
+        const th = 6.5;
+        const knee = 2.2;
         this._bloomCurve.x = th;
         this._bloomCurve.y = th - knee;
         this._bloomCurve.z = knee * 2;

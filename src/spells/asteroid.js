@@ -21,14 +21,19 @@
  *               a fresh crater on a surface already covered in old ones, still
  *               glowing, long after the dust has landed.
  *
- * The ejecta obeys vacuum. Every grain this power throws is launched with a drag
+ * Everything about it obeys vacuum, and the second screenshot review is what
+ * made that absolute. There is no atmosphere here, so an incoming rock does not
+ * burn: no ablation trail, no glowing head, no sputter — the first two versions
+ * had all three, and read as an orange blob instead of an asteroid. What falls
+ * now is a rock: a grey tumbling lump, bright only because it is in full
+ * sunlight against a black sky, which is exactly how a real object in vacuum is
+ * seen. The fire happens where the physics puts it — at the ground, for the
+ * fraction of a second the impact turns kinetic energy into incandescent
+ * vapour, and in the molten floor it leaves.
+ *
+ * The ejecta obeys the same rule. Every grain is launched with a drag
  * coefficient of zero, so it flies a clean parabola and lands — no hang, no
- * settling curtain, no billow. That is the one thing an impact on an airless
- * body looks like that an explosion on Earth does not, and it costs one argument
- * to say. (The field's gravity is Earth's, which is a scene-wide constant this
- * power is in no position to change, so the launch speeds are picked against
- * that rather than against the moon's — the arcs are shaped by the numbers here,
- * not by a physics constant.)
+ * settling curtain, no billow.
  *
  * It replaced Star Crystal, which grew a lattice of violet prisms out of the
  * ground. That power was built for a sea of cosmic dust and did not survive the
@@ -113,35 +118,38 @@ const FALL_EASE = 1.25;
 const AFTER = 3.4;
 
 /**
- * Radius of the bolide's head, metres — the incandescent envelope, not the rock.
+ * The rock: half-length and radius of the lump, metres.
  *
- * Down from 1.05, and the first screenshot of the power in flight is why. The
- * trail read as a fat orange capsule, and the tube's own physics says fat *is*
- * ugly here: the body shader's optical depth saturates over about a quarter of a
- * metre, so any section thicker than that emits at full gain across its whole
- * width and the display transform flattens radiance 16 into one pastel salmon.
- * A meteor is the opposite object — a blinding point dragging a streak whose
- * width is a rounding error against its length. At 0.72 the head subtends seven
- * pixels at three hundred metres and fifty at the impact, still blooms hard
- * (the front channel runs it to peak gain in starlight white), and the trail
- * behind it thins to genuinely dim, genuinely orange.
+ * A boulder, not a boulder-sized fireball. It is drawn on the plasma strand
+ * because that is the one swept body the project has, with a flat grey emission
+ * standing in for sunlit rock — the body material has no N·L path, so "lit by
+ * the star" is approximated as a constant at the radiance a mid-grey rock under
+ * this star actually reaches (~5 linear). Under the 6.5 bloom knee, so the rock
+ * never glows; it is simply a bright object against black, which is how things
+ * in vacuum look.
  */
-const HEAD_R = 0.72;
+const ROCK_HALF = 2.1;
+const ROCK_R = 0.62;
 
 /**
- * Sparks shed off the head per second, before the storm share is applied.
+ * The flash: seconds of incandescence at the impact, and its size, metres.
  *
- * The sputter. A rock coming in does not ablate smoothly — it sheds burning
- * fragments that fall out of the trail and die — and this population is most of
- * what separates "burning object" from "orange shape". They are ordinary spray
- * grains: launched with a fraction of the head's own velocity so they streak
- * forward, then gravity pulls them out of the line and they fade. Zero drag,
- * like everything else this power throws.
+ * Real lunar impacts flash — telescopes photograph them from Earth — and it is
+ * the one moment this power has earned fire. It is brief and compact: a squat
+ * burst that pops, whites, and is embers within a third of a second. The
+ * nine-metre boiling dome an earlier pass drew here is exactly the thing the
+ * review called a glowing blob, and it is gone.
  */
-const SPUTTER_RATE = 85;
+const FLASH_T = 0.38;
+const FLASH_H = 3.6;
+const FLASH_W = 2.3;
 
-/** Seconds the impact fireball lasts. See `_flash`. */
-const FLASH_T = 0.85;
+/**
+ * The rock's flat radiance in flight. Mid-grey regolith's sunlit face under
+ * this star: albedo ~0.6 of white x sunRadiance/pi x a generous N·L ≈ 5.
+ * Deliberately under the 6.5 bloom knee.
+ */
+const ROCK_RADIANCE = 5.0;
 
 /**
  * How many can be in the air at once.
@@ -189,7 +197,6 @@ class Rock {
         this.rz = 0;
         this.hit = false;
         this.owed = 0;
-        this.sputterOwed = 0;
         this.wobble = 0;
         /**
          * This rock's share of the storm's budgets — grains and camera shake
@@ -266,7 +273,6 @@ export class Asteroid {
         r.t = 0;
         r.hit = false;
         r.owed = 0;
-        r.sputterOwed = 0;
         r.wobble = Math.random() * 6.28318;
         r.live = true;
 
@@ -340,8 +346,8 @@ export class Asteroid {
                 this._crater(r);
                 this._eject(r);
             }
-            // The strand stays live past the impact: the trail becomes the
-            // fireball. See `_flash`.
+            // The strand stays live past the impact: the rock becomes the
+            // flash. See `_flash`.
             if (r.t < FALL + FLASH_T) this._flash(r);
             else if (r.strand >= 0) {
                 this.ctx.water.setParams(r.strand, PROFILE_TUBE, 0.5, 0, 0);
@@ -356,13 +362,14 @@ export class Asteroid {
     }
 
     /**
-     * The bolide and its trail.
+     * The rock in flight.
      *
-     * One tube: a small hard head at the current position and an expanding,
-     * cooling wake stretching back up the entry path behind it. Radius grows with
-     * distance behind the head and then fades out, which is what an ablation
-     * trail does — the mass shed earliest has had the longest to spread — and it
-     * is also what stops the thing reading as a glowing pipe.
+     * A grey tumbling lump on the strand — no trail, no glow, because there is
+     * no air for either. Its visibility comes from contrast: a sunlit object
+     * against a black sky, moving fast. The lump's radius is modulated along
+     * its length and by a slow tumble so the silhouette changes as it falls;
+     * a perfectly smooth capsule reads as a projectile, and a projectile is
+     * exactly the read the review objected to.
      */
     _fall(r, dt) {
         const ctx = this.ctx;
@@ -375,134 +382,53 @@ export class Asteroid {
         const hy = r.ey + (r.y - r.ey) * u;
         const hz = r.ez + (r.z - r.ez) * u;
 
-        // The trail lengthens as it descends: more ablation the deeper it gets.
-        // Clamped against the distance already flown, so at the very start it is
-        // not drawn coming out of a point above the entry.
-        const flown = Math.hypot(hx - r.ex, hy - r.ey, hz - r.ez);
-        const trail = Math.min(22 + 70 * u, flown);
+        // The tumble: the section frame rolls slowly about the flight axis, and
+        // the radius profile drifts with it, so the lump turns over as it falls.
+        const spin = r.t * 1.7 + r.wobble;
 
         for (let c = 0; c < COLS; c++) {
-            const q = c / (COLS - 1);          // 0 = head, 1 = tail
-            const d = q * trail;
-            // Dead straight, bar a few centimetres. The first version wandered
-            // more than a metre either side over the trail's length, and a slow
-            // S-curve is most of what made it read as a slug rather than a
-            // hypersonic line — the path *is* a line, and the tube must not
-            // disagree with it. What is left is under the section's own relief.
-            const sway = Math.sin(q * 5.4 + r.wobble) * d * 0.0016;
-            const x = hx - r.dx * d + r.rx * sway;
+            const q = c / (COLS - 1);              // 0 = nose, 1 = tail
+            const d = (q - 0.5) * 2 * ROCK_HALF;   // centred on the position
+            const x = hx - r.dx * d;
             const y = hy - r.dy * d;
-            const z = hz - r.dz * d + r.rz * sway;
+            const z = hz - r.dz * d;
 
-            // The profile that reads as a meteor, and the one thing the first
-            // version got exactly backwards. It grew the radius *toward the
-            // tail* (`1 + 2.4q`), and since the shader's optical depth saturates
-            // over a quarter metre, the fat old wake glowed at full gain while
-            // the head — capped small — was the dimmest part of the object.
-            //
-            // Now: a hard nose, a slight coma just behind it, then a monotonic
-            // taper to nothing. The taper is doing double duty — it is the shape
-            // of the thing, and because emission goes as (1 - e^-depth) it is
-            // also the brightness and the colour ramp: the trail dims and deepens
-            // from pastel to real orange as it thins, with no second mechanism.
-            // Aspect ratio at full length is about sixty to one.
-            const nose = smooth01(q / 0.035);
-            const coma = 1 + 0.45 * Math.exp(-q * 16.0);
-            const rad = HEAD_R * nose * coma * Math.pow(1 - q, 1.35);
-
-            // The ignition front is the head and only the head: that is where
-            // the rock is actually being consumed. It runs the tube to peak gain
-            // in starlight white, so the head stays the brightest point on the
-            // object — which is the single strongest meteor cue there is — and
-            // it is gone within the first fifth of the trail.
-            const front = clamp01(1.25 - q * 6.5);
+            // An irregular lump: a bell along the length, dented by two slow
+            // sine lobes tied to the tumble. Ends must reach zero or the tube
+            // shows its caps.
+            const bell = Math.sin(Math.PI * clamp01(q));
+            const dent = 1
+                + 0.22 * Math.sin(q * 9.0 + spin)
+                + 0.14 * Math.sin(q * 17.0 - spin * 1.6 + r.wobble * 3.0);
+            const rad = ROCK_R * bell * dent;
 
             water.column(
                 s, c, x, y, z, rad,
                 r.rx, r.ry, r.rz,
-                r.t * 2.2 + q * 5, d, q, front, 1
+                spin + q * 2.0, d + ROCK_HALF, q, 0.0, 1
             );
         }
 
-        const impact = POWERS.impact;
-        // Brightening as it comes: it is deeper into nothing, but the read is
-        // that it is heating up, and a trail that arrives at the same radiance it
-        // entered at has no build to it. On top of that, a flicker — ablation is
-        // not smooth, and a steady lamp is the other half of what made the first
-        // version read as a rendered shape. Two incommensurate sines, hashed per
-        // rock, so a storm never pulses in unison.
-        const heat = (0.45 + 0.55 * u)
-            * (0.88 + 0.08 * Math.sin(r.t * 23.0 + r.wobble * 7.0)
-                    + 0.06 * Math.sin(r.t * 61.0 + r.wobble * 3.0));
-        water.setParams(s, PROFILE_TUBE, 0.55, clamp01(0.5 + u), COLS);
-        water.setEmissive(s, impact.hue[0], impact.hue[1], impact.hue[2], impact.body * heat);
-
-        // ---- sputter -------------------------------------------------------
-        // Burning fragments shed off the head. They inherit a tenth of the
-        // head's velocity — enough to streak forward out of the coma — and then
-        // gravity pulls them below the line while they die, which is what draws
-        // the ragged falling-away edge every photograph of a bolide has. Shards,
-        // so they carry the brightest grain charge and read as individual points
-        // of light at a distance.
-        const sp = ctx.spray;
-        if (sp) {
-            // The head's speed, from the eased progress: d(path)/dt.
-            const pathLen = Math.hypot(r.x - r.ex, r.y - r.ey, r.z - r.ez);
-            const speed = (pathLen * FALL_EASE *
-                Math.pow(Math.max(r.t / FALL, 1e-3), FALL_EASE - 1)) / FALL;
-            r.sputterOwed += dt * SPUTTER_RATE * ctx.sprayScale * r.share;
-            let n = r.sputterOwed | 0;
-            if (n > 0) {
-                r.sputterOwed -= n;
-                if (n > 8) n = 8;
-                for (let k = 0; k < n; k++) {
-                    const back = Math.random() * 3.0;
-                    sp.emit(
-                        hx - r.dx * back + (Math.random() - 0.5) * 0.8,
-                        hy - r.dy * back + (Math.random() - 0.5) * 0.8,
-                        hz - r.dz * back + (Math.random() - 0.5) * 0.8,
-                        r.dx * speed * 0.10 + (Math.random() - 0.5) * 2.4,
-                        r.dy * speed * 0.10 + (Math.random() - 0.5) * 2.4,
-                        r.dz * speed * 0.10 + (Math.random() - 0.5) * 2.4,
-                        0.05 + Math.random() * 0.09,
-                        0.35 + Math.random() * 0.55,
-                        1,
-                        0
-                    );
-                }
-            }
-        }
-
-        // A light riding the head. Its whole job is the last third of a second,
-        // when the rock is close enough for its own light to sweep across the
-        // ground ahead of the impact — which is the beat that tells the player
-        // something is about to happen to that patch of ground.
-        //
-        // During a storm there are more of these than the four-slot pool holds.
-        // That resolves itself correctly and needs no arbitration here: the pool
-        // keeps the brightest, `heat` squared means the brightest are the ones
-        // nearest their own impact, and those are exactly the ones worth a slot.
-        ctx.lights.add(
-            hx, hy, hz, 30.0,
-            impact.hue[0], impact.hue[1], impact.hue[2],
-            impact.light * heat * heat
-        );
+        // Sunlit rock, approximated as a constant because the body material has
+        // no N·L path: mid-grey regolith under this star reaches about 5 linear
+        // on its lit side, and that is what the whole lump is held at. Under
+        // the bloom knee — a rock does not glow, it is simply bright against
+        // nothing. The front channel stays at zero everywhere: no ignition,
+        // no white-hot anything, until the ground supplies the energy.
+        water.setParams(s, PROFILE_TUBE, 0.30, 1.0, COLS);
+        water.setEmissive(s, 0.62, 0.585, 0.545, ROCK_RADIANCE);
     }
 
     /**
-     * The impact fireball, on the strand the trail just vacated.
+     * The impact flash.
      *
-     * This is the answer to "you can barely see the impact", and the reason it
-     * was hard to see is worth stating: the crater is four metres across and the
-     * ejecta grains are centimetres, and the impact is deliberately placed
-     * thirty-eight to ninety metres away — at that distance both are a handful
-     * of pixels, and half the time a swell is in front of the crater anyway.
-     * What carries at ninety metres is radiance and height, so the impact gets
-     * both for under a second: a dome of incandescent vapour that pops to nine
-     * metres, spikes at over twice the trail's own gain — four stops over the
-     * bloom knee, so it blooms hard from any distance — and collapses back
-     * through the ember hue as it dies. The strand was already held; this costs
-     * no draw and no pipeline.
+     * The one moment of fire this power has: kinetic energy becoming
+     * incandescent vapour, the way real lunar impacts genuinely flash. Brief
+     * and compact — a squat burst that pops, whites, and is embers within a
+     * third of a second — on the strand the rock just vacated. An earlier pass
+     * drew a nine-metre dome boiling for most of a second here, and the review
+     * named it precisely: a glowing blob. The event now is the *crater*, which
+     * stays molten and cools; the flash only marks the instant.
      */
     _flash(r) {
         const water = this.ctx.water;
@@ -511,25 +437,20 @@ export class Asteroid {
 
         const t = r.t - FALL;
         const k = t / FLASH_T;
-        // Up fast, gone smoothly: a detonation profile, not a fountain's.
-        const pop = smooth01(t / 0.14);
-        const die = 1 - smooth01((t - 0.30) / (FLASH_T - 0.30));
+        const pop = smooth01(t / 0.05);
+        const die = 1 - smooth01((t - 0.08) / (FLASH_T - 0.08));
         const env = pop * die;
-        const height = 9.0 * pop * (0.55 + 0.45 * die);
-        const width = 3.4 * (0.5 + 0.9 * k);
+        const height = FLASH_H * (0.4 + 0.6 * pop);
 
         for (let c = 0; c < COLS; c++) {
             const q = c / (COLS - 1);              // 0 = crown, 1 = ground
             const y = r.y + height * (1 - q);
-            // A dome: widest at the base, closing over the crown, with a ragged
-            // pulse so the silhouette boils rather than standing still.
             const bulge = Math.sin(Math.min(1, q * 1.12) * Math.PI * 0.5);
-            const boil = 1 + 0.16 * Math.sin(q * 17.0 + t * 26.0 + r.wobble);
-            const rad = width * bulge * boil * env;
+            const rad = FLASH_W * (0.55 + 0.65 * k) * bulge * env;
             water.column(
                 s, c, r.x, y, r.z, rad,
                 1, 0, 0,
-                t * 8.0 + q * 3.0, q * height, k, clamp01(1.6 - k * 1.9 - q * 0.5), 1
+                t * 9.0 + q * 3.0, q * height, k, clamp01(1.4 - k * 2.2), 1
             );
         }
 
@@ -537,7 +458,7 @@ export class Asteroid {
         water.setParams(s, PROFILE_TUBE, 0.5, env, COLS);
         water.setEmissive(
             s, impact.hue[0], impact.hue[1], impact.hue[2],
-            impact.body * (2.4 * Math.exp(-t * 3.4) + 0.3) * env
+            impact.body * (1.9 * Math.exp(-t * 6.5) + 0.2) * env
         );
     }
 
@@ -691,9 +612,9 @@ export class Asteroid {
         // out across the regolith and dying back. Twenty-four metres of radius
         // reaches the nearest swell crests, which is what places the impact even
         // when the crater itself is behind one.
-        const flash = Math.exp(-t * 5.5);
-        const glow = Math.exp(-t * 0.85) * 0.16;
-        const k = impact.light * (flash * 3.0 + glow) * r.share;
+        const flash = Math.exp(-t * 8.0);
+        const glow = Math.exp(-t * 0.85) * 0.10;
+        const k = impact.light * (flash * 2.2 + glow) * r.share;
         if (k > 0.01) {
             ctx.lights.add(
                 r.x, r.y + 0.5, r.z, 24.0,

@@ -53,21 +53,46 @@ export const S = {
      */
     mountainHeight: 2900,
     /** Strength of the volumetric shafts spilling past the dust crests. */
-    shaftStrength: 0.30,
+    shaftStrength: 0.12,
 
     // ---------------------------------------------------------------- galaxy
     /** Star field density multiplier. */
     starDensity: 1.0,
     /** Star field brightness multiplier. */
     starBrightness: 1.0,
-    /** Strength of the galactic band across the sky. */
-    galaxyBand: 1.0,
+    /**
+     * Strength of the galactic band across the sky. Well under its old 1.0:
+     * at the LUT's 512x256 the band's dust-lane detail is a smear, and a smear
+     * reads as fog. Held faint it reads as a distant glow instead, and the
+     * crisp screen-space star field carries the sky.
+     */
+    galaxyBand: 0.35,
     /** Degrees the galactic plane is tilted out of the horizon. */
     galaxyTilt: 38,
     /** Bearing, degrees, of the galactic core. */
     galaxyBearing: 205,
-    /** Strength of the auroral curtains hanging around the galactic band. */
-    nebulaStrength: 1.0,
+    /**
+     * The companion world — a banded ice-giant hanging in the sky.
+     *
+     * The one bright beautiful thing up there, and deliberately the one thing
+     * guaranteed never to glow: its lit face tops out around 1.7 linear against
+     * a bloom knee of 6.5, so it stays crisp at any size. `planetSize` is the
+     * angular *radius* in degrees — 5.8 reads as a large moon; push it past
+     * fifteen for the looming-world look.
+     */
+    showPlanet: true,
+    planetBearing: 232,
+    planetElevation: 27,
+    planetSize: 5.8,
+    planetGlow: 2.6,
+
+    /**
+     * Strength of the auroral curtains. Near zero by default: at the LUT's
+     * resolution a curtain is a soft vertical smear, and the ask is a mostly
+     * dark, crisp sky — stars, a faint band, and the planet. The slider is
+     * still here for anyone who wants the weather back.
+     */
+    nebulaStrength: 0.12,
 
     // -------------------------------------------------------------- the moon
     /**
@@ -184,7 +209,7 @@ export const S = {
     // the aurora stops registering at all.
     exposure: 0.09,
     contrast: 1.14,
-    bloomStrength: 0.22,
+    bloomStrength: 0.13,
     grainStrength: 0.022,
     sharpenStrength: 0.55,
 
@@ -225,6 +250,11 @@ export const SCHEMA = [
             { k: "galaxyTilt", l: "Band tilt", t: "f", min: -60, max: 60, step: 1 },
             { k: "galaxyBearing", l: "Core bearing", t: "f", min: 0, max: 360, step: 1 },
             { k: "nebulaStrength", l: "Aurora", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "showPlanet", l: "Planet", t: "b" },
+            { k: "planetBearing", l: "Planet bearing", t: "f", min: 0, max: 360, step: 1 },
+            { k: "planetElevation", l: "Planet height", t: "f", min: 5, max: 70, step: 1 },
+            { k: "planetSize", l: "Planet size", t: "f", min: 1, max: 22, step: 0.1 },
+            { k: "planetGlow", l: "Planet bright", t: "f", min: 0, max: 6, step: 0.05 },
         ],
     },
     {
@@ -352,7 +382,7 @@ export const PRESETS = {
         ssr: false,
         dof: false,
         sharpen: false,
-        shaftStrength: 0.18,
+        shaftStrength: 0.10,
         // Fewer stars, brighter each. A dense field at a phone's pixel pitch is
         // a grey haze; a sparse one still reads as stars.
         starDensity: 0.7,
