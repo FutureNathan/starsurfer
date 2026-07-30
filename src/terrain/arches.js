@@ -1,14 +1,15 @@
 /**
- * The built rock: the canyon arch and the lava-tube roofs.
+ * The built rock: the lava-tube roofs.
  *
  * A heightfield cannot hold a tunnel — height is single-valued, and an
  * overhang needs two surfaces on one vertical. So the landmark's bake carves
  * everything *open* (the canyon, the rille trench through the dome), and this
- * module closes the parts that should be closed with real geometry: one arch
- * over the canyon between the twin craters, and three barrel-vault roofs
- * where the rille crosses under the dome — a collapsed lava tube with intact
- * reaches and skylights between them, which is the shape real lunar tubes
- * actually present to the surface.
+ * module closes the parts that should be closed with real geometry: three
+ * barrel-vault roofs where the rille crosses under the dome — a collapsed
+ * lava tube with intact reaches and skylights between them, which is the
+ * shape real lunar tubes actually present to the surface. (The canyon
+ * between the twin craters once carried an arch too; it read as clutter over
+ * the cut and was removed — that ride is open sky now.)
  *
  * One mesh, one draw. Each piece is a lofted half-barrel shell: an outer
  * vault, an inner vault, closed at the ends by pinching the two together.
@@ -192,10 +193,6 @@ export class Arches {
             }
             return hi - 3;
         };
-
-        // The canyon arch: spans across the cut, axis along it.
-        const a = poses.arch;
-        addVault(P, N, U, I, a, 11, 19, 7.2, 2.6, foot(a), 3.1);
 
         // The tube roofs, feet on the levees either side of the rille.
         for (let i = 0; i < poses.roofs.length; i++) {

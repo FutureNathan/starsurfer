@@ -146,8 +146,10 @@ const STANCE_OPEN = 1.15;
  * sowing a Flare stop sharing an arm. Each entry is (outward, along-aim,
  * lift) for the leading right hand (`lo`, `la`, `ll`) and the trailing left
  * (`to`, `ta`, `tl`), in the same shoulder-relative metres the original
- * single gesture used. Every offset stays comfortably inside the arm's
- * 0.54 m reach — past it the IK locks the elbow into a pole.
+ * single gesture used. The tall reaches (Nova's slam, the Rock's call to
+ * the sky) deliberately point past the arm's 0.54 m: the solve clamps the
+ * target onto the reach sphere, so what survives is the *direction* of the
+ * gesture with the arm at its true length.
  *
  *   1 Flare  the sower: leading arm sweeps low and wide, releasing along
  *            the ground the crescent is about to plough.
@@ -939,6 +941,26 @@ export class Figure {
                 tx += (sx - tx) * surf;
                 ty += (sy - ty) * surf;
                 tz += (sz - tz) * surf;
+            }
+
+            // Never hand the solver a target past the arm. The IK clamps the
+            // *elbow* against an unreachable target, but the forearm is then
+            // drawn elbow-to-target and the hand planted on it, so the arm
+            // stretches to whatever length reaches — the asteroid gesture's
+            // sky-reach sat over a metre from the shoulder against 0.54 m of
+            // arm, and hyper-extended exactly like that. Pulling the target
+            // onto the reach sphere keeps the gesture's *direction* while the
+            // arm keeps its length.
+            {
+                const dx = tx - _sh[0], dy = ty - _sh[1], dz = tz - _sh[2];
+                const dl = Math.hypot(dx, dy, dz);
+                const rMax = (UPPER_LEN + FORE_LEN) * 0.97;
+                if (dl > rMax) {
+                    const ck = rMax / dl;
+                    tx = _sh[0] + dx * ck;
+                    ty = _sh[1] + dy * ck;
+                    tz = _sh[2] + dz * ck;
+                }
             }
 
             // Elbows point back and out.

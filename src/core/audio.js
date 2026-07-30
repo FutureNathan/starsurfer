@@ -200,6 +200,26 @@ export function initAudio() {
         return f;
     }
 
+    /**
+     * Tear a one-shot's subgraph down when its source finishes.
+     *
+     * A node stays in the audio graph as long as it is *connected*, whether
+     * or not it will ever make sound again — the browser is allowed to keep
+     * walking it every render quantum and to keep its JS wrapper alive until
+     * a major GC notices the whole subgraph is dead. Every footfall leaves a
+     * filter and a gain behind; the Ion Stream leaves two gains *per note,
+     * one note per second, for as long as it is held* — which is how "hold
+     * ion for a while" became "everything slows down until a GC catches up".
+     * Explicit disconnection on `ended` keeps the graph exactly as big as
+     * the sounds actually playing.
+     */
+    function reap(src, ...nodes) {
+        src.onended = () => {
+            src.disconnect();
+            for (let i = 0; i < nodes.length; i++) nodes[i].disconnect();
+        };
+    }
+
     // The surf bed: one looped noise source alive the whole session, shaped
     // every frame. Starting and stopping sources on the surf edge clicks;
     // riding a gain down to nothing does not.
@@ -223,6 +243,7 @@ export function initAudio() {
         const g = env(t, 0.10 + 0.14 * speed01, 0.012, 0.07);
         src.connect(lp); lp.connect(g);
         src.stop(t + 0.12);
+        reap(src, lp, g);
     }
 
     // ---- the five powers ----------------------------------------------
@@ -230,9 +251,10 @@ export function initAudio() {
         const src = noise(t);
         const bp = filter("bandpass", 260, 1.4);
         bp.frequency.exponentialRampToValueAtTime(1900, t + 0.6);
-        const g = env(t, 0.55, 0.10, 1.0);
+        const g = env(t, 0.44, 0.10, 1.0);
         src.connect(bp); bp.connect(g);
         src.stop(t + 1.3);
+        reap(src, bp, g);
     }
 
     /**
@@ -271,6 +293,9 @@ export function initAudio() {
         g.connect(sfxGain);
         o.start(t); o2.start(t);
         o.stop(t + 2.0); o2.stop(t + 2.0);
+        // The load-bearing reap: one note a second for as long as the stream
+        // is held, and before this the gains stayed on the bus for ever.
+        reap(o, o2, og, g);
     }
 
     function ionSet(onNow) {
@@ -291,7 +316,7 @@ export function initAudio() {
             o1.connect(g); o2.connect(o2g); o2g.connect(g);
             g.connect(sfxGain);
             o1.start(t); o2.start(t); breathe.start(t);
-            ionNodes = { o1, o2, breathe, g };
+            ionNodes = { o1, o2, breathe, g, o2g, bAmt };
             ionNext = t + 0.4;
             ionIdx = 2;
         } else if (!onNow && ionNodes) {
@@ -300,6 +325,7 @@ export function initAudio() {
             ionNodes = null;
             n.g.gain.setTargetAtTime(0.0001, t, 0.25);
             n.o1.stop(t + 1.2); n.o2.stop(t + 1.2); n.breathe.stop(t + 1.2);
+            reap(n.o1, n.o2, n.breathe, n.o2g, n.bAmt, n.g);
         }
     }
 
@@ -324,28 +350,34 @@ export function initAudio() {
         o.type = "sine";
         o.frequency.setValueAtTime(170, t);
         o.frequency.exponentialRampToValueAtTime(36, t + 0.5);
-        const g = env(t, 1.0, 0.02, 1.5);
+        const g = env(t, 0.85, 0.02, 1.5);
         o.connect(g);
         o.start(t); o.stop(t + 1.6);
+        reap(o, g);
         const crack = noise(t);
         const bp = filter("bandpass", 900, 0.8);
-        const cg = env(t, 0.45, 0.008, 0.28);
+        const cg = env(t, 0.38, 0.008, 0.28);
         crack.connect(bp); bp.connect(cg);
         crack.stop(t + 0.35);
+        reap(crack, bp, cg);
     }
 
     function sfxAsteroid(t) {
         // The rumble rides the whole fall and cuts out at contact; the impact
         // lands exactly when the rock does, because both read the same
         // exported constant the dispatcher leads the rider by.
+        // Loud from early in the fall, not just at the end: the old ramp spent
+        // most of the drop inaudible, which read as "barely any asteroid".
         const rum = noise(t);
         const lp = filter("lowpass", 110);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.62, t + FALL);
+        g.gain.exponentialRampToValueAtTime(0.5, t + 0.25);
+        g.gain.exponentialRampToValueAtTime(1.15, t + FALL);
         g.gain.exponentialRampToValueAtTime(0.0001, t + FALL + 0.12);
         rum.connect(lp); lp.connect(g); g.connect(sfxGain);
         rum.stop(t + FALL + 0.3);
+        reap(rum, lp, g);
 
         // The impact, in four layers — this is the loudest thing the game
         // does, and it earns it. The compressor on the bus is what lets the
@@ -357,34 +389,42 @@ export function initAudio() {
         //   crack       the broadband snap that marks the exact instant
         //   aftershock  a low rumble rolling away for two seconds, the sound
         //               of a very large thing having just happened somewhere
+        // Roughly twice everything else in the game, by request: the peaks
+        // are near double the Supernova's and the sub and aftershock run
+        // longer, so the impact dominates in both hit and hang. The bus
+        // compressor is what keeps this pile clean instead of clipped.
         const ti = t + FALL;
         const thud = ctx.createOscillator();
         thud.type = "sine";
         thud.frequency.setValueAtTime(90, ti);
         thud.frequency.exponentialRampToValueAtTime(32, ti + 0.7);
-        const tg = env(ti, 1.7, 0.010, 1.1);
+        const tg = env(ti, 3.2, 0.010, 1.1);
         thud.connect(tg);
         thud.start(ti); thud.stop(ti + 1.2);
+        reap(thud, tg);
 
         const sub = ctx.createOscillator();
         sub.type = "sine";
         sub.frequency.setValueAtTime(52, ti);
-        sub.frequency.exponentialRampToValueAtTime(24, ti + 1.4);
-        const sg = env(ti, 1.45, 0.03, 1.8);
+        sub.frequency.exponentialRampToValueAtTime(24, ti + 1.6);
+        const sg = env(ti, 2.9, 0.03, 2.2);
         sub.connect(sg);
-        sub.start(ti); sub.stop(ti + 1.9);
+        sub.start(ti); sub.stop(ti + 2.3);
+        reap(sub, sg);
 
         const crack = noise(ti);
         const clp = filter("lowpass", 520);
-        const cg = env(ti, 0.9, 0.008, 0.45);
+        const cg = env(ti, 1.8, 0.008, 0.45);
         crack.connect(clp); clp.connect(cg);
         crack.stop(ti + 0.5);
+        reap(crack, clp, cg);
 
         const shock = noise(ti + 0.12);
         const slp = filter("lowpass", 85);
-        const shg = env(ti + 0.12, 0.75, 0.10, 2.1);
+        const shg = env(ti + 0.12, 1.5, 0.10, 2.6);
         shock.connect(slp); slp.connect(shg);
-        shock.stop(ti + 2.4);
+        shock.stop(ti + 2.9);
+        reap(shock, slp, shg);
     }
 
     function sfxWell(t) {
@@ -396,12 +436,13 @@ export function initAudio() {
         const tremAmt = ctx.createGain(); tremAmt.gain.value = 0.08;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.30, t + 0.7);
+        g.gain.exponentialRampToValueAtTime(0.24, t + 0.7);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 4.2);
         trem.connect(tremAmt); tremAmt.connect(g.gain);
         o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
         o1.start(t); o2.start(t); trem.start(t);
         o1.stop(t + 4.4); o2.stop(t + 4.4); trem.stop(t + 4.4);
+        reap(o1, o2, lp, trem, tremAmt, g);
     }
 
     function power(n) {
@@ -425,7 +466,7 @@ export function initAudio() {
         // compressor turns that pile-up into loud-and-clean instead of the
         // crackle of a clipped master. Music skips it — tracks are mastered.
         const comp = ctx.createDynamicsCompressor();
-        comp.threshold.value = -14;
+        comp.threshold.value = -12;
         comp.knee.value = 18;
         comp.ratio.value = 5;
         comp.attack.value = 0.004;
@@ -530,6 +571,7 @@ export function initAudio() {
                 const g = env(t, 0.16, 0.05, 0.30);
                 src.connect(bp); bp.connect(g);
                 src.stop(t + 0.4);
+                reap(src, bp, g);
             }
             airPrev = ch.airborne;
             if (ch.landed) {
@@ -539,6 +581,7 @@ export function initAudio() {
                 const g = env(t, 0.30 + 0.25 * hard, 0.010, 0.28);
                 src.connect(lp); lp.connect(g);
                 src.stop(t + 0.35);
+                reap(src, lp, g);
             }
 
             if (input.spellPressed) power(input.spellPressed);

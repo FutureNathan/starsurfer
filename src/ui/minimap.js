@@ -119,10 +119,10 @@ export function initMinimap(terrain, sky, character) {
     // ------------------------------------------------------- chart symbols
     // The landmark complex, marked the way a chart marks it rather than left
     // to be inferred from relief: rim circles on the twin craters, a dotted
-    // trace along the rille, solid ticks where the tube roofs stand (the
-    // places you can duck in and out), and a tiny arch glyph over the
-    // canyon. Positions come from the same closed-form mirror that places
-    // the meshes, so the symbols cannot drift off the things they mark.
+    // trace along the rille, and solid ticks where the tube roofs stand (the
+    // places you can duck in and out). Positions come from the same
+    // closed-form mirror that places the meshes, so the symbols cannot drift
+    // off the things they mark.
     const lm = landmarkPoses(Number(S.worldSeed));
     const INK = (a) => `rgba(255, 246, 224, ${a})`;
 
@@ -162,23 +162,6 @@ export function initMinimap(terrain, sky, character) {
             ctx.lineTo(toMap(r.x + r.hx * r.len / 2), toMap(r.z + r.hz * r.len / 2));
             ctx.stroke();
         }
-
-        // The arch: a small ∩ astride the canyon, its opening aligned with
-        // the passage so the glyph says "go through this way".
-        const a = lm.arch;
-        ctx.save();
-        ctx.translate(toMap(a.x), toMap(a.z));
-        ctx.rotate(Math.atan2(-a.hx, a.hz));
-        ctx.strokeStyle = INK(0.60);
-        ctx.lineWidth = 1.4 * s;
-        const g = 3.4 * s;
-        ctx.beginPath();
-        ctx.moveTo(-g, g * 0.9);
-        ctx.lineTo(-g, 0);
-        ctx.arc(0, 0, g, Math.PI, Math.PI * 2);
-        ctx.lineTo(g, g * 0.9);
-        ctx.stroke();
-        ctx.restore();
     }
 
     return {
@@ -197,6 +180,17 @@ export function initMinimap(terrain, sky, character) {
             ctx.beginPath();
             ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
             ctx.clip();
+
+            // Heading-up: the whole chart turns about its centre so the way
+            // the rider faces is always the top of the map. Everything below
+            // — relief, boundary, symbols, arrow — draws inside this one
+            // rotation; the arrow's own facing rotation then cancels against
+            // it, leaving the arrow pointing straight up, which is the
+            // grammar every car navigator taught.
+            ctx.translate(size / 2, size / 2);
+            ctx.rotate(character.facing - Math.PI);
+            ctx.translate(-size / 2, -size / 2);
+
             ctx.imageSmoothingEnabled = true;
             ctx.drawImage(backing, 0, 0, size, size);
 
