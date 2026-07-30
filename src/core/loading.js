@@ -38,7 +38,7 @@ let progress = 0;
 const KEYS = [
     ["W A S D", "move"],
     ["mouse", "look · wheel to zoom"],
-    ["shift", "sprint"],
+    ["shift", "sprint · surf trick"],
     ["right mouse", "star-surf"],
     ["1 – 5", "the five powers · 2 is held"],
     ["esc", "menu · pause"],

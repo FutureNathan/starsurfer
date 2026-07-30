@@ -225,6 +225,10 @@ export class DustContact {
         const f = this.field;
         const s = ch.surf;
 
+        // Airborne: the board is not touching the ground it would be carving.
+        // The groove resumes from a fresh segment on touchdown.
+        if (ch.airborne) { this._segX = NaN; return; }
+
         // Below a walking pace there is no wake to speak of; splatting anyway
         // would just dig a pit wherever the player coasted to a stop.
         const speedK = Math.min(1, ch.speed / 6);

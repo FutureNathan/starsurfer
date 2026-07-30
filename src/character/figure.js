@@ -140,6 +140,32 @@ const BOARD_STAND = 2 * BOARD_HALF_T + BOOT_SOLE - 0.004;
  * speed lean, the acceleration pitch — would be applied sideways.
  */
 const STANCE_OPEN = 1.15;
+
+/**
+ * The five cast gestures — one per power, so throwing a Supernova and
+ * sowing a Flare stop sharing an arm. Each entry is (outward, along-aim,
+ * lift) for the leading right hand (`lo`, `la`, `ll`) and the trailing left
+ * (`to`, `ta`, `tl`), in the same shoulder-relative metres the original
+ * single gesture used. Every offset stays comfortably inside the arm's
+ * 0.54 m reach — past it the IK locks the elbow into a pole.
+ *
+ *   1 Flare  the sower: leading arm sweeps low and wide, releasing along
+ *            the ground the crescent is about to plough.
+ *   2 Ion    the conduit: both hands pushed forward along the aim, stacked,
+ *            holding a stream that is trying to leave.
+ *   3 Nova   the slam: both arms thrown high before the detonation.
+ *   4 Rock   the caller: one arm at the sky it is calling from, the other
+ *            braced low across the body.
+ *   5 Well   the gather: both arms low and inboard, scooping toward the
+ *            centre the well is about to become.
+ */
+const CAST_STYLES = [
+    { lo: 0.44, la: 0.30, ll: -0.10, to: -0.22, ta: 0.08, tl: 0.16 },
+    { lo: 0.10, la: 0.56, ll: 0.12,  to: 0.04,  ta: 0.42, tl: -0.04 },
+    { lo: 0.26, la: 0.18, ll: 0.48,  to: -0.26, ta: 0.14, tl: 0.44 },
+    { lo: 0.14, la: 0.26, ll: 0.58,  to: -0.24, ta: 0.02, tl: -0.10 },
+    { lo: -0.04, la: 0.28, ll: -0.16, to: -0.12, ta: 0.24, tl: -0.18 },
+];
 /**
  * How much of the open angle the neck takes back, so the visor keeps looking
  * down the line rather than out at the rail. Anything much under this and the
@@ -346,6 +372,17 @@ export class Figure {
         const speed = ch.speed;
         const run = Math.min(1, speed / 5.4);
 
+        // The trick jump, seen from the figure's side: the controller owns
+        // the ballistics and publishes three numbers — a visual spin, a tuck,
+        // and (implicitly) how far the position rides above the ground. The
+        // spin is added to every stance yaw, so rider, feet and board turn as
+        // one; the lift raises everything rigidly; the tuck deepens the
+        // crouch so the rotation reads as a grabbed trick, not a pirouette.
+        const spinYaw = ch.facing + (ch.trickSpin || 0);
+        // `?? position.y` so a driver without ground bookkeeping reads as
+        // grounded — NaN here would ride the root into every bone.
+        const lift = Math.max(0, ch.position.y - (ch.groundY ?? ch.position.y));
+
         // ---------------------------------------------------------- footfalls
         // Stance/swing is derived from the same distance-driven phase the
         // controller uses to fire footfall events, so the visual plant and the
@@ -377,21 +414,25 @@ export class Figure {
             (1 - surf) * (-0.028 * run * (0.5 - 0.5 * Math.cos(4 * Math.PI * ch.gaitPhase)));
         this.bob = damp(this.bob, bobWant, 18, h);
 
-        // Crouch: a little at running speed, a lot on the board.
-        const crouch = 0.035 * run + surf * (0.13 + 0.05 * ch.speed01);
+        // Crouch: a little at running speed, a lot on the board — and most
+        // of all at the apex of a trick.
+        const crouch = 0.035 * run + surf * (0.13 + 0.05 * ch.speed01)
+            + (ch.airTuck || 0) * 0.17;
         this.hipY = damp(this.hipY, HIP_HEIGHT - crouch, 9, h);
 
         // The figure settles into the dust it is standing on. Reading the real
         // depth would mean a GPU readback; this is the same number the contact
         // brushes are writing, held on the CPU.
-        this.sink = damp(this.sink, 0.045 + surf * 0.055, 4, h);
+        this.sink = damp(
+            this.sink, (0.045 + surf * 0.055) * (lift > 0.05 ? 0 : 1), 4, h
+        );
 
         // ------------------------------------------------------------- spine
         const gx = ch.position.x;
         const gz = ch.position.z;
         const groundY = this.terrain.heightAt(gx, gz);
 
-        const rootY = groundY - this.sink + this.hipY + this.bob;
+        const rootY = groundY - this.sink + this.hipY + this.bob + lift;
 
         // How far across the board the figure is standing this frame. Eased by
         // `surf` exactly like the crouch and the board's own attitude, so the
@@ -402,7 +443,7 @@ export class Figure {
         // The travel-aligned frame. The legs and the feet are solved in this one
         // — a planted foot points where the figure is going, and while surfing
         // each boot is turned off it by its own angle in `_poseLeg`.
-        composeBasis(ch.facing, this.pitch, this.roll);
+        composeBasis(spinYaw, this.pitch, this.roll);
         const rX = _axes[0], rY = _axes[1], rZ = _axes[2];
         const uX = _axes[3], uY = _axes[4], uZ = _axes[5];
         const fX = _axes[6], fY = _axes[7], fZ = _axes[8];
@@ -410,7 +451,7 @@ export class Figure {
         // Pelvis. Its yaw counter-rotates against the shoulders during a stride,
         // which is most of what stops a procedural walk reading as a shop dummy.
         const twist = (1 - surf) * 0.13 * run * Math.sin(2 * Math.PI * ch.gaitPhase);
-        composeBasis(ch.facing + twist, this.pitch, this.roll, open);
+        composeBasis(spinYaw + twist, this.pitch, this.roll, open);
         const pRx = _axes[0], pRy = _axes[1], pRz = _axes[2];
         const pUx = _axes[3], pUy = _axes[4], pUz = _axes[5];
         const pFx = _axes[6], pFy = _axes[7], pFz = _axes[8];
@@ -429,7 +470,7 @@ export class Figure {
         // The shoulders open a little further than the hips — about eight degrees
         // at a full stance. A surfer's chest leads the pelvis round, and the small
         // difference is what stops the torso reading as one rigid block.
-        composeBasis(ch.facing + chestTwist, chestPitch, this.roll * 1.15, open * 1.12);
+        composeBasis(spinYaw + chestTwist, chestPitch, this.roll * 1.15, open * 1.12);
         const cUx = _axes[3], cUy = _axes[4], cUz = _axes[5];
         const cFx = _axes[6], cFy = _axes[7], cFz = _axes[8];
         const cRx = _axes[0], cRy = _axes[1], cRz = _axes[2];
@@ -450,7 +491,7 @@ export class Figure {
         // the line, which is where a surfer looks.
         this.headOpen = damp(this.headOpen, open * (1 - STANCE_LOOK), 9, h);
         composeBasis(
-            ch.facing + chestTwist + this.headYaw, chestPitch + this.headPitch,
+            spinYaw + chestTwist + this.headYaw, chestPitch + this.headPitch,
             this.roll * 0.5, this.headOpen
         );
         const headX = neckX + cUx * 0.09, headY = neckY + cUy * 0.09, headZ = neckZ + cUz * 0.09;
@@ -462,7 +503,7 @@ export class Figure {
         // the skull during a carve just reads as broken. All the bearing has is
         // about a frame of compliance, which is what these rates come to at
         // sixty hertz, and it is enough to keep the helmet from feeling welded.
-        this.helmetYaw = damp(this.helmetYaw, ch.facing + chestTwist + this.headYaw, 60, h);
+        this.helmetYaw = damp(this.helmetYaw, spinYaw + chestTwist + this.headYaw, 60, h);
         this.helmetPitch = damp(this.helmetPitch, chestPitch + this.headPitch, 60, h);
         this.helmetOpen = damp(this.helmetOpen, this.headOpen, 60, h);
         composeBasis(this.helmetYaw, this.helmetPitch, this.roll * 0.5, this.helmetOpen);
@@ -482,7 +523,7 @@ export class Figure {
                       open * FOOT_OPEN_BACK);
 
         // ------------------------------------------------------------- board
-        this._poseBoard(ch, gx, groundY, gz, chestX, chestY, chestZ,
+        this._poseBoard(ch, gx, groundY + lift, gz, chestX, chestY, chestZ,
                         cUx, cUy, cUz, cFx, cFy, cFz);
 
         // ------------------------------------------------------------- skin
@@ -516,8 +557,9 @@ export class Figure {
         // from walk to run read as a gait change and not a speed change.
         const duty = 0.66 - 0.20 * run;
 
-        const fwdX = Math.sin(ch.facing), fwdZ = Math.cos(ch.facing);
-        const rgtX = Math.cos(ch.facing), rgtZ = -Math.sin(ch.facing);
+        const feetYaw = ch.facing + (ch.trickSpin || 0);
+        const fwdX = Math.sin(feetYaw), fwdZ = Math.cos(feetYaw);
+        const rgtX = Math.cos(feetYaw), rgtZ = -Math.sin(feetYaw);
 
         // Half a stride ahead, scaled by speed — this is the step length, and it
         // has to match the controller's stride or the feet skate.
@@ -600,7 +642,8 @@ export class Figure {
                 // Standing on the deck, which is itself planing on the dust the
                 // board has already compressed — hence the `sink` and then the
                 // board's own thickness back up again.
-                const sy = this.terrain.heightAt(sx, sz) - this.sink + BOARD_STAND;
+                const sy = this.terrain.heightAt(sx, sz) - this.sink + BOARD_STAND
+                    + Math.max(0, ch.position.y - (ch.groundY ?? ch.position.y));
                 const o = f * 3;
                 this.footPos[o] += (sx - this.footPos[o]) * surf;
                 this.footPos[o + 1] += (sy - this.footPos[o + 1]) * surf;
@@ -706,7 +749,8 @@ export class Figure {
         const n = this.terrain.normalAt(gx, gz, _gnd);
 
         // Nose: the direction of travel, flattened into the surface plane.
-        let nx = Math.sin(ch.facing), ny = 0, nz = Math.cos(ch.facing);
+        const noseYaw = ch.facing + (ch.trickSpin || 0);
+        let nx = Math.sin(noseYaw), ny = 0, nz = Math.cos(noseYaw);
         const proj = nx * n.x + ny * n.y + nz * n.z;
         nx -= n.x * proj; ny -= n.y * proj; nz -= n.z * proj;
         const nl = Math.hypot(nx, ny, nz) || 1;
@@ -810,12 +854,15 @@ export class Figure {
             const cast = ch.cast;
             if (cast > 0.001) {
                 const ax = ch.castAimX, ay = ch.castAimY, az = ch.castAimZ;
-                // The leading hand reaches along the aim; the trailing one sits
-                // low and inboard, cocked back.
+                // Each power gets its own gesture — see CAST_STYLES. The
+                // leading hand is the right one, because that is the hand
+                // the ribbon is emitted from.
+                const st = CAST_STYLES[((ch.castStyle || 2) - 1) | 0]
+                    || CAST_STYLES[1];
                 const lead = a === 1 ? 1 : 0;
-                const outward = lead ? 0.30 : -0.16;
-                const along = lead ? 0.52 : 0.16;
-                const lift = lead ? 0.26 : 0.02;
+                const outward = lead ? st.lo : st.to;
+                const along = lead ? st.la : st.ta;
+                const lift = lead ? st.ll : st.tl;
                 const cx = _sh[0] + rX * (sgn * 0.30 + outward * sgn) + ax * along + uX * lift;
                 const cy = _sh[1] + rY * (sgn * 0.30) + ay * along + uY * lift + lift * 0.6;
                 const cz = _sh[2] + rZ * (sgn * 0.30 + outward * sgn) + az * along + uZ * lift;

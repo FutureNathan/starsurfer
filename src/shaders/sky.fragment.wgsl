@@ -80,7 +80,17 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
 
     let rock  = vec3f(0.150, 0.143, 0.134);
     let fines = vec3f(0.127, 0.117, 0.107);
-    let albedo = mix(rock, fines, dustMask);
+    var albedo = mix(rock, fines, dustMask);
+
+    // Albedo texture, two octaves. Without it the range is a smooth field of
+    // perfect mixing between two flat colours — under the now vacuum-thin
+    // haze that rendered as melted porcelain, which is what the "glassy
+    // mountains" screenshot was showing. Real massif faces are streaked by
+    // downslope movement, so the fine octave is stretched along the vertical
+    // through the same trick the aurora uses: squash one axis of the sample.
+    let tex1 = noise2(hit.pos * 0.0045) * 0.5 + 0.5;
+    let tex2 = noise2(vec2f(hit.pos.x * 0.055, hit.pos.y * 0.013)) * 0.5 + 0.5;
+    albedo *= 0.76 + 0.30 * tex1 + 0.18 * tex2 * tex1;
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
 
@@ -101,7 +111,9 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // The identical term the ground runs, so the two cannot disagree about what
     // back-lit regolith does.
     let V = -dir;
-    col += dustSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 1.0)
+    // Halved in the de-glass pass: at range the transmission rim reads as a
+    // glaze on the silhouette rather than as translucency.
+    col += dustSubsurface(N, L, V, uniforms.sunRadiance, 0.45, dustMask, 0.5)
          * albedo * mix(0.5, 1.0, shadow);
 
     // Ambient fill. At this distance it is most of what is left after

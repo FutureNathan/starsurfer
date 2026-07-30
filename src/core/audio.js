@@ -423,6 +423,7 @@ export function initAudio() {
     let stepAcc = 0;
     let surfGainSent = -1;
     let surfFreqSent = -1;
+    let airPrev = false;
 
     /**
      * Write an AudioParam without leaking its timeline.
@@ -491,6 +492,25 @@ export function initAudio() {
                     stepAcc = t;
                     footfall(t, Math.min(1, ch.speed / 5.4));
                 }
+            }
+
+            // The trick jump: a soft swoosh off the lip, a board slap on
+            // touchdown scaled by how hard it came back.
+            if (ch.airborne && !airPrev) {
+                const src = noise(t);
+                const bp = filter("bandpass", 620, 0.9);
+                const g = env(t, 0.16, 0.05, 0.30);
+                src.connect(bp); bp.connect(g);
+                src.stop(t + 0.4);
+            }
+            airPrev = ch.airborne;
+            if (ch.landed) {
+                const hard = Math.min(1, (ch.landVy || 3) / 5);
+                const src = noise(t);
+                const lp = filter("lowpass", 300 + 380 * hard);
+                const g = env(t, 0.30 + 0.25 * hard, 0.010, 0.28);
+                src.connect(lp); lp.connect(g);
+                src.stop(t + 0.35);
             }
 
             if (input.spellPressed) power(input.spellPressed);

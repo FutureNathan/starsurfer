@@ -317,8 +317,10 @@ export class SurfWake {
 
         // Below a walking pace there is nothing being displaced, and laying
         // samples anyway leaves a knot of overlapping wall wherever the player
-        // coasted to a stop.
-        const active = ch.surf > 0.06 && ch.speed > 1.6;
+        // coasted to a stop. Airborne, likewise: a trick jump throws no wall,
+        // and the wake restarting on touchdown is part of what sells the
+        // landing.
+        const active = ch.surf > 0.06 && ch.speed > 1.6 && !ch.airborne;
 
         if (active) {
             if (!this._active) this._maybeRestart();

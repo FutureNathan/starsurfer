@@ -176,7 +176,9 @@ export const S = {
     dustGlow: 0.75,
     glintIntensity: 0.55,
     glintGrazing: 0.72, // how hard the grazing-angle gate bites
-    sssStrength: 1.0,
+    // Trimmed from 1.0 in the de-glass pass: full-strength transmission put a
+    // waxy glow on every backlit crest, which read as polish rather than dust.
+    sssStrength: 0.75,
     sssRadius: 1.0,
     detailNormalStrength: 1.0,
     macroHeightScale: 1.0,

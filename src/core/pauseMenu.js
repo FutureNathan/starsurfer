@@ -37,7 +37,7 @@ const SECTIONS = [
         ["move", "W A S D"],
         ["look", "mouse"],
         ["zoom", "wheel"],
-        ["sprint", "shift"],
+        ["sprint · trick jump", "shift"],
         ["star-surf · hold", "right·mouse"],
     ]],
     ["the five powers", [

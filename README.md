@@ -23,7 +23,7 @@ are no textures, no meshes, no HDRIs and no animation data in this repository.
 | Click | capture the pointer |
 | `W` `A` `S` `D` | move, relative to the camera |
 | Mouse | look · **Wheel** zoom |
-| `Shift` | sprint |
+| `Shift` | sprint on foot · **trick jump** on the board |
 | **Right mouse (hold)** | star-surf — carve across the regolith and throw a luminous wake |
 | `1` – `5` | the five powers (`2` is a held cast) |
 | `Esc` | pause menu — frees the mouse, shows the controls |
@@ -50,19 +50,20 @@ speed, a footfall is seventy milliseconds of it fired on the frame the gait
 actually plants a boot, and each power has its own few lines — a bandpass
 sweep for the Flare, a sine dropping two octaves for the Supernova, a
 four-layer impact for the asteroid whose rumble swells for exactly the
-exported fall time and lands its boom with the rock. The Ion Stream's held
-hum is *ridden*: its pitch climbs with speed, its filter opens with speed and
-altitude, and its wobble quickens with the board, so the one held sound
-continuously reports the state of your own run. No files, no licences, and
+exported fall time and lands its boom with the rock. The Ion Stream, held,
+is a quiet piece of score rather than a status hum: a low fifth breathing on
+an eight-second swell, with a sparse pentatonic motif walking stepwise on a
+glass tone above it — in the key the music leans on, so it reads as
+accompaniment, and pleasant enough to leave on. No files, no licences, and
 they can never go missing.
 
-The music is *real tracks*, played one at a time with minutes of vacuum
-between, shuffled without repeats. Three ship with the project — **Drift**,
-**Low Gravity**, **Afterglow** — composed and rendered offline for it
-(additive felt-piano, generated reverb, slow diatonic phrases with long
-rests) and released CC0 like the rest of the repo's own work.
-`public/music/README.md` is the three-minute recipe for swapping in other
-tracks; the player quietly skips anything missing from the folder.
+The music is *real tracks* in named playlists, Minecraft-style: one song,
+minutes of vacuum, the next, shuffled without repeats, with the playlist
+switchable on the sound tab. Three ambient pieces composed and rendered
+offline for the project (**Drift**, **Low Gravity**, **Afterglow**, CC0) ride
+alongside whatever the manifest lists. `public/music/README.md` is the
+three-minute recipe for adding tracks; the player quietly skips anything
+missing from the folder.
 
 The controls are also on the loading screen, which is the one moment anybody is
 going to read them — there is a captive audience there for as long as the

@@ -108,6 +108,8 @@ export class SpellSystem {
         /** 0..1 eased: how far into a casting stance the figure should be. */
         this.castBlend = 0;
         this._lastCast = -99;
+        /** Which power the current gesture belongs to — see figure.js. */
+        this._castStyle = 2;
         this._time = 0;
         /** Console override for the Ribbon hold. */
         this.debugRibbon = false;
@@ -174,6 +176,7 @@ export class SpellSystem {
         this.castBlend = expDamp(this.castBlend, casting, casting ? 7.0 : 3.2, dt);
         const ch = this.ctx.controller;
         ch.cast = this.castBlend;
+        ch.castStyle = this._castStyle;
         ch.castAimX = this.aim.x;
         ch.castAimY = this.aim.y;
         ch.castAimZ = this.aim.z;
@@ -214,6 +217,7 @@ export class SpellSystem {
         }
 
         this._lastCast = this._time;
+        this._castStyle = key;
 
         if (key === 1) {
             // Flat aim: the crescent runs along the ground, so a camera pointed
@@ -291,6 +295,7 @@ export class SpellSystem {
             if (!this.ribbon.held) {
                 this.ribbon.trigger();
                 this._lastCast = this._time;
+                this._castStyle = 2;
             }
         } else if (this.ribbon.held) {
             this.ribbon.release();

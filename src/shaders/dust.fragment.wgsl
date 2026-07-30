@@ -362,9 +362,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // That contrast is not decoration. It is the reason the moon has visible
     // markings from a quarter of a million miles away, and at ground level it is
     // what stops a crater field reading as one flat grey plane with holes in it.
+    // Softened twice from the first pass: the vacuum-thin haze stopped hiding
+    // the mid-distance, and full-contrast provinces plus hard-edged rays read
+    // as stains on glass rather than as ground.
     let mare = noise2(world.xz * 0.0016) * 0.5 + 0.5;
     var albedo = mix(
-        uniforms.regolithHigh, uniforms.regolithLow, smoothstep(0.35, 0.78, mare)
+        uniforms.regolithHigh, uniforms.regolithLow,
+        smoothstep(0.28, 0.88, mare) * 0.72
     );
     // Ejecta rays: streaks of fresher, brighter fines thrown across the plain,
     // the second thing lunar ground has that one flat grey does not. Two
@@ -374,10 +378,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // lives, but a full-strength ray *field* reads as zebra.
     let rayA = noise2(world.xz * vec2f(0.011, 0.0032) + vec2f(7.3, 2.1)) * 0.5 + 0.5;
     let rayB = noise2(world.xz * vec2f(0.0028, 0.010) + vec2f(1.9, 5.4)) * 0.5 + 0.5;
-    let rays = smoothstep(0.60, 0.86, max(rayA, rayB));
-    albedo = mix(albedo, vec3f(0.158, 0.148, 0.135), rays * 0.30);
-    var roughness = 0.78;
-    var f0 = vec3f(0.020);
+    let rays = smoothstep(0.56, 0.92, max(rayA, rayB));
+    albedo = mix(albedo, vec3f(0.150, 0.140, 0.128), rays * 0.16);
+    // Regolith is one of the most matte surfaces in the solar system — a
+    // fairy-castle structure of dust that backscatters and traps light, with
+    // almost no coherent forward lobe. 0.78 gave it a satin sheen wherever
+    // the view grazed the sun side, which is most of what read as "glassy
+    // mountains" in the review. The glints stay — sparkle from single
+    // crystal facets is real — but the *surface* is chalk, not satin.
+    var roughness = 0.92;
+    var f0 = vec3f(0.012);
     var thickness = 1.0; // 1 = deep fines, 0 = thin over bedrock
 
     // Compacted regolith: pressed under the board. Darker, because compressing
@@ -524,11 +534,19 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     var ambient = albedo * INV_PI * irradiance;
 
     // Ambient specular from the sky, at a roughness-selected mip.
+    //
+    // Nearly dead on open regolith, and that is the fix for the glass. The
+    // LUT's lower hemisphere is the *bright solved ground*, so at grazing
+    // view angles this term was painting the whole field with a view-locked
+    // sheen of its own reflection — the exact behaviour of a glazed surface,
+    // on ground whose entire character is that it has none. It survives at
+    // full strength only where something genuinely vitrified: the fused
+    // trails, which are made of glass and have earned the look.
     let R = reflect(-V, N);
     let mip = sqrt(roughness) * 6.0;
     let skyRefl = textureSampleLevel(skyLUT, skyLUTSampler, dirToLatLong(R), mip).rgb;
     let Fr = fresnelSchlickRough(NdotV, f0, roughness);
-    ambient += skyRefl * Fr * uniforms.ambientIntensity * mix(1.0, 2.6, iceAmount);
+    ambient += skyRefl * Fr * uniforms.ambientIntensity * mix(0.12, 2.6, iceAmount);
 
     var color = direct + ambient;
 

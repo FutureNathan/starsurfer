@@ -46,6 +46,18 @@ const SURF_GRIP = 7.5;
 /** Gait: metres of travel per full stride cycle, scaled by speed. */
 const STRIDE_BASE = 1.55;
 
+/**
+ * The trick jump's launch speed and its gravity, m/s and m/s².
+ *
+ * Deliberately not the moon's 1.62 — at lunar gravity this pop would hang
+ * for over five seconds, which is a cutscene, not a trick. 6.8 with a 4.3
+ * launch gives about a metre and a half of air for a second and a quarter:
+ * long enough to read the spin, short enough to stay a rhythm element
+ * between carves.
+ */
+const JUMP_V = 4.3;
+const AIR_G = 6.8;
+
 export class CharacterController {
     /**
      * @param {{ heightAt(x:number,z:number):number, normalAt(x:number,z:number,out:Vector3):Vector3 }} terrain
@@ -76,6 +88,8 @@ export class CharacterController {
          * legs end up disagreeing about which frame it is.
          */
         this.cast = 0;
+        /** 1..5 — which power the current gesture belongs to. */
+        this.castStyle = 2;
         this.castAimX = 0;
         this.castAimY = 0;
         this.castAimZ = 1;
@@ -113,6 +127,25 @@ export class CharacterController {
         this.groundNormal = new Vector3(0, 1, 0);
 
         this._prevSpeed = 0;
+
+        /**
+         * The trick jump. Shift on a moving board pops it off the ground;
+         * on foot the same key stays sprint, so nothing anyone has learned
+         * changes. While airborne the ground forces are simply absent — no
+         * thrust, no scrub, no grip — which is both the physics and the
+         * feel: a jump is a commitment.
+         */
+        this.airborne = false;
+        this.vy = 0;
+        this.airTime = 0;
+        /** Visual-only spin the figure adds to its stance during the trick. */
+        this.trickSpin = 0;
+        /** 0..1 through the arc — drives the crouch-and-grab tuck. */
+        this.airTuck = 0;
+        /** One-frame flag on touchdown, with the impact speed for feedback. */
+        this.landed = false;
+        this.landVy = 0;
+        this._prevSprint = false;
     }
 
     /**
@@ -131,8 +164,10 @@ export class CharacterController {
         rig.getFlatForward(_fwd);
         rig.getFlatRight(_right);
 
-        if (this.surf > 0.5) this._surfStep(h, rig);
-        else this._walkStep(h);
+        if (this.surf > 0.5 && !this.airborne) this._surfStep(h, rig);
+        else if (this.surf <= 0.5) this._walkStep(h);
+        // Airborne: ballistic. The velocity it left the lip with is the
+        // velocity it lands with.
 
         // ---------------------------------------------------- integrate + snap
         this.position.x += this.velocity.x * h;
@@ -140,8 +175,44 @@ export class CharacterController {
 
         this.groundY = this.terrain.heightAt(this.position.x, this.position.z);
         this.terrain.normalAt(this.position.x, this.position.z, this.groundNormal);
-        // Snap with a little softness so micro-ripples don't jitter the rig.
-        this.position.y = expDamp(this.position.y, this.groundY, 26, h);
+
+        this.landed = false;
+        const sprintEdge = input.sprint && !this._prevSprint;
+        this._prevSprint = input.sprint;
+
+        if (!this.airborne) {
+            // Snap with a little softness so micro-ripples don't jitter the rig.
+            this.position.y = expDamp(this.position.y, this.groundY, 26, h);
+
+            if (sprintEdge && this.surf > 0.5 && this.speed > 4) {
+                this.airborne = true;
+                this.vy = JUMP_V;
+                this.airTime = 0;
+            }
+        } else {
+            this.airTime += h;
+            this.vy -= AIR_G * h;
+            this.position.y += this.vy * h;
+
+            // The trick: one full eased rotation across the expected hang,
+            // and a tuck that peaks at the apex. Both are *visual* — the
+            // figure spins its stance and pulls its knees, the velocity
+            // never hears about it, so the landing carries straight on.
+            const T = (2 * JUMP_V) / AIR_G;
+            const p = Math.min(1, this.airTime / T);
+            this.trickSpin = Math.PI * 2 * (p * p * (3 - 2 * p));
+            this.airTuck = Math.sin(Math.PI * p);
+
+            if (this.vy < 0 && this.position.y <= this.groundY) {
+                this.position.y = this.groundY;
+                this.airborne = false;
+                this.landed = true;
+                this.landVy = -this.vy;
+                this.trickSpin = 0;
+                this.airTuck = 0;
+                rig.addTrauma(0.05 + Math.min(0.12, this.landVy * 0.02));
+            }
+        }
 
         // --------------------------------------------------------- bookkeeping
         this.speed = Math.hypot(this.velocity.x, this.velocity.z);
