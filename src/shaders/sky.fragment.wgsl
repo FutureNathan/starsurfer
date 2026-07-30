@@ -44,6 +44,9 @@ uniform planet3Size: f32;
 uniform planet4Dir: vec3f;
 uniform planet4Axis: vec3f;
 uniform planet4Size: f32;
+uniform planet5Dir: vec3f;
+uniform planet5Axis: vec3f;
+uniform planet5Size: f32;
 
 // The field's own aerial perspective, so the range is hazed by the same nebula
 // the dust in front of it is. See `shadeRidge`.
@@ -216,6 +219,13 @@ const P3_STORM: vec3f = vec3f(0.680, 0.630, 0.800);
 const P4_DEEP: vec3f = vec3f(0.140, 0.062, 0.034);
 const P4_PALE: vec3f = vec3f(0.560, 0.290, 0.150);
 const P4_STORM: vec3f = vec3f(0.720, 0.490, 0.340);
+// The ember world: a young gas giant still hot from its own formation,
+// which is the honest licence for a planet that visibly glows — it is not
+// reflecting the star, it is radiating. Crimson depths, rose banding, and
+// storms swirling up toward white-pink.
+const P5_DEEP: vec3f = vec3f(0.300, 0.035, 0.060);
+const P5_PALE: vec3f = vec3f(0.850, 0.160, 0.220);
+const P5_STORM: vec3f = vec3f(1.000, 0.550, 0.500);
 
 /// Shade one world. Returns (radiance, coverage); coverage 0 outside the disc,
 /// easing over the last ~1.5% of radius so the limb is a couple of anti-aliased
@@ -228,7 +238,7 @@ const P4_STORM: vec3f = vec3f(0.720, 0.490, 0.340);
 fn shadeGlobe(
     dir: vec3f, pdir: vec3f, paxis: vec3f, size: f32,
     deep: vec3f, pale: vec3f, storm: vec3f,
-    bandFreq: f32, seed: f32, detail: f32
+    bandFreq: f32, seed: f32, detail: f32, selfLit: f32
 ) -> vec4f {
     // Disc-local frame, and the view ray's coordinates in it.
     let U = normalize(cross(pdir, paxis));
@@ -272,16 +282,24 @@ fn shadeGlobe(
     // terminator, limb darkening, and a thin bright arc of atmosphere on the
     // lit limb — small, because "without a crazy glow effect" was the brief.
     let ndl = dot(N, uniforms.sunDir);
-    let day = smoothstep(-0.14, 0.38, ndl) * (0.30 + 0.70 * clamp(ndl, 0.0, 1.0));
+    var day = smoothstep(-0.14, 0.38, ndl) * (0.30 + 0.70 * clamp(ndl, 0.0, 1.0));
+    // A self-luminous world has no night side worth the name: its own heat
+    // floors the terminator, so the banding stays readable all the way
+    // round and only *deepens* toward the dark limb.
+    day = max(day, 0.42 * selfLit);
     let limbDark = 0.55 + 0.45 * pz;
-    let rim = pow(1.0 - pz, 3.0) * smoothstep(-0.25, 0.45, ndl) * 0.30;
+    var rim = pow(1.0 - pz, 3.0) * smoothstep(-0.25, 0.45, ndl) * 0.30;
+    // The glowing rim is most of the read in the reference: hot atmosphere
+    // seen edge-on through a longer path. Wider and star-independent.
+    rim = rim + selfLit * pow(1.0 - pz, 2.2) * 0.55;
 
     // The inner glow: a faint self-lit body, strongest at the centre of the
     // disc and independent of the star, so the night side is a dim luminous
     // crescent instead of a bite out of the star field. Small — it lifts the
     // lit face by under a tenth — but it is what reads as "glowing from
     // within" rather than "lit from without".
-    let inner = mix(deep, pale, 0.6) * (0.30 + 0.70 * pz) * (0.10 + 0.08 * detail);
+    let inner = mix(deep, pale, 0.6) * (0.30 + 0.70 * pz)
+        * (0.10 + 0.08 * detail + 0.55 * selfLit);
 
     let radiance = (alb * day * limbDark + pale * rim + inner) * uniforms.planetGlow;
     let cover = smoothstep(1.0, 0.985, sqrt(rr));
@@ -409,7 +427,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         && (dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)
          || dot(dir, uniforms.planet2Dir) > cos(uniforms.planet2Size)
          || dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size)
-         || dot(dir, uniforms.planet4Dir) > cos(uniforms.planet4Size))) {
+         || dot(dir, uniforms.planet4Dir) > cos(uniforms.planet4Size)
+         || dot(dir, uniforms.planet5Dir) > cos(uniforms.planet5Size))) {
         planetHit = true;   // provisional; confirmed against the discs below
     }
 
@@ -437,22 +456,27 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         if (dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)) {
             pc = shadeGlobe(dir, uniforms.planetDir, uniforms.planetAxis,
                             uniforms.planetSize, PLANET_DEEP, PLANET_PALE,
-                            PLANET_STORM, 13.0, 3.1, 1.0);
+                            PLANET_STORM, 13.0, 3.1, 1.0, 0.0);
         }
         if (pc.a <= 0.0 && dot(dir, uniforms.planet2Dir) > cos(uniforms.planet2Size)) {
             pc = shadeGlobe(dir, uniforms.planet2Dir, uniforms.planet2Axis,
                             uniforms.planet2Size, P2_DEEP, P2_PALE,
-                            P2_STORM, 9.0, 11.4, 0.0);
+                            P2_STORM, 9.0, 11.4, 0.0, 0.0);
         }
         if (pc.a <= 0.0 && dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size)) {
             pc = shadeGlobe(dir, uniforms.planet3Dir, uniforms.planet3Axis,
                             uniforms.planet3Size, P3_DEEP, P3_PALE,
-                            P3_STORM, 11.0, 21.9, 0.0);
+                            P3_STORM, 11.0, 21.9, 0.0, 0.0);
         }
         if (pc.a <= 0.0 && dot(dir, uniforms.planet4Dir) > cos(uniforms.planet4Size)) {
             pc = shadeGlobe(dir, uniforms.planet4Dir, uniforms.planet4Axis,
                             uniforms.planet4Size, P4_DEEP, P4_PALE,
-                            P4_STORM, 4.5, 33.2, 0.0);
+                            P4_STORM, 4.5, 33.2, 0.0, 0.0);
+        }
+        if (pc.a <= 0.0 && dot(dir, uniforms.planet5Dir) > cos(uniforms.planet5Size)) {
+            pc = shadeGlobe(dir, uniforms.planet5Dir, uniforms.planet5Axis,
+                            uniforms.planet5Size, P5_DEEP, P5_PALE,
+                            P5_STORM, 8.0, 47.6, 1.0, 1.0);
         }
         if (pc.a <= 0.001) { planetHit = false; }   // grazed the corner of a cone
         else {

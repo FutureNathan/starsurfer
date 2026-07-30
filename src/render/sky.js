@@ -159,6 +159,7 @@ export class Sky {
                     "planet2Dir", "planet2Axis", "planet2Size",
                     "planet3Dir", "planet3Axis", "planet3Size",
                     "planet4Dir", "planet4Axis", "planet4Size",
+                    "planet5Dir", "planet5Axis", "planet5Size",
                     "fogDensity",
                     "fogHeightFalloff",
                     "fogStart",
@@ -477,6 +478,20 @@ export class Sky {
         _planet4Axis.normalize();
         m.setVector3("planet4Axis", _planet4Axis);
         m.setFloat("planet4Size", (2.6 * Math.PI) / 180);
+
+        // The ember world: a young gas giant still radiating its formation
+        // heat — the licence for the one planet that visibly glows. Sits a
+        // third of the way round the other side from the hero, mid-sky, big
+        // enough to be unmissable without competing with the hero's forty
+        // degrees.
+        const p5az = paz - 0.62, p5el = 0.42;   // -36 deg, 24 deg up
+        const p5ce = Math.cos(p5el);
+        _planet5Dir.set(Math.sin(p5az) * p5ce, Math.sin(p5el), Math.cos(p5az) * p5ce);
+        m.setVector3("planet5Dir", _planet5Dir);
+        _planet5Axis.set(Math.sin(p5az + 0.9) * 0.38, 1, Math.cos(p5az + 0.9) * 0.38);
+        _planet5Axis.normalize();
+        m.setVector3("planet5Axis", _planet5Axis);
+        m.setFloat("planet5Size", (6.5 * Math.PI) / 180);
         _dustEmit.set(
             DUST_EMISSION[0] * S.dustGlow,
             DUST_EMISSION[1] * S.dustGlow,
@@ -508,6 +523,8 @@ const _planet3Dir = new Vector3();
 const _planet3Axis = new Vector3();
 const _planet4Dir = new Vector3();
 const _planet4Axis = new Vector3();
+const _planet5Dir = new Vector3();
+const _planet5Axis = new Vector3();
 const _shBasis = new Float32Array(9);
 const _irrTmp = new Float32Array(3);
 const _dustEmit = new Color3(0, 0, 0);

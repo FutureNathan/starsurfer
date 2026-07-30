@@ -143,6 +143,11 @@ export class Overlay {
         this._mkNum(nums, "tris", "tris");
         this._mkNum(nums, "spikes", "spikes");
         this._mkNum(nums, "res", "res");
+        // Chrome-only (a dash elsewhere). Here as a leak detector: if the
+        // game slows over minutes, this row is the first question — a heap
+        // that climbs with it is a JS leak, a flat heap with a climbing GPU
+        // row is the GPU side, and both flat is the machine throttling.
+        this._mkNum(nums, "heap", "js heap");
 
         // ---------------------------------------------------- frame budget
         const bh = document.createElement("h2");
@@ -368,6 +373,8 @@ export class Overlay {
         this._txt(r.tris, fmtK(stats.triangles));
         this._txt(r.spikes, String(spikes.count));
         this._txt(r.res, engine.getRenderWidth() + "x" + engine.getRenderHeight());
+        const mem = /** @type {any} */ (performance).memory;
+        this._txt(r.heap, mem ? (mem.usedJSHeapSize / 1048576).toFixed(0) + " MB" : "—");
 
         r.fps_row.className = "num" + (stats.fps < 60 ? " bad" : stats.fps < 88 ? " warn" : "");
         r.fpsLow_row.className = "num" + (stats.fpsLow < 60 ? " bad" : stats.fpsLow < 75 ? " warn" : "");

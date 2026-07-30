@@ -86,10 +86,13 @@ async function boot() {
     window.addEventListener("resize", () => engine.resize());
 
     installDrawCounter(engine);
-    // WebGPU timestamp queries. The engine is created with `enableAllFeatures`,
-    // so `timestamp-query` is on wherever the adapter has it; if it does not,
-    // the counter simply stays at zero and the overlay shows a dash.
-    engine.captureGPUFrameTime(true);
+    // WebGPU timestamp queries — but only while somebody is looking at them.
+    // Left running, the capture attaches a query set and a readback staging
+    // buffer to every render pass of every frame (this scene runs ~15 passes),
+    // to feed one overlay row that is hidden almost all of the time. Query
+    // readbacks that outpace their completion are a classic way a WebGPU app
+    // degrades over minutes and then falls over, so the capture now follows
+    // the overlay's visibility — see `toggleOverlay` below.
     registerShaders();
 
     await loading.phase("charting the void", 0.12);
@@ -174,7 +177,11 @@ async function boot() {
     // F1 keeps its direct route to the overlay while riding, but yields when
     // the pause menu is up — the menu's settings tab has adopted the same
     // element, and a second toggle would tug it out from under the panel.
-    const toggleOverlay = () => { if (!pauseMenu?.paused) overlay.toggle(); };
+    const toggleOverlay = () => {
+        if (pauseMenu?.paused) return;
+        overlay.toggle();
+        engine.captureGPUFrameTime(overlay.visible);
+    };
     initInput(canvas, { onToggleOverlay: toggleOverlay });
     // Sound: the music player and the effect synthesiser. Arms itself on the
     // first gesture, because browsers refuse audio before one.
