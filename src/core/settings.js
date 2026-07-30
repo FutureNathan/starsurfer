@@ -64,27 +64,32 @@ export const S = {
      * Strength of the galactic band across the sky. Well under its old 1.0:
      * at the LUT's 512x256 the band's dust-lane detail is a smear, and a smear
      * reads as fog. Held faint it reads as a distant glow instead, and the
-     * crisp screen-space star field carries the sky.
+     * crisp screen-space star field carries the sky. Down again from 0.35 in
+     * the second crisp-sky pass, trading the last of the wash for the planets.
      */
-    galaxyBand: 0.35,
+    galaxyBand: 0.26,
     /** Degrees the galactic plane is tilted out of the horizon. */
     galaxyTilt: 38,
     /** Bearing, degrees, of the galactic core. */
     galaxyBearing: 205,
     /**
-     * The companion world — a banded ice-giant hanging in the sky.
+     * The companion worlds — a banded teal ice-giant, with a small amber world
+     * high on the far side of the sky and a dim violet one low near the band.
+     * The bearing and elevation here place the hero; the other two hang off
+     * its bearing at fixed offsets, so this one control swings the family.
      *
-     * The one bright beautiful thing up there, and deliberately the one thing
-     * guaranteed never to glow: its lit face tops out around 1.7 linear against
-     * a bloom knee of 6.5, so it stays crisp at any size. `planetSize` is the
-     * angular *radius* in degrees — 5.8 reads as a large moon; push it past
-     * fifteen for the looming-world look.
+     * The bright beautiful things up there, and deliberately the things
+     * guaranteed never to glow: the hero's lit face tops out near 3 linear
+     * against a bloom knee of 6.5, so it stays crisp at any size — the "from
+     * within" light is painted shading, not bloom. `planetSize` is the angular
+     * *radius* in degrees — 7.6 reads as a looming world; push it past fifteen
+     * to fill the sky.
      */
     showPlanet: true,
     planetBearing: 232,
     planetElevation: 27,
-    planetSize: 5.8,
-    planetGlow: 2.6,
+    planetSize: 7.6,
+    planetGlow: 3.3,
 
     /**
      * Strength of the auroral curtains. Near zero by default: at the LUT's

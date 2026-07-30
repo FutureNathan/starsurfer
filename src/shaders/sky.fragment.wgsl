@@ -35,6 +35,12 @@ uniform planetDir: vec3f;
 uniform planetAxis: vec3f;
 uniform planetSize: f32;
 uniform planetGlow: f32;
+uniform planet2Dir: vec3f;
+uniform planet2Axis: vec3f;
+uniform planet2Size: f32;
+uniform planet3Dir: vec3f;
+uniform planet3Axis: vec3f;
+uniform planet3Size: f32;
 
 // The field's own aerial perspective, so the range is hazed by the same nebula
 // the dust in front of it is. See `shadeRidge`.
@@ -158,50 +164,79 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     return mix(col, inscatter, ext);
 }
 
-// ------------------------------------------------------------------ planet
+// ----------------------------------------------------------------- planets
 //
-// A banded ice-giant, drawn analytically in the skybox the way the stars are:
-// screen-space, full resolution, never in the bake. That last part is the point
-// of doing it here — the LUT is 512x256 and everything in it comes out as a
-// soft smear, which is exactly the complaint the old aurora curtains earned.
-// An analytic disc is crisp at any resolution for the cost of a few noise
-// calls on the pixels it covers.
+// A family of three worlds, drawn analytically in the skybox the way the stars
+// are: screen-space, full resolution, never in the bake. That last part is the
+// point of doing it here — the LUT is 512x256 and everything in it comes out
+// as a soft smear, which is exactly the complaint the old aurora curtains
+// earned. An analytic disc is crisp at any resolution for the cost of a few
+// noise calls on the pixels it covers.
 //
-// It is scenery, not a source: the lit face tops out around 1.7 linear, well
-// under the bloom knee, so the one bright beautiful thing in the sky is also
-// the one thing guaranteed never to glow. Deliberately teal-blue — the cool
+// They are scenery, not sources: the hero's lit face tops out near 3 linear,
+// well under the bloom knee, so the bright beautiful things in the sky are
+// also the things guaranteed never to glow. The hero is teal-blue — the cool
 // counterweight the palette's warm gold has been missing, and the hue every
-// reference image the request came with had in common.
+// reference image the request came with had in common. The companions sit
+// against it: a small amber world high on the other side of the sky, and a
+// dim violet one low near the band.
 
 const PLANET_DEEP: vec3f = vec3f(0.050, 0.115, 0.135);
 const PLANET_PALE: vec3f = vec3f(0.360, 0.640, 0.660);
 const PLANET_STORM: vec3f = vec3f(0.700, 0.860, 0.840);
+const P2_DEEP: vec3f = vec3f(0.150, 0.080, 0.045);
+const P2_PALE: vec3f = vec3f(0.610, 0.410, 0.240);
+const P2_STORM: vec3f = vec3f(0.820, 0.640, 0.430);
+const P3_DEEP: vec3f = vec3f(0.095, 0.080, 0.150);
+const P3_PALE: vec3f = vec3f(0.440, 0.390, 0.590);
+const P3_STORM: vec3f = vec3f(0.680, 0.630, 0.800);
 
-/// Shade the disc. `dir` must already be inside the angular radius.
-fn shadePlanet(dir: vec3f) -> vec3f {
+/// Shade one world. Returns (radiance, coverage); coverage 0 outside the disc,
+/// easing over the last ~1.5% of radius so the limb is a couple of anti-aliased
+/// pixels rather than a stair-stepped circle — at the hero's new size the edge
+/// is hundreds of pixels of circumference and a hard cut reads as a sticker.
+///
+/// `detail` is 1 for the hero and 0 for the companions: the extra octave and
+/// the storm oval only exist where there are pixels to show them, and a
+/// two-degree disc is not where.
+fn shadeGlobe(
+    dir: vec3f, pdir: vec3f, paxis: vec3f, size: f32,
+    deep: vec3f, pale: vec3f, storm: vec3f,
+    bandFreq: f32, seed: f32, detail: f32
+) -> vec4f {
     // Disc-local frame, and the view ray's coordinates in it.
-    let U = normalize(cross(uniforms.planetDir, uniforms.planetAxis));
-    let W = cross(uniforms.planetDir, U);
-    let sr = sin(uniforms.planetSize);
+    let U = normalize(cross(pdir, paxis));
+    let W = cross(pdir, U);
+    let sr = sin(size);
     let px = dot(dir, U) / sr;
     let py = dot(dir, W) / sr;
     let rr = px * px + py * py;
-    if (rr >= 1.0) { return vec3f(-1.0); }
+    if (rr >= 1.0) { return vec4f(0.0); }
     let pz = sqrt(1.0 - rr);
 
     // Outward normal of the sphere at the point this ray sees.
-    let N = normalize(U * px + W * py - uniforms.planetDir * pz);
+    let N = normalize(U * px + W * py - pdir * pz);
 
     // Latitude bands, warped so no boundary is a clean line, with pale storm
     // streaks worked along them. All of it keys off the *normal*, so the
     // pattern wraps the sphere correctly and forever — there is no texture to
-    // run out of.
-    let lat = dot(N, uniforms.planetAxis);
-    let wob = noise2(vec2f(lat * 6.5, px * 2.3 + py * 0.7) + vec2f(3.1, 8.7)) * 0.55;
-    let bandT = sin(lat * 13.0 + wob * 3.4) * 0.5 + 0.5;
-    let swirl = noise2(vec2f(lat * 21.0 + wob * 5.0, px * 3.1 + 2.4)) * 0.5 + 0.5;
-    var alb = mix(PLANET_DEEP, PLANET_PALE, bandT);
-    alb = mix(alb, PLANET_STORM, swirl * swirl * 0.30);
+    // run out of. The fine octave shears the band edges at a scale that only
+    // resolves on the hero — it is what keeps a fifteen-degree disc looking
+    // drawn at full resolution rather than scaled up.
+    let lat = dot(N, paxis);
+    let wob = noise2(vec2f(lat * 6.5, px * 2.3 + py * 0.7) + vec2f(seed, seed * 2.8)) * 0.55;
+    let fine = noise2(vec2f(lat * 46.0 + wob * 7.0, px * 8.3 + py * 3.1 + seed)) * detail;
+    let bandT = sin(lat * bandFreq + wob * 3.4 + fine * 1.3) * 0.5 + 0.5;
+    let swirl = noise2(vec2f(lat * 21.0 + wob * 5.0, px * 3.1 + 2.4 + seed)) * 0.5 + 0.5;
+    var alb = mix(deep, pale, bandT);
+    alb = mix(alb, storm, swirl * swirl * 0.30);
+    // Bright filaments where the fine octave crests inside a shear zone, dark
+    // threads where it troughs, and one pale storm oval per world's seed —
+    // the anticyclone every gas giant photograph has exactly one of.
+    alb = mix(alb, storm, smoothstep(0.55, 0.90, swirl) * max(fine, 0.0) * 0.9);
+    alb = mix(alb, deep, max(-fine, 0.0) * 0.55);
+    let eye = noise2(vec2f(lat * 9.0 + seed * 1.7, px * 4.2 - py * 1.6 + 7.7));
+    alb = mix(alb, storm, smoothstep(0.34, 0.50, eye) * 0.75 * detail);
 
     // Lit by the same star as everything else, with a soft gas-giant
     // terminator, limb darkening, and a thin bright arc of atmosphere on the
@@ -211,7 +246,16 @@ fn shadePlanet(dir: vec3f) -> vec3f {
     let limbDark = 0.55 + 0.45 * pz;
     let rim = pow(1.0 - pz, 3.0) * smoothstep(-0.25, 0.45, ndl) * 0.30;
 
-    return (alb * day * limbDark + PLANET_PALE * rim) * uniforms.planetGlow;
+    // The inner glow: a faint self-lit body, strongest at the centre of the
+    // disc and independent of the star, so the night side is a dim luminous
+    // crescent instead of a bite out of the star field. Small — it lifts the
+    // lit face by under a tenth — but it is what reads as "glowing from
+    // within" rather than "lit from without".
+    let inner = mix(deep, pale, 0.6) * (0.30 + 0.70 * pz) * (0.10 + 0.08 * detail);
+
+    let radiance = (alb * day * limbDark + pale * rim + inner) * uniforms.planetGlow;
+    let cover = smoothstep(1.0, 0.985, sqrt(rr));
+    return vec4f(radiance, cover);
 }
 
 /// The point-star field.
@@ -272,7 +316,21 @@ fn starField(dir: vec3f, density: f32, t: f32) -> vec3f {
 
     // Colour by spectral class, roughly: hot blue-white through to cool amber,
     // with the bright end of the population running warm to sit with the gold.
-    let col = mix(vec3f(0.74, 0.82, 1.0), vec3f(1.0, 0.80, 0.56), h.y * 0.7 + mag * 0.3);
+    var col = mix(vec3f(0.74, 0.82, 1.0), vec3f(1.0, 0.80, 0.56), h.y * 0.7 + mag * 0.3);
+
+    // And a scattering of genuinely coloured ones — about one star in seven,
+    // in four saturated classes, so the field reads as a population rather
+    // than a white stipple. The tints are strong because a two-pixel point
+    // has no area to carry a subtle one: by the time TAA and the display have
+    // had it, "slightly blue" is white.
+    let jewel = fract(h.x * 57.31 + h.y * 13.77);
+    if (jewel > 0.86) {
+        let pick = fract(jewel * 41.7);
+        if (pick < 0.30)      { col = vec3f(0.52, 0.62, 1.0); }    // sapphire
+        else if (pick < 0.58) { col = vec3f(1.0, 0.52, 0.28); }    // ember
+        else if (pick < 0.82) { col = vec3f(0.50, 0.95, 0.86); }   // teal
+        else                  { col = vec3f(1.0, 0.58, 0.76); }    // rose
+    }
     return col * core * tw;
 }
 
@@ -306,10 +364,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // instead of leaving a seam.
     // ------------------------------------------------------------- the world
     // Behind the range, in front of the stars — the gates below keep all three
-    // honest. See `shadePlanet`.
+    // honest. See `shadeGlobe`.
     var planetHit = false;
-    if (uniforms.planetGlow > 0.001 && dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)) {
-        planetHit = true;   // provisional; confirmed against the disc below
+    if (uniforms.planetGlow > 0.001
+        && (dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)
+         || dot(dir, uniforms.planet2Dir) > cos(uniforms.planet2Size)
+         || dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size))) {
+        planetHit = true;   // provisional; confirmed against the discs below
     }
 
     // The floor tracks the eye: the band that has to be covered reaches down to
@@ -329,9 +390,34 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     if (planetHit) {
-        let pc = shadePlanet(dir);
-        if (pc.x < 0.0) { planetHit = false; }   // grazed the corner of the cone
-        else { col = pc; }
+        // The three cones never overlap — the companions are placed a third of
+        // the sky away from the hero — so the first disc that takes the pixel
+        // is the only one that could have.
+        var pc = vec4f(0.0);
+        if (dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)) {
+            pc = shadeGlobe(dir, uniforms.planetDir, uniforms.planetAxis,
+                            uniforms.planetSize, PLANET_DEEP, PLANET_PALE,
+                            PLANET_STORM, 13.0, 3.1, 1.0);
+        }
+        if (pc.a <= 0.0 && dot(dir, uniforms.planet2Dir) > cos(uniforms.planet2Size)) {
+            pc = shadeGlobe(dir, uniforms.planet2Dir, uniforms.planet2Axis,
+                            uniforms.planet2Size, P2_DEEP, P2_PALE,
+                            P2_STORM, 9.0, 11.4, 0.0);
+        }
+        if (pc.a <= 0.0 && dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size)) {
+            pc = shadeGlobe(dir, uniforms.planet3Dir, uniforms.planet3Axis,
+                            uniforms.planet3Size, P3_DEEP, P3_PALE,
+                            P3_STORM, 11.0, 21.9, 0.0);
+        }
+        if (pc.a <= 0.001) { planetHit = false; }   // grazed the corner of a cone
+        else {
+            // Blend at the limb, replace inside it. The star field and the
+            // aureole stay gated on the *solid* part only, so the two or three
+            // anti-aliased edge pixels can show a star dimming out behind the
+            // limb rather than a hard notch.
+            col = mix(col, pc.rgb, pc.a);
+            planetHit = pc.a > 0.5;
+        }
     }
 
     // ------------------------------------------------------------- the star
@@ -377,16 +463,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the frame.
     //
     // The pair below is the same idea at the right scale. The tight lobe is one
-    // degree wide, hugging the eight-pixel disc, and peaks at 7.5 — a bright ring
+    // degree wide, hugging the eight-pixel disc, and peaks at 6 — a bright ring
     // on the disc's edge, over the threshold across a couple of hundred pixels
-    // rather than tens of thousands. The wide one is a four-degree,
-    // half-a-linear-unit haze that never blooms at all and exists only so the
-    // star sits in the nebula rather than being pasted on top of it.
+    // rather than tens of thousands. The wide one is a four-degree haze a third
+    // of a linear unit tall that never blooms at all and exists only so the
+    // star sits in the sky rather than being pasted on top of it. Both came
+    // down another quarter in the crisp-sky pass: with the band dimmed and the
+    // aurora off, the haze was the widest soft thing left in the frame.
     // Occluded by the range along with the disc — the analytic part of the glow
     // is scene light and a mountain in front of it blocks it. The instrument's
     // own glare survives: the bloom pass reads the final frame, so a star
     // half-behind a summit still spills over the silhouette the way glare does.
-    let aureole = pow(max(0.0, mu), 20000.0) * 0.070 + pow(max(0.0, mu), 300.0) * 0.0030;
+    let aureole = pow(max(0.0, mu), 20000.0) * 0.056 + pow(max(0.0, mu), 300.0) * 0.0019;
     col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5
          * select(1.0, 0.0, ridgeHit || planetHit);
 

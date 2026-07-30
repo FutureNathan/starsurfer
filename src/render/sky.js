@@ -156,6 +156,8 @@ export class Sky {
                     "ridgeAmp",
                     "dustEmission",
                     "planetDir", "planetAxis", "planetSize", "planetGlow",
+                    "planet2Dir", "planet2Axis", "planet2Size",
+                    "planet3Dir", "planet3Axis", "planet3Size",
                     "fogDensity",
                     "fogHeightFalloff",
                     "fogStart",
@@ -422,10 +424,18 @@ export class Sky {
         m.setFloat("ambientIntensity", S.ambientIntensity);
         m.setFloat("ridgeAmp", S.showMountains ? S.mountainHeight : 0);
 
-        // The companion world. Screen-space like the stars, so nothing here
-        // touches the bake. The axis leans 24 degrees off the vertical toward
+        // The companion worlds. Screen-space like the stars, so nothing here
+        // touches the bake. Each axis leans 24 degrees off the vertical toward
         // a fixed bearing, which is what tips the banding into the diagonal
         // every reference image of a gas giant has.
+        //
+        // The two smaller worlds hang off the hero's own bearing rather than
+        // carrying sliders of their own: the amber one 117 degrees round and
+        // high, the violet one 98 degrees the other way and low, so the one
+        // bearing control swings the whole family and no setting can ever
+        // park one world behind another. Their sizes are fixed — they are
+        // *companions*, and a slider that could grow one past the hero would
+        // quietly break what the trio is for.
         const paz = (S.planetBearing * Math.PI) / 180;
         const pel = (S.planetElevation * Math.PI) / 180;
         const pce = Math.cos(pel);
@@ -436,6 +446,24 @@ export class Sky {
         m.setVector3("planetAxis", _planetAxis);
         m.setFloat("planetSize", (S.planetSize * Math.PI) / 180);
         m.setFloat("planetGlow", S.showPlanet ? S.planetGlow : 0);
+
+        const p2az = paz + 2.042, p2el = 0.820;   // +117 deg, 47 deg up
+        const p2ce = Math.cos(p2el);
+        _planet2Dir.set(Math.sin(p2az) * p2ce, Math.sin(p2el), Math.cos(p2az) * p2ce);
+        m.setVector3("planet2Dir", _planet2Dir);
+        _planet2Axis.set(Math.sin(p2az - 0.9) * 0.45, 1, Math.cos(p2az - 0.9) * 0.45);
+        _planet2Axis.normalize();
+        m.setVector3("planet2Axis", _planet2Axis);
+        m.setFloat("planet2Size", (1.9 * Math.PI) / 180);
+
+        const p3az = paz - 1.710, p3el = 0.262;   // -98 deg, 15 deg up
+        const p3ce = Math.cos(p3el);
+        _planet3Dir.set(Math.sin(p3az) * p3ce, Math.sin(p3el), Math.cos(p3az) * p3ce);
+        m.setVector3("planet3Dir", _planet3Dir);
+        _planet3Axis.set(Math.sin(p3az + 0.7) * 0.45, 1, Math.cos(p3az + 0.7) * 0.45);
+        _planet3Axis.normalize();
+        m.setVector3("planet3Axis", _planet3Axis);
+        m.setFloat("planet3Size", (1.1 * Math.PI) / 180);
         _dustEmit.set(
             DUST_EMISSION[0] * S.dustGlow,
             DUST_EMISSION[1] * S.dustGlow,
@@ -461,6 +489,10 @@ export class Sky {
 
 const _planetDir = new Vector3();
 const _planetAxis = new Vector3();
+const _planet2Dir = new Vector3();
+const _planet2Axis = new Vector3();
+const _planet3Dir = new Vector3();
+const _planet3Axis = new Vector3();
 const _shBasis = new Float32Array(9);
 const _irrTmp = new Float32Array(3);
 const _dustEmit = new Color3(0, 0, 0);

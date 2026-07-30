@@ -502,15 +502,30 @@ rather than curtain, and the screenshot review called it exactly that. The
 sky's resting state is dark — stars, a faint band, one planet — and the sliders
 still run to two for anyone who wants the weather back.
 
-The planet is the one bright thing that darkness bought. An analytic gas giant
-shaded in the skybox fragment shader — banded latitudes warped by noise, a soft
-terminator lit from the scene's own star bearing, limb darkening, a thin
-atmospheric rim — about eleven degrees across, sitting high off the galactic
-band. Its lit face lands near 1.7 linear: bright enough to read as a world
-against the void, deliberately under the bloom knee so it never grows a glow.
-The far range occludes it like everything else in the sky, and it is gated out
-of the star's aureole and the point-star field, so stars do not twinkle
-through it.
+The planets are the bright things that darkness bought — three of them now. The
+hero is an analytic teal gas giant shaded in the skybox fragment shader — banded
+latitudes warped by noise, a soft terminator lit from the scene's own star
+bearing, limb darkening, a thin atmospheric rim — about fifteen degrees across,
+sitting high off the galactic band. Because every part of it keys off the
+sphere's own normal rather than a texture, growing it costs nothing in
+resolution: at the larger size a third, finer noise octave shears the band
+edges, threads bright and dark filaments through the shear zones, and works one
+pale storm oval into the banding — detail that only resolves on a disc this
+large, which is what keeps it looking drawn at full resolution rather than
+scaled up. Its limb is anti-aliased over its last percent and a half, and a
+faint self-lit inner term — strongest at the centre of the disc, independent of
+the star — leaves the night side a dim luminous crescent instead of a bite out
+of the star field. That is the "glowing from within" read, done as painted
+shading: the lit face lands near 3 linear, still under the bloom knee, so the
+glow is in the world and never in the lens.
+
+Two companions hang off the hero's bearing at fixed offsets, so the one slider
+swings the whole family and no setting can park one world behind another: a
+small amber world a third of the sky round and high, and a dimmer violet one
+the other way, low near the band. They share the hero's shader with the fine
+octave off — a two-degree disc has no pixels to show it. The far range occludes
+all three like everything else in the sky, and they are gated out of the star's
+aureole and the point-star field, so stars do not twinkle through them.
 
 The lower hemisphere of that LUT is not sky. It holds the ground's own solved
 radiance, and the solve is a genuine iteration: bake, project to SH, work out what
@@ -529,14 +544,19 @@ trough and pitch up out of it. One candidate star per cell, tested against a sin
 hash, with apparent magnitude cubed so the population is overwhelmingly faint with
 a handful of bright ones. Each is drawn about two pixels across — small enough to
 read as a point, large enough that the temporal resolve does not treat it as
-sub-pixel noise.
+sub-pixel noise. Most run a quiet spectral ramp from blue-white to warm amber,
+and about one in seven is genuinely coloured — sapphire, ember, teal or rose,
+at full saturation, because a two-pixel point has no area to carry a subtle
+tint: by the time TAA and the display have had it, "slightly blue" is white.
 
 The near star is a third of a degree across with limb darkening: smaller and harder
 than the sun seen from Earth, because there is no air to soften its edge. Its
 aureole is not atmospheric — in vacuum a bright point source has no halo in the
 scene, only in the instrument watching it, which is the same thing the bloom pass
 downstream is modelling — so it is deliberately tiny: a one-degree lobe hugging the
-disc and a four-degree haze half a linear unit tall that never blooms at all.
+disc and a four-degree haze a third of a linear unit tall that never blooms at
+all — both trimmed another quarter in the crisp-sky pass, since with the band
+dimmed and the aurora off the haze was the widest soft thing left in the frame.
 
 Getting that number wrong is worth recording, because it took three passes to find
 and none of the first two were looking in the right place. The thing making the
