@@ -238,19 +238,35 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the sun seen from Earth, because this one is further away and there is no
     // air to soften its edge.
     //
-    // What is left of the aureole is not atmospheric. In vacuum a bright point
-    // source has no halo *in the scene*; the halo is in the instrument, and this
-    // scene is being watched through one. So the wide lobe is gone and the tight
-    // one stays, at a fraction of its old strength: glare in the optics, which
-    // is also what the bloom pass downstream is modelling.
+    // Its radiance is set by what the bloom pass will do with it, not by what a
+    // star's surface is actually worth.
+    //
+    // The disc is a handful of pixels and the bloom pyramid spreads whatever is in
+    // them across a couple of hundred, so the halo's brightness is very nearly the
+    // disc's radiance times the ratio of those two areas — about 1:250. Anything
+    // that clears the AgX shoulder reads as pure white regardless, and the disc
+    // clears it by two orders of magnitude at any value here, so the *only* thing
+    // this number changes is how far the glare reaches. At the old 42 it put
+    // roughly 36 linear into the halo against dust lit to 5, and the star became a
+    // hole in the middle of the frame with a hundred-pixel skirt.
+    //
+    // At 4.0 the halo lands near 3.5 — under the bloom threshold it came from, so
+    // it cannot feed itself a second time — and the star stays a small hard white
+    // point with a glow around it rather than a floodlight.
     let mu = dot(dir, uniforms.sunDir);
     let discCos = cos(0.0029);
     if (mu > discCos) {
         let r = sqrt(max(0.0, 1.0 - mu * mu)) / 0.0029;
         let limb = pow(max(0.0, 1.0 - r * r * 0.72), 0.42);
-        col += uniforms.sunColor * uniforms.sunIntensity * 42.0 * limb;
+        col += uniforms.sunColor * uniforms.sunIntensity * 4.0 * limb;
     }
-    let aureole = pow(max(0.0, mu), 2600.0) * 3.2 + pow(max(0.0, mu), 220.0) * 0.06;
+    // What is left of the aureole is not atmospheric. In vacuum a bright point
+    // source has no halo *in the scene*; the halo is in the instrument, and this
+    // scene is being watched through one. So the wide lobe is all but gone and the
+    // tight one is a two-degree flare: glare in the optics, which is also what the
+    // bloom pass downstream is modelling, and there is no reason to pay for it
+    // twice.
+    let aureole = pow(max(0.0, mu), 2600.0) * 0.5 + pow(max(0.0, mu), 220.0) * 0.012;
     col += uniforms.sunColor * uniforms.sunIntensity * aureole * 0.5;
 
     // --------------------------------------------------------------- stars

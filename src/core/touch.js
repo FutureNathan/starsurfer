@@ -1,15 +1,22 @@
 /**
  * On-screen controls, for when the primary pointer is a finger.
  *
- * A thumbstick at the bottom left, the five powers and the surf trigger at the
- * bottom right, and the rest of the screen is a look pad. The layout is the one
- * every twin-stick mobile game has converged on, and it converged there for
- * reasons worth stating, because they are what the fiddly parts below are for:
+ * A thumbstick at the bottom left, the five powers at the bottom right, and the
+ * rest of the screen is a look pad. The layout is the one every twin-stick mobile
+ * game has converged on, and it converged there for reasons worth stating,
+ * because they are what the fiddly parts below are for:
  *
  *   The stick floats. Its ring is drawn where the thumb lands rather than at a
  *   fixed spot, anywhere in the lower-left quadrant. A fixed stick demands the
  *   player look down to find it; a floating one can be grabbed blind, which is
  *   the whole point of a control you use while watching something else.
+ *
+ *   The stick is a throttle, not a direction. A nudge walks, most of the way runs,
+ *   and pushing it out to the ring drops onto the board and surfs. There is no
+ *   surf button, and that is not just one fewer control: a button would make
+ *   surfing a mode you are in or out of, and the whole feel of this scene is that
+ *   speed is something you lean into. It also frees the corner, which is where a
+ *   thumb can actually reach, for the powers.
  *
  *   Every control captures its own pointer. `setPointerCapture` means a thumb
  *   that slides off a button keeps driving that button until it lifts, and a
@@ -42,8 +49,9 @@ export const touch = {
     active: false,
     moveX: 0,
     moveZ: 0,
-    /** Pushed past the sprint ring — there is no separate sprint button. */
+    /** Stick past `RUN_AT`: still walking, but at running speed. */
     sprint: false,
+    /** Stick out at the ring: on the board. No button, the stick is the throttle. */
     surf: false,
     /** 0, or 1..5 for the frame a power button was pressed. */
     pressed: 0,
@@ -109,10 +117,17 @@ const CSS = `
 }
 
 #tc.hold #tc-ring, #tc.hold #tc-knob { opacity: 1; }
-/* Pushed to the sprint ring: the knob goes gold and gains a halo. */
-#tc.run #tc-knob {
+
+/* Out past the surf threshold: the knob and the ring both go gold. The ring
+   matters more than the knob — it is the thing that tells you where the gear
+   change is without having to look down and find the knob inside it. */
+#tc.surf #tc-knob {
     border-color: rgba(255, 246, 224, 0.95);
-    box-shadow: 0 0 26px rgba(255, 196, 107, 0.75);
+    box-shadow: 0 0 26px rgba(255, 196, 107, 0.8);
+}
+#tc.surf #tc-ring {
+    border-color: rgba(255, 196, 107, 0.7);
+    box-shadow: 0 0 22px rgba(255, 196, 107, 0.22);
 }
 
 /* ------------------------------------------------------------------ buttons */
@@ -158,17 +173,6 @@ const CSS = `
 .tc-power { width: 52px; height: 52px; }
 .tc-power span { font-size: 8px; }
 
-#tc-surf {
-    width: 88px;
-    height: 88px;
-    right: 0;
-    bottom: 0;
-    border-color: rgba(255, 196, 107, 0.62);
-    background: radial-gradient(circle at 50% 32%,
-        rgba(107, 47, 122, 0.58) 0%, rgba(20, 14, 43, 0.60) 100%);
-}
-#tc-surf span { font-size: 11px; letter-spacing: 0.2em; }
-
 /* --------------------------------------------------------------- overlay tab */
 
 #tc-gear {
@@ -199,7 +203,6 @@ body.tc-on #hint {
     #tc-knob { width: 46px; height: 46px; margin: -23px 0 0 -23px; }
     .tc-power { width: 46px; height: 46px; }
     .tc-power span { font-size: 7px; }
-    #tc-surf { width: 72px; height: 72px; }
     #tc-pad { right: 12px; bottom: 12px; }
 }
 `;
@@ -207,21 +210,22 @@ body.tc-on #hint {
 /** Radius of the stick's travel, px. Matches the ring's visual radius. */
 const STICK_R = 58;
 /**
- * Fraction of travel past which the run flag sets. There is no sprint button —
- * pushing the stick out is the gesture, which is one fewer thing to hit.
+ * The two gear changes, as fractions of the stick's travel.
  *
- * High, because of how the floating origin behaves: any thumb still travelling
- * outward is pinned at full deflection by definition, so the *whole* difference
- * between walking and running is whether the thumb is holding a partial offset
- * or leaning on the ring. Set it low and walking becomes unreachable.
+ * Below `RUN_AT` the walk speed scales straight off the deflection, so a small
+ * offset is a slow walk — which is the gear that actually matters, because
+ * walking is what you do to turn round and line up a run.
  *
- * Hysteresis, because that leaves the entry threshold inside the last 5 px of
- * travel: a thumb resting on the ring drifts across a single-valued threshold
- * constantly, and the astronaut would flicker between a walk and a run for as
- * long as it sat there. Enter high, leave much lower.
+ * `SURF_ON` drops onto the board. It has hysteresis and `SURF_OFF` is a long way
+ * below it, for a reason that is specific to a floating origin: a thumb still
+ * travelling outward is pinned at full deflection by definition, so a resting
+ * thumb sits right on top of any threshold placed near the edge and drifts back
+ * and forth across it. Without the gap the astronaut would flicker between a walk
+ * and a nineteen-metre-a-second carve for as long as the thumb stayed there.
  */
-const SPRINT_ON = 0.92;
-const SPRINT_OFF = 0.74;
+const RUN_AT = 0.55;
+const SURF_ON = 0.84;
+const SURF_OFF = 0.62;
 /** Radians of camera rotation per pixel dragged. Below the mouse's, on purpose:
  *  a thumb has a fraction of a mouse's usable travel, and a 1:1 mapping makes
  *  the camera feel like it is fighting you. */
@@ -249,17 +253,18 @@ const POWERS = [
  * 220 px from the corner. On a 393 px phone that is past the middle of the
  * screen, well outside any thumb's sweep, and directly over the look pad.
  *
- * Three low and two behind them keeps everything inside 174 px of the corner
- * and keeps every button inside one sweep. Powers 1-3 sit on the near tier
- * because they are the ones worth reaching for first; the surf trigger owns the
- * corner itself, because it is the one held continuously rather than tapped.
+ * Three low and two behind them keeps everything inside 180 px of the corner and
+ * every button inside one sweep. Powers 1-3 sit on the near tier because they are
+ * the ones worth reaching for first, and power 1 sits in the corner itself — the
+ * only spot a thumb reaches without moving the hand at all — which is free now
+ * that the stick has taken over surfing.
  */
 const ARC = [
-    [4, 104],
-    [62, 122],
-    [122, 112],
-    [36, 178],
-    [96, 186],
+    [8, 14],
+    [72, 30],
+    [128, 84],
+    [24, 96],
+    [84, 142],
 ];
 
 /**
@@ -281,9 +286,7 @@ export function initTouch(canvas, hooks) {
         <div id="tc-zone"></div>
         <div id="tc-ring"></div>
         <div id="tc-knob"></div>
-        <div id="tc-pad">
-            <button class="tc-btn" id="tc-surf" aria-label="Surf"><span>surf</span></button>
-        </div>
+        <div id="tc-pad"></div>
         <button class="tc-btn" id="tc-gear" aria-label="Settings"><span>⚙</span></button>
     `;
     document.body.appendChild(root);
@@ -293,7 +296,6 @@ export function initTouch(canvas, hooks) {
     const ring = root.querySelector("#tc-ring");
     const knob = root.querySelector("#tc-knob");
     const pad = root.querySelector("#tc-pad");
-    const surfBtn = root.querySelector("#tc-surf");
     const gear = root.querySelector("#tc-gear");
 
     for (let i = 0; i < POWERS.length; i++) {
@@ -355,8 +357,9 @@ export function initTouch(canvas, hooks) {
         touch.moveX = dx / STICK_R;
         touch.moveZ = -dy / STICK_R;
         const t = Math.min(1, len / STICK_R);
-        touch.sprint = t >= (touch.sprint ? SPRINT_OFF : SPRINT_ON);
-        root.classList.toggle("run", touch.sprint);
+        touch.sprint = t >= RUN_AT;
+        touch.surf = t >= (touch.surf ? SURF_OFF : SURF_ON);
+        root.classList.toggle("surf", touch.surf);
         e.preventDefault();
     });
 
@@ -366,7 +369,8 @@ export function initTouch(canvas, hooks) {
         touch.moveX = 0;
         touch.moveZ = 0;
         touch.sprint = false;
-        root.classList.remove("hold", "run");
+        touch.surf = false;
+        root.classList.remove("hold", "surf");
     };
     zone.addEventListener("pointerup", dropStick);
     zone.addEventListener("pointercancel", dropStick);
@@ -425,21 +429,6 @@ export function initTouch(canvas, hooks) {
     canvas.addEventListener("pointercancel", dropLook);
     canvas.addEventListener("pointerleave", dropLook);
 
-    // ---------------------------------------------------------------- surf
-    surfBtn.addEventListener("pointerdown", (e) => {
-        surfBtn.setPointerCapture(e.pointerId);
-        surfBtn.classList.add("on");
-        touch.surf = true;
-        e.preventDefault();
-    });
-    const endSurf = (e) => {
-        surfBtn.classList.remove("on");
-        touch.surf = false;
-        if (e) e.preventDefault();
-    };
-    surfBtn.addEventListener("pointerup", endSurf);
-    surfBtn.addEventListener("pointercancel", endSurf);
-
     gear.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         hooks.onToggleOverlay?.();
@@ -475,9 +464,8 @@ export function initTouch(canvas, hooks) {
         touch.moveX = 0;
         touch.moveZ = 0;
         touch.sprint = false;
-        surfBtn.classList.remove("on");
         for (const b of root.querySelectorAll(".tc-btn")) b.classList.remove("on");
-        root.classList.remove("hold", "run");
+        root.classList.remove("hold", "surf");
     };
     window.addEventListener("blur", release);
     document.addEventListener("visibilitychange", () => {
@@ -487,7 +475,8 @@ export function initTouch(canvas, hooks) {
     // The hint the loading screen reveals talks about a mouse and a keyboard.
     const hint = document.getElementById("hint");
     if (hint) {
-        hint.textContent = "drag to look · left stick to move · hold surf";
+        hint.textContent =
+            "drag to look · nudge the stick to walk · push it out to surf";
     }
 
     touch.active = true;

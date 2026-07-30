@@ -156,7 +156,14 @@ export class CharacterController {
     }
 
     _walkStep(h) {
-        const maxSpeed = input.sprint ? RUN_SPEED : WALK_SPEED;
+        // Speed scales with how far the stick is pushed, not just its direction.
+        // A keyboard always pushes to the edge of the unit disc, so this is a no-op
+        // there; on a thumbstick it is the difference between a control that can
+        // place you and one that only has a top speed. The whole point of walking
+        // in this scene is to turn round and line up a run, and that needs a low
+        // gear.
+        const throttle = Math.min(1, Math.hypot(input.moveX, input.moveZ));
+        const maxSpeed = (input.sprint ? RUN_SPEED : WALK_SPEED) * throttle;
 
         _wish.set(
             _fwd.x * input.moveZ + _right.x * input.moveX,
@@ -188,12 +195,29 @@ export class CharacterController {
     }
 
     _surfStep(h, rig) {
-        // Steer from the mouse (camera yaw drift) plus explicit A/D.
-        const steer = Scalar.Clamp(
-            input.moveX * 0.85 + angleDelta(this.facing, rig.yaw) * 1.25,
-            -1,
-            1
+        // Steer toward the heading the stick is *pointing*, falling back to the
+        // camera's own yaw when it is not being pushed.
+        //
+        // The version that only read `moveX` could not come about. Its steer was a
+        // lateral nudge plus a pull toward the camera yaw, so reversing direction
+        // meant swinging the camera through 180 degrees and waiting — which is
+        // awkward with a mouse and very nearly impossible with a thumb, because on
+        // a touchscreen the look pad and the stick are different hands and the
+        // board straightens itself the moment you let go of one.
+        //
+        // Reading the stick as a heading makes a full turn one gesture: hold the
+        // stick where you want to end up and the board carves round to it. It is
+        // still a carve rather than a pivot — `SURF_TURN` caps the rate, so coming
+        // about at speed takes a wide arc and scrubs speed doing it, which is what
+        // a board does.
+        _wish.set(
+            _fwd.x * input.moveZ + _right.x * input.moveX,
+            0,
+            _fwd.z * input.moveZ + _right.z * input.moveX
         );
+        const wishLen = Math.hypot(_wish.x, _wish.z);
+        const want = wishLen > 0.15 ? Math.atan2(_wish.x, _wish.z) : rig.yaw;
+        const steer = Scalar.Clamp(angleDelta(this.facing, want) * 1.9, -1, 1);
         this.facing += steer * SURF_TURN * h;
 
         // Camera shake, and only from the one thing that earns it: an edge
@@ -211,8 +235,17 @@ export class CharacterController {
         this.terrain.normalAt(this.position.x, this.position.z, _n);
         const slopeAssist = -(_n.x * fx + _n.z * fz) * 26;
 
+        // Carving away from where you are already going scrubs speed — the harder
+        // the board is turned across its own momentum, the more of it goes into
+        // throwing mass instead of into travel. Keyed to the angle between the
+        // heading and the velocity rather than to a single input axis, so it is
+        // true whichever direction you asked for.
         let thrust = SURF_THRUST + slopeAssist;
-        if (input.moveZ < 0) thrust -= 14; // pull back to scrub speed
+        const vs = Math.hypot(this.velocity.x, this.velocity.z);
+        if (vs > 1.0) {
+            const align = (this.velocity.x * fx + this.velocity.z * fz) / vs;
+            thrust -= 16 * Scalar.Clamp(1.0 - align, 0, 1);
+        }
 
         this.velocity.x += fx * thrust * h;
         this.velocity.z += fz * thrust * h;

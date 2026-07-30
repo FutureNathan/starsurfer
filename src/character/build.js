@@ -9,8 +9,8 @@
  *
  *   body   linearly blend-skinned to the bones — helmet, faceplate, pressure
  *          suit, life-support pack, gloves, boots, and the board under them.
- *   cloth  driven from the simulated soft goods — the lower torso and the two
- *          sleeves — sampled with Catmull-Rom in the vertex shader so a
+ *   cloth  driven from the simulated soft goods — the two sleeves — sampled
+ *          with Catmull-Rom in the vertex shader so a
  *          coarse solve renders as a smooth surface.
  *   nap    shell layers of multi-layer insulation: the same seam ring emitted N
  *          times, each pushed further along its normal, alpha-tested into
@@ -312,8 +312,14 @@ export function buildBody(scene) {
     // waist bearing and at the shoulder yoke. This is a fibreglass shell, not a
     // ribcage, and the silhouette should say so.
     const torso = [];
+    // Reaches down past the hip bearings rather than stopping at the waist. There
+    // is no soft lower torso hanging off this shell — a simulated one read as a
+    // skirt, which is what a free-hanging panel over a pair of legs always reads
+    // as — so the shell itself has to close the figure, and the last two rings
+    // pull in to a brief that the thigh tops emerge from.
     const TORSO = [
-        [0.88, 0.168, 0.132], [0.98, 0.176, 0.140], [1.06, 0.184, 0.146],
+        [0.80, 0.150, 0.124], [0.86, 0.166, 0.136],
+        [0.92, 0.176, 0.142], [0.98, 0.180, 0.144], [1.06, 0.184, 0.146],
         [1.14, 0.196, 0.152], [1.22, 0.206, 0.158], [1.30, 0.210, 0.160],
         [1.38, 0.202, 0.154], [1.44, 0.172, 0.136],
     ];

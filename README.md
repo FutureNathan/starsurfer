@@ -35,17 +35,27 @@ they write into the same input struct the keyboard and mouse do.
 | | |
 |---|---|
 | Drag anywhere | look |
-| Left thumbstick | move · push it out to the ring to sprint |
+| Left thumbstick | **the throttle** — nudge to walk, most of the way to run, out to the ring to surf |
 | Two-finger pinch | zoom |
-| **SURF** (bottom right) | star-surf, held |
-| Five ringed buttons | the powers · **ION** is held |
+| Five ringed buttons (bottom right) | the powers · **ION** is held |
 | ⚙ (top right) | settings and performance overlay |
 
-The stick floats: its ring is drawn wherever the thumb lands in the lower-left
-quadrant rather than at a fixed spot, so it can be grabbed without looking, and
-its centre is dragged along if the thumb runs past the ring so it can never run
-out of travel mid-turn. Append `?touch=1` to force the controls on for a look at
-the layout from a desktop, or `?touch=0` to force them off.
+There is no surf button, and that is not just one fewer control to hit. A button
+makes surfing a mode you are in or out of; a throttle makes speed something you
+lean into, which is what the scene is about. It also frees the corner — the one
+spot a thumb reaches without moving the hand — for the powers.
+
+The gear change has hysteresis, and needs it. The stick's ring is drawn wherever
+the thumb lands in the lower-left quadrant rather than at a fixed spot, so it can
+be grabbed without looking, and its centre is dragged along if the thumb runs past
+the ring so it can never run out of travel mid-turn. That last part means a thumb
+still travelling outward is pinned at full deflection by definition — so a
+threshold placed near the edge would sit right under a resting thumb and the
+astronaut would flicker between a walk and a nineteen-metre-a-second carve. Surf
+engages at 0.84 of travel and does not release until 0.62.
+
+Append `?touch=1` to force the controls on for a look at the layout from a
+desktop, or `?touch=0` to force them off.
 
 The overlay exposes every art parameter as a live slider — the star's bearing and
 elevation, the galactic band's tilt and core bearing, aurora strength, the dust's

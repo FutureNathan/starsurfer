@@ -6,7 +6,8 @@
 // silent unresolved-symbol failure if any one of the nine is missed.)
 //
 // The sky is deep space: a black backdrop carrying a faint galactic band and
-// auroral curtains, evaluated analytically rather than sampled from an HDRI. Same argument as the atmospheric model this replaced — with a model, the
+// auroral curtains, evaluated analytically rather than sampled from an HDRI.
+// Same argument as the atmospheric model this replaced — with a model, the
 // galaxy's orientation and the star's bearing are sliders that correctly drag
 // the ambient tint and the horizon colour along with them.
 //
@@ -286,17 +287,37 @@ fn aerialNearSky(tex: texture_2d<f32>, samp: sampler, viewDir: vec3f) -> vec3f {
 /// sample, at the exact mip the sky material itself draws with. At full
 /// extinction a hazed surface and the sky pixel beside it are then the same
 /// number, and there is nothing left to draw an edge.
+/// `sunRad` is the star's *radiance*, not its normalised hue — every call site
+/// passes `sunRadiance`, and the forward-scatter coefficient below is derived
+/// against that scale.
 fn aerialInscatterSky(
     tex: texture_2d<f32>, samp: sampler, viewDir: vec3f,
-    sunDir: vec3f, sunColor: vec3f, ext: f32
+    sunDir: vec3f, sunRad: vec3f, ext: f32
 ) -> vec3f {
     // Mip 0 and no tilt: this has to match `sky.fragment.wgsl`'s own lookup
     // exactly, or "fully hazed" and "sky" are two different colours again.
     let exact = textureSampleLevel(tex, samp, dirToLatLong(normalize(viewDir)), 0.0).rgb;
 
+    // Forward scatter: light the star has thrown off the medium into the eye. Its
+    // coefficient is the scattering strength of that medium, and the medium out
+    // here is a nebula rather than air — orders of magnitude thinner, and the
+    // coefficient has to say so.
+    //
+    // This is the one place in the chain where the ten-times source scale has to
+    // be undone rather than carried. `sunRadiance` is scaled up by the factor the
+    // ground's albedo lacks, so that reflected light lands in a workable range;
+    // this term does not reflect off anything, it adds directly to the frame. At
+    // an air-thickness coefficient it puts 228 linear into ground lit to 5 — so
+    // looking anywhere near the star, the dust, the far ridges and the horizon all
+    // go to white, and the whole frame washes out in the one direction a player
+    // spends most of their time facing.
+    //
+    // Set against the surface it composites over instead: at the peak, straight
+    // into the star, the haze reaches about 6 — just above lit dust, which is what
+    // haze looks like — and falls off with the phase function from there.
     let mu = dot(viewDir, sunDir);
     let fwd = phaseMie(mu, 0.62) * 5.5;
-    let near = aerialNearSky(tex, samp, viewDir) + sunColor * fwd * 0.16;
+    let near = aerialNearSky(tex, samp, viewDir) + sunRad * fwd * 0.0042;
 
     // Ramps across roughly 100 m to 700 m on the current fog settings: the near
     // field keeps the cool dome and the warm sun-facing haze it is tuned for, and

@@ -124,90 +124,6 @@ function curve(table, t) {
 }
 
 /**
- * The suit's lower torso.
- *
- * A closed tube from the waist bearing down to the hip seam, pleated only enough
- * to break the symmetry the solver has nothing else to break with. It has to be a
- * tube and not an open sheet: `clothNode` in charSkin.wgsl wraps `u` and every
- * panel builder sweeps a full turn, so opening the topology would mean changing
- * the wrap to a clamp for *every* panel at once.
- *
- * Simulated rather than skinned, and worth defending now that it barely moves.
- * What the solver buys here is not motion — a pressure garment does not billow —
- * it is the collision pass keeping the panel off the leg capsules when the legs
- * cross under it, which no amount of rigid skinning gets right, and a couple of
- * centimetres of lag that stops the hem looking welded to the hips.
- */
-function makeLowerTorso() {
-    const p = new ClothPanel({
-        name: "lower", cols: 28, rows: 7, matId: M_SOFT,
-        renderCols: 64, renderRows: 22,
-        weaveU: 1.35, weaveV: 0.72,
-        aoTop: 0.7, aoBottom: 0.5,
-        collide: C_TORSO | C_LEGS,
-    });
-
-    // A pressure garment is not a robe. Every rate here is high enough that the
-    // panel holds the shape it was authored in and the solver only ever takes the
-    // edge off it — a few centimetres of give over a stride, not a swing. The old
-    // values left the last three rows on shape memory alone, which is correct for
-    // fabric hanging in air and reads, correctly, as fabric hanging in air.
-    //
-    // What the solver still buys at these rates is worth keeping: the collision
-    // pass stops the panel intersecting the legs when they cross, and the give it
-    // does have is what keeps the hem from looking welded to the hips.
-    const RATE = [Infinity, 70, 48, 34, 24, 17, 12];
-    // Starts inside the waist bearing's 0.190 and grows past the leg capsules,
-    // so the collision pass is shaping it rather than fighting it.
-    const RAD = [
-        [0.00, 0.180, 0.150],
-        [0.30, 0.205, 0.174],
-        [0.70, 0.230, 0.198],
-        [1.00, 0.248, 0.216],
-    ];
-    const YT = [
-        [0.00, 0.985, 0],
-        [0.30, 0.880, 0],
-        [0.70, 0.760, 0],
-        [1.00, 0.000, 0], // filled per column below
-    ];
-
-    for (let j = 0; j < p.rows; j++) {
-        const v = j / (p.rows - 1);
-        const [rx, rz] = curve(RAD, v);
-        for (let i = 0; i < p.cols; i++) {
-            const a = (i / p.cols) * Math.PI * 2;
-            const sa = Math.sin(a), ca = Math.cos(a);
-            // Front hangs shorter than the back, and the edge scallops with the
-            // folds rather than cutting a clean arc.
-            // Ends at the hip rather than mid-thigh, and ends level. The deep
-            // scallop that was here cut the hem into a robe's uneven edge; a suit's
-            // lower torso finishes on a seam, and the seam is straight.
-            YT[3][1] = 0.762 + 0.016 * ca + 0.006 * Math.sin(a * 7 + 1.4);
-            const y = curve(YT, v)[0];
-            // Pleats. A tube cut as a smooth cone stays a smooth cone: the
-            // solver has nothing to break the symmetry with. Putting the folds
-            // in the *rest shape* means the constraints preserve them, and they
-            // travel with the fabric rather than sliding across it the way a
-            // normal map would.
-            // Panel seams, not pleats. A quarter of the old amplitude: enough to
-            // break the symmetry the solver has nothing else to break, far too
-            // little to read as gathered cloth.
-            const pleat = 1 + v * (0.016 * Math.sin(a * 7 + 1.4) + 0.007 * Math.sin(a * 11 + 3.0));
-
-            const o = (j * p.cols + i) * 3;
-            p.bindPos[o] = rx * sa * pleat;
-            p.bindPos[o + 1] = y;
-            p.bindPos[o + 2] = rz * ca * pleat - 0.012;
-            p.bone[j * p.cols + i] = B_ROOT;
-            p.pinRate[j * p.cols + i] = RATE[j];
-        }
-    }
-    p.finalise();
-    return p;
-}
-
-/**
  * A sleeve. Pinned tightly along the arm and genuinely loose only past the
  * wrist, where the cuff drapes. A fully free sleeve looks wonderful for about
  * four seconds and then slides off the elbow.
@@ -283,7 +199,7 @@ function makeSleeve(side) {
 }
 
 export function makePanels() {
-    return [makeLowerTorso(), makeSleeve(0), makeSleeve(1)];
+    return [makeSleeve(0), makeSleeve(1)];
 }
 
 // -----------------------------------------------------------------------------
