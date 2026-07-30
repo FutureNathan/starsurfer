@@ -2,7 +2,7 @@
  * Soft-goods simulation — verlet cloth on coarse grids.
  *
  * Each panel is a closed tube of particles, `cols` around by `rows` down.
- * The grids are deliberately coarse (eight by twenty for the tether) because the
+ * The grids are deliberately coarse (ten by eight for a sleeve) because the
  * render mesh does not use them directly: the vertex shader reconstructs a
  * smooth surface from them with Catmull-Rom, so tessellation and simulation cost
  * are completely decoupled. Doubling the visible smoothness costs nothing here.
@@ -12,7 +12,8 @@
  * exactly what a rigidly-skinned vertex would do. A per-particle `pinRate`
  * decides how hard it is pulled toward that target, in units of 1/second:
  *
- *   Infinity   the tether's anchor, the waist seam, the shoulder of a sleeve.
+ *   Infinity   the waist seam, the shoulder of a sleeve — anywhere the garment
+ *              is clamped to hardware and cannot move at all.
  *   10-60      follows the body closely, with a frame or two of give.
  *   1-5        follows loosely — this is where fabric starts to read as fabric.
  *   0.2-0.5    shape memory only. Stops a free end from slowly collapsing into
@@ -25,8 +26,9 @@
  *
  * Wind is *apparent* wind — the field wind minus the character's own velocity —
  * with quadratic drag. Over a dust sea the field term is a slow drift at most,
- * so it is the velocity term that does the work: the tether streams straight out
- * behind a nineteen-metre-a-second run with no special case for it anywhere.
+ * so it is the velocity term that does the work: at nineteen metres a second the
+ * soft goods are pressed flat back against the figure, with no special case for
+ * it anywhere.
  *
  * Allocation: none per frame. All state is typed arrays sized at construction.
  */
@@ -37,7 +39,7 @@ import {
     B_UPPER_R, B_FORE_R, B_HAND_R, B_NECK, B_SHIN_L, B_SHIN_R,
     B_THIGH_L, B_THIGH_R, B_FOOT_L, B_FOOT_R,
 } from "./figure.js";
-import { M_SOFT, M_TRIM } from "./build.js";
+import { M_SOFT } from "./build.js";
 
 /** Which body capsules a panel is allowed to collide against. */
 const C_TORSO = 1;
@@ -122,84 +124,19 @@ function curve(table, t) {
 }
 
 /**
- * The safety tether.
+ * The suit's lower torso.
  *
- * A flattened tube — eight columns around a section ninety millimetres wide and
- * twelve thick at the clamp, tapering to two thirds of that at the free end —
- * anchored to the life-support pack and left otherwise free. It
- * has to be a tube and not an open sheet: `clothNode` in charSkin.wgsl wraps `u`
- * and every panel builder sweeps a full turn, so opening the topology would mean
- * changing the wrap to a clamp for *every* panel at once.
+ * A closed tube from the waist bearing down to the hip seam, pleated only enough
+ * to break the symmetry the solver has nothing else to break with. It has to be a
+ * tube and not an open sheet: `clothNode` in charSkin.wgsl wraps `u` and every
+ * panel builder sweeps a full turn, so opening the topology would mean changing
+ * the wrap to a clamp for *every* panel at once.
  *
- * It carries no ground rows. A hem rides on the surface; a tether trailing at
- * head height must not be clamped to it.
- *
- * This is the single most valuable thing the solver does now. Nothing else on
- * the figure is free enough to show the difference between nineteen metres a
- * second and a standstill, and it costs one panel.
- */
-function makeTether() {
-    const p = new ClothPanel({
-        name: "tether", cols: 8, rows: 20, matId: M_TRIM,
-        renderCols: 16, renderRows: 48,
-        // Metres of surface, the same physical UV convention every other panel
-        // uses. The trim slot carries no weave depth, so nothing samples these
-        // today; they are here so the strap keeps its own scale if it is ever
-        // moved onto a woven slot, rather than inheriting whatever the sleeves
-        // happen to be set to.
-        weaveU: 0.20, weaveV: 2.4,
-        aoTop: 0.9, aoBottom: 1.0,
-        collide: C_TORSO,
-    });
-
-    // Welded at the anchor, then let go quickly. Past the fourth row it is
-    // shape memory only — a tether that is pulled toward a skinned target is a
-    // tether that cannot whip.
-    const RATE = [Infinity, 40, 8, 2, 0.8, 0.4];
-
-    // Anchored on the back of the pack and falling away behind. The centreline
-    // is 1.72 m, and that number is set by the standstill case rather than by
-    // the run: with the anchor at 1.30 m in bind, less the four centimetres the
-    // figure settles into the dust, this hangs to eight centimetres above the
-    // surface. `groundRows` is 0, so a longer one would simply lie through the
-    // dust — there is nothing here to stop it. Streamed out behind a full-speed
-    // run it reaches about two and a half metres back, which is still deep
-    // inside the near cascade's 26 m and keeps its shadow the whole way.
-    const AX = 0, AY = 1.300, AZ = -0.330;
-    const EX = 0, EY = 0.620, EZ = -1.900;
-
-    for (let j = 0; j < p.rows; j++) {
-        const v = j / (p.rows - 1);
-        // Sags on the way back rather than running straight, so the rest shape
-        // already has the curve the solver would otherwise have to find.
-        const cx = AX + (EX - AX) * v;
-        const cy = AY + (EY - AY) * Math.pow(v, 1.4);
-        const cz = AZ + (EZ - AZ) * v;
-        // Tapers along its length, the way a woven strap frays out of its
-        // clamp: widest at the anchor, narrow at the free end.
-        const rx = 0.045 * (1 - 0.35 * v);
-        const rz = 0.006 * (1 - 0.35 * v);
-
-        for (let i = 0; i < p.cols; i++) {
-            const a = (i / p.cols) * Math.PI * 2;
-            const o = (j * p.cols + i) * 3;
-            p.bindPos[o] = cx + Math.sin(a) * rx;
-            p.bindPos[o + 1] = cy + Math.cos(a) * rz;
-            p.bindPos[o + 2] = cz;
-            p.bone[j * p.cols + i] = B_CHEST;
-            p.pinRate[j * p.cols + i] = j < RATE.length ? RATE[j] : 0.25;
-        }
-    }
-    p.finalise();
-    return p;
-}
-
-/**
- * The lower torso: the soft section between the hard upper torso and the legs.
- *
- * It hangs off the waist bearing and stops above the knee. Short and close, so
- * it never covers the boots — with the boots hidden the entire foot-planting
- * solve would be invisible, and that solve is most of why the walk reads.
+ * Simulated rather than skinned, and worth defending now that it barely moves.
+ * What the solver buys here is not motion — a pressure garment does not billow —
+ * it is the collision pass keeping the panel off the leg capsules when the legs
+ * cross under it, which no amount of rigid skinning gets right, and a couple of
+ * centimetres of lag that stops the hem looking welded to the hips.
  */
 function makeLowerTorso() {
     const p = new ClothPanel({
@@ -210,7 +147,16 @@ function makeLowerTorso() {
         collide: C_TORSO | C_LEGS,
     });
 
-    const RATE = [Infinity, 40, 12, 4, 1.5, 0.8, 0.45];
+    // A pressure garment is not a robe. Every rate here is high enough that the
+    // panel holds the shape it was authored in and the solver only ever takes the
+    // edge off it — a few centimetres of give over a stride, not a swing. The old
+    // values left the last three rows on shape memory alone, which is correct for
+    // fabric hanging in air and reads, correctly, as fabric hanging in air.
+    //
+    // What the solver still buys at these rates is worth keeping: the collision
+    // pass stops the panel intersecting the legs when they cross, and the give it
+    // does have is what keeps the hem from looking welded to the hips.
+    const RATE = [Infinity, 70, 48, 34, 24, 17, 12];
     // Starts inside the waist bearing's 0.190 and grows past the leg capsules,
     // so the collision pass is shaping it rather than fighting it.
     const RAD = [
@@ -234,14 +180,20 @@ function makeLowerTorso() {
             const sa = Math.sin(a), ca = Math.cos(a);
             // Front hangs shorter than the back, and the edge scallops with the
             // folds rather than cutting a clean arc.
-            YT[3][1] = 0.660 + 0.055 * ca + 0.022 * Math.sin(a * 7 + 1.4);
+            // Ends at the hip rather than mid-thigh, and ends level. The deep
+            // scallop that was here cut the hem into a robe's uneven edge; a suit's
+            // lower torso finishes on a seam, and the seam is straight.
+            YT[3][1] = 0.762 + 0.016 * ca + 0.006 * Math.sin(a * 7 + 1.4);
             const y = curve(YT, v)[0];
             // Pleats. A tube cut as a smooth cone stays a smooth cone: the
             // solver has nothing to break the symmetry with. Putting the folds
             // in the *rest shape* means the constraints preserve them, and they
             // travel with the fabric rather than sliding across it the way a
             // normal map would.
-            const pleat = 1 + v * (0.062 * Math.sin(a * 7 + 1.4) + 0.026 * Math.sin(a * 11 + 3.0));
+            // Panel seams, not pleats. A quarter of the old amplitude: enough to
+            // break the symmetry the solver has nothing else to break, far too
+            // little to read as gathered cloth.
+            const pleat = 1 + v * (0.016 * Math.sin(a * 7 + 1.4) + 0.007 * Math.sin(a * 11 + 3.0));
 
             const o = (j * p.cols + i) * 3;
             p.bindPos[o] = rx * sa * pleat;
@@ -296,7 +248,10 @@ function makeSleeve(side) {
         B_UPPER_R, B_UPPER_R, B_UPPER_R,
         B_FORE_R, B_FORE_R, B_FORE_R, B_FORE_R, B_HAND_R,
     ];
-    const RATE = [Infinity, 50, 26, 40, 18, 9, 5, 1.2];
+    // Same argument as the lower torso, and the cuff rows matter most: at 5 and
+    // 1.2 the end of the sleeve was free to swing, and a suit arm ends in a
+    // machined wrist bearing that does not.
+    const RATE = [Infinity, 70, 55, 60, 42, 30, 22, 14];
 
     for (let j = 0; j < p.rows; j++) {
         const [seg, t, r] = ROWS[j];
@@ -328,7 +283,7 @@ function makeSleeve(side) {
 }
 
 export function makePanels() {
-    return [makeTether(), makeLowerTorso(), makeSleeve(0), makeSleeve(1)];
+    return [makeLowerTorso(), makeSleeve(0), makeSleeve(1)];
 }
 
 // -----------------------------------------------------------------------------
@@ -390,7 +345,7 @@ export class ClothSolver {
         // ---- apparent wind ----------------------------------------------
         const a = (S.windDirection * Math.PI) / 180;
         const ws = 3.2 * S.windStrength;
-        // Gusts in the drift, so a standing figure's tether is never dead still.
+        // Gusts in the drift, so a standing figure is never quite dead still.
         const gust = 1 + 0.35 * Math.sin(this._t * 0.7) + 0.18 * Math.sin(this._t * 2.3 + 1.1);
         this._wind[0] = Math.sin(a) * ws * gust - ch.velocity.x;
         this._wind[1] = 0.35 * Math.sin(this._t * 1.9);
@@ -423,8 +378,8 @@ export class ClothSolver {
         // ---- integrate ----------------------------------------------------
         // Quadratic drag against the apparent wind. At walking pace this is a
         // fraction of gravity; at nineteen metres a second it is four times it,
-        // which is what lays the tether out flat behind a surf run with no special
-        // case anywhere.
+        // which is what presses the soft goods flat against the figure through a
+        // surf run with no special case anywhere.
         const wx = this._wind[0], wy = this._wind[1], wz = this._wind[2];
         const wmag = Math.hypot(wx, wy, wz);
         const drag = 0.085 * wmag;

@@ -45,22 +45,22 @@ export function linear(hex) {
 // --------------------------------------------------------------------- the hues
 
 /**
- * The palette as authored. Deep indigo void, violet-magenta nebula, warm gold
- * accent — warm rather than the usual cold sci-fi cyan, which is the whole
- * point: this is meant to read as optimistic.
+ * The palette as authored. Black indigo void, violet and teal aurora, warm gold
+ * accent — warm rather than the usual cold sci-fi cyan, which is the whole point:
+ * this is meant to read as optimistic.
  */
 export const HEX = {
     /** Near-black indigo. The colour of empty sky between stars. */
     void: "#05060f",
-    /** The dark end of the nebula ramp. */
+    /** The dark end of the violet ramp. */
     nebulaDeep: "#2a1a4d",
-    /** The bright end of the nebula ramp, where the galactic band burns. */
+    /** The bright end of it, where the aurora's violet curtains sit. */
     nebulaBright: "#6b2f7a",
     /** Lit cosmic dust — the surface being surfed. */
     dust: "#b8a2ff",
     /** The dust in shadow, cooled and darkened. */
     dustShade: "#3b2f66",
-    /** Warm gold. Visor, wake, trim, UI accent. The signature. */
+    /** Warm gold. Faceplate, wake lip, trim, UI accent. The signature. */
     accent: "#ffc46b",
     /** Starlight white, very slightly warm so it sits with the gold. */
     star: "#fff6e0",
@@ -106,8 +106,6 @@ export const EMIT = {
     wake: { hue: LIN.dust, gain: 8.0 },
     /** Individual grains flung clear of the wake. The brightest thing thrown. */
     grain: { hue: LIN.star, gain: 14.0 },
-    /** The suit's trim strip. Present in shadow, not a light source. */
-    trim: { hue: LIN.accent, gain: 6.0 },
 };
 
 /**

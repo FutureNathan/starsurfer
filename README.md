@@ -48,7 +48,7 @@ out of travel mid-turn. Append `?touch=1` to force the controls on for a look at
 the layout from a desktop, or `?touch=0` to force them off.
 
 The overlay exposes every art parameter as a live slider — the star's bearing and
-elevation, the galactic band's tilt and core bearing, nebula density, the dust's
+elevation, the galactic band's tilt and core bearing, aurora strength, the dust's
 own glow, displacement depth, tonemap curve, exposure — plus a frame-time graph
 with median / 95th / 1% low, draw calls, triangles and a per-system CPU
 breakdown. Every system can be toggled off individually, and there are debug
@@ -94,10 +94,12 @@ ambient with an iteratively-solved dust bounce, and procedural view-dependent
 glints gated on grazing angle. Compression, displacement and crystalline charge
 are surface state channels the material reads rather than separate materials.
 
-The lighting split is deliberately two-sided: the star is warm, the nebula
-filling the shadows is violet, and sky irradiance runs 3% of direct on an
-upward-facing normal against 20% on a downward-facing one — because the glowing
-sea underneath is the dominant fill. Nothing in the frame goes black.
+The lighting split is deliberately two-sided: the star is warm and what fills the
+shadows is violet. With the sky black, almost none of that fill comes from above —
+sky irradiance is a fraction of a percent of direct on an upward-facing normal, and
+the dominant source is the glowing sea itself, arriving from below at around 20%.
+The ground lights the astronaut, not the other way round, and nothing in the frame
+goes black.
 
 Shadows are three hand-rolled cascades with world-space PCSS — blocker search,
 penumbra estimate, rotated Poisson filter — texel-snapped in world space and
@@ -140,8 +142,11 @@ and locomotion solved from the motion state rather than played back. The
 nineteenth bone is the board, and it is not parented to the figure at all: it is
 driven from the surface it is planing on, and the legs are solved down to it.
 
-Eight material slots carry the whole figure — woven pressure garment, soft goods,
-gold mirror faceplate, hard shell, glove, emissive trim, bare metal, board deck.
+Eight material slots carry the whole figure — pressure garment, soft goods, gold
+mirror faceplate, hard shell, glove, gold trim, bare metal, board deck. Only the
+faceplate emits; the trim is gold that reflects, because a strip that thin above
+the bloom threshold stops reading as an inlay and becomes a line drawn in front of
+the suit.
 Seven of the eight resolve their colour through the shared palette module; the
 metals do not, on purpose, because a conductor's normal-incidence reflectance is
 a measured optical constant rather than a design choice.
@@ -152,12 +157,13 @@ reaches for it — a planted foot cannot slide because nothing in the code is ab
 to move it. Gait phase advances with ground travelled, so stride length and
 ground speed are the same number by construction.
 
-The soft goods are Verlet cloth on four panels — the tether, the lower torso and
-two sleeves — with distance, bending and shape-memory constraints, nine body
-collision capsules, and apparent wind that is the field drift minus the
-character's own velocity. Over a dust sea the field term is a slow drift at most,
-so it is the velocity term that does the work: the tether streams straight out
-behind a nineteen-metre-a-second run with no special case anywhere. 516 simulated
+The soft goods are Verlet cloth on three panels — the lower torso and two sleeves
+— with distance, bending and shape-memory constraints, nine body collision
+capsules, and apparent wind that is the field drift minus the character's own
+velocity. Every pin rate is high, deliberately: a pressure garment does not
+billow, and what the solver is buying here is not motion but the collision pass
+keeping a panel off the leg capsules when the legs cross under it, plus a couple
+of centimetres of lag so the hem does not look welded to the hips. 516 simulated
 nodes render as 3,462 surface vertices through Catmull-Rom reconstruction in the
 vertex shader, so tessellation and simulation cost are fully decoupled. The
 frayed nap of multi-layer insulation at the neck seam and the glove cuffs is a
@@ -262,8 +268,8 @@ out of one include.
 ### The galaxy
 
 There is no atmosphere, so there is no scattering integral. The sky is a fixed
-analytic backdrop — unresolved starlight, a galactic band with dust lanes, and
-emission nebulae — evaluated from a handful of noise calls and baked into a
+analytic backdrop — a void that is genuinely black, a faint galactic band with
+dust lanes, and auroral curtains — evaluated from a handful of noise calls and baked into a
 512×256 equirectangular LUT, with a 64×32 copy read back on the CPU for
 spherical-harmonic irradiance. Analytic rather than a captured HDRI for the same
 reason the atmosphere it replaced was: with a model, the band's tilt and core
@@ -271,6 +277,16 @@ bearing are sliders that correctly drag the ambient tint and the horizon along
 with them. Modelling the backdrop as scattering would have been actively wrong —
 in vacuum the sky is not a function of the star at all, and tying the two
 together would swing the whole galaxy every time the star moved.
+
+The aurora is the one part shaped rather than merely coloured. Its noise is
+sampled with the vertical axis of the sample point squashed to a quarter, so the
+field varies quickly in azimuth and slowly in elevation and its features run as
+vertical curtains; sampled isotropically the identical noise gives blobs, and
+blobs read as nebulae, which is a completely different thing to look at. It is
+thresholded hard so most of the sky stays empty — a curtain that covers
+everything is fog — and its peak is held at output level 128 against a bloom
+threshold it never reaches, because an aurora that glows is a light source and
+this one is meant to be scenery.
 
 The lower hemisphere of that LUT is not sky. It holds the dust sea's own solved
 radiance, and the solve is a genuine iteration: bake, project to SH, work out what

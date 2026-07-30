@@ -9,8 +9,8 @@
  *
  *   body   linearly blend-skinned to the bones — helmet, faceplate, pressure
  *          suit, life-support pack, gloves, boots, and the board under them.
- *   cloth  driven from the simulated soft goods — the tether, the lower torso
- *          and the sleeves — sampled with Catmull-Rom in the vertex shader so a
+ *   cloth  driven from the simulated soft goods — the lower torso and the two
+ *          sleeves — sampled with Catmull-Rom in the vertex shader so a
  *          coarse solve renders as a smooth surface.
  *   nap    shell layers of multi-layer insulation: the same seam ring emitted N
  *          times, each pushed further along its normal, alpha-tested into
@@ -712,10 +712,13 @@ function buildBoard(B) {
     ];
     loft(B, fin, M_BOARD, [0, 0, 1], false, true);
 
-    // The stringer, run as a light strip. It reads the board's whole length in
-    // one line, which is what tells you which way it is pointing during a carve
-    // — and it ties the board to the same accent the faceplate and the pack
-    // strips carry.
+    // The stringer. It reads the board's whole length in one line, which is what
+    // tells you which way it is pointing during a carve, and it ties the board to
+    // the same gold the faceplate and the pack strips carry.
+    //
+    // Gold, but not emissive: the trim slot reflects and does not glow. A strip
+    // this thin at any radiance above the bloom threshold stops being an inlay and
+    // becomes a drawn line hanging in front of the board.
     const stringer = [
         ring(0, 0.070, 0.760, 0.008, 0.006, 1.0, bone),
         ring(0, 0.050, 0.400, 0.010, 0.007, 1.0, bone),

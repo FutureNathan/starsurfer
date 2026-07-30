@@ -61,7 +61,7 @@ export const S = {
     galaxyTilt: 38,
     /** Bearing, degrees, of the galactic core. */
     galaxyBearing: 205,
-    /** Density of the nebula clouds hanging in the void. */
+    /** Strength of the auroral curtains hanging around the galactic band. */
     nebulaStrength: 1.0,
 
     // ----------------------------------------------------------- cosmic dust
@@ -70,8 +70,15 @@ export const S = {
      * nicety — reflected light alone leaves a 0.09-albedo surface under one
      * small star with no readable form, so at zero the ground goes essentially
      * black and only its lit rim survives.
+     *
+     * Held below unity because the sky behind it is black. The glow's whole job
+     * is to keep shadowed dust legible, and how much it needs to do that depends
+     * entirely on what it is being compared against: against a lit sky it could
+     * afford to be generous, against a void it reads as luminous long before it
+     * runs out of detail. At 0.75 a shadowed trough lands near output level 116
+     * against a lit slope at 179 — present, clearly a glow, not a light source.
      */
-    dustGlow: 1.0,
+    dustGlow: 0.75,
     glintIntensity: 0.55,
     glintGrazing: 0.72, // how hard the grazing-angle gate bites
     sssStrength: 1.0,
@@ -130,20 +137,23 @@ export const S = {
     // the contrast power, AgX, its EOTF, the sRGB encode) puts the frame here,
     // in 8-bit output levels:
     //
-    //     void between stars        0        nebula cloud            49
-    //     dust in shadow           91        dust lit by the star   175
-    //     galactic band core      184        wake crest, full carve 206
-    //     brightest thrown grain  236        sunlit suit            243
+    //     the void                  0        median sky pixel         0
+    //     auroral curtain, 99th    90        curtain peak           128
+    //     dust in shadow          116        dust lit by the star   179
+    //     wake crest, full carve  211        brightest thrown grain 236
+    //     sunlit suit             244
     //
-    // Which is the ladder this scene wants: an actually-black void, a violet
-    // shadow that is dark but never crushed, and the suit as the brightest thing
-    // in frame without touching the clip.
+    // Which is the ladder this scene wants. The sky is *black* — not dark, black,
+    // at the median and at the void both — so the curtains and the star field are
+    // read against nothing, and no part of the backdrop reaches the bloom
+    // threshold and glows. Everything with form in it sits in the top half of the
+    // range, and the suit is the brightest thing in frame without touching clip.
     //
     // The ceiling is the AgX shoulder, and it is closer than it looks — a stop
-    // over this and the band, the wake crest and the suit all land in the region
+    // over this and the wake crest, the grains and the suit all land in the region
     // where the curve's slope collapses and resolve to the same flat white,
-    // which costs exactly the separation the whole look rests on. A stop under
-    // and the nebula stops reading as a light source.
+    // which costs exactly the separation the whole look rests on. A stop under and
+    // the aurora stops registering at all.
     exposure: 0.09,
     contrast: 1.14,
     bloomStrength: 0.22,
@@ -186,13 +196,13 @@ export const SCHEMA = [
             { k: "galaxyBand", l: "Galactic band", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "galaxyTilt", l: "Band tilt", t: "f", min: -60, max: 60, step: 1 },
             { k: "galaxyBearing", l: "Core bearing", t: "f", min: 0, max: 360, step: 1 },
-            { k: "nebulaStrength", l: "Nebula", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "nebulaStrength", l: "Aurora", t: "f", min: 0, max: 2, step: 0.01 },
         ],
     },
     {
         group: "Void",
         items: [
-            { k: "fogDensity", l: "Nebula density", t: "f", min: 0, max: 0.03, step: 0.0001 },
+            { k: "fogDensity", l: "Medium density", t: "f", min: 0, max: 0.03, step: 0.0001 },
             { k: "fogHeightFalloff", l: "Height falloff", t: "f", min: 0, max: 0.3, step: 0.001 },
             { k: "aerialStrength", l: "Depth haze", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "windDirection", l: "Drift dir", t: "f", min: 0, max: 360, step: 1 },

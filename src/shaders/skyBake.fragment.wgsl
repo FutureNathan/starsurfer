@@ -21,7 +21,7 @@ uniform groundBounce: vec3f;
 uniform galaxyPole: vec3f;
 uniform galaxyCore: vec3f;
 uniform galaxyBand: f32;
-uniform nebulaAmount: f32;
+uniform auroraAmount: f32;
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
@@ -29,7 +29,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let col = spaceSky(
         dir, uniforms.sunDir, uniforms.sunIntensity, uniforms.groundBounce,
         uniforms.galaxyPole, uniforms.galaxyCore,
-        uniforms.galaxyBand, uniforms.nebulaAmount
+        uniforms.galaxyBand, uniforms.auroraAmount
     );
 
     // The star's own disc is deliberately absent. It is added in the skybox

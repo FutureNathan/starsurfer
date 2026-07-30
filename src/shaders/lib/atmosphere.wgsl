@@ -5,9 +5,8 @@
 // the shader registry under that key; renaming it buys nothing and costs a
 // silent unresolved-symbol failure if any one of the nine is missed.)
 //
-// The sky is deep space: a fixed backdrop of unresolved starlight, a galactic
-// band and emission nebulae, evaluated analytically rather than sampled from an
-// HDRI. Same argument as the atmospheric model this replaced — with a model, the
+// The sky is deep space: a black backdrop carrying a faint galactic band and
+// auroral curtains, evaluated analytically rather than sampled from an HDRI. Same argument as the atmospheric model this replaced — with a model, the
 // galaxy's orientation and the star's bearing are sliders that correctly drag
 // the ambient tint and the horizon colour along with them.
 //
@@ -19,8 +18,9 @@
 // Aerial perspective at runtime is the cheap analytic half: height-falloff
 // extinction plus an inscatter colour looked up from that same LUT, which keeps
 // the far field tied to the sky it sits under. There is no air out here, so what
-// it models is the nebula the dust sea is drifting through — thin, and much
-// less coloured than an atmosphere, but the same integral.
+// it models is the thin medium the dust sea is drifting through — the same one
+// the auroral curtains are lit in — much less coloured than an atmosphere, but
+// the same integral.
 // -----------------------------------------------------------------------------
 
 /// Mie asymmetry. The medium is gone, but the phase function outlived it: the
@@ -64,8 +64,8 @@ fn spaceFbm(p0: vec3f, octaves: i32) -> f32 {
 /// It is much cheaper than what it replaces — there is no medium to integrate
 /// through, so the whole thing is a handful of noise evaluations — but the
 /// reason it exists is not cost. In vacuum the sky is not a function of the
-/// star at all. It is a fixed backdrop of unresolved starlight and emission
-/// nebulae that happens to be *behind* the star, and modelling it as scattering
+/// star at all. It is a fixed backdrop of unresolved starlight and auroral
+/// emission that happens to be *behind* the star, and modelling it as scattering
 /// would tie the two together in exactly the way that would be wrong: move the
 /// star and the galaxy would swing with it.
 ///
@@ -80,23 +80,28 @@ fn spaceSky(
     galaxyPole: vec3f,
     coreDir: vec3f,
     bandAmt: f32,
-    nebulaAmt: f32
+    auroraAmt: f32
 ) -> vec3f {
     // Everything here is a fraction of the star's own radiance. Tying the
     // backdrop to `sunIntensity` is not physics — it is what keeps one exposure
     // calibration valid when the intensity slider moves, which matters more.
-    const SKY_SCALE: f32 = 0.05;
+    const SKY_SCALE: f32 = 0.036;
 
-    // Near-black indigo. Not zero: a literal black sky reads as a rendering
-    // failure, and there is always *some* unresolved light out there.
-    const VOID_COL: vec3f = vec3f(0.035, 0.030, 0.085);
+    // The void, and it is meant to *be* the void: black to within a fraction of
+    // an output level once the display transform has had it. Not identically
+    // zero — there is always some unresolved light out there, and a literal zero
+    // gives the grain nothing to sit on — but close enough that every star and
+    // every curtain below is read against black rather than against a haze.
+    const VOID_COL: vec3f = vec3f(0.030, 0.028, 0.070);
     // Integrated light of stars too faint to resolve. Warm-white, because it is
     // dominated by the old cool population toward the core rather than by the
     // handful of hot blue giants that resolve individually.
     const BAND_COL: vec3f = vec3f(0.62, 0.50, 0.44);
-    // Emission nebulae. Warm toward the core, violet away from it.
-    const NEB_WARM: vec3f = vec3f(0.88, 0.44, 0.20);
-    const NEB_COOL: vec3f = vec3f(0.34, 0.17, 0.74);
+    // The aurora. Teal away from the core, violet toward it — the two hues a real
+    // curtain runs between once its green line is dim enough to lose, which is
+    // exactly the regime a subtle one sits in.
+    const AURORA_WARM: vec3f = vec3f(0.46, 0.24, 0.80);
+    const AURORA_COOL: vec3f = vec3f(0.18, 0.58, 0.55);
 
     // Signed distance from the galactic plane, and how close to the core we are
     // looking. `coreBoost` is cubed so the brightening is confined to genuinely
@@ -109,7 +114,7 @@ fn spaceSky(
     // A Gaussian across the plane. It is narrow and bright toward the core and
     // broad and faint away from it, which is the single most recognisable thing
     // about a spiral galaxy seen from inside its own disc.
-    let width = mix(0.20, 0.085, coreBoost);
+    let width = mix(0.13, 0.065, coreBoost);
     var band = exp(-(planeD * planeD) / (width * width));
     band *= mix(0.30, 1.0, coreBoost);
 
@@ -122,21 +127,29 @@ fn spaceSky(
     let lanes = spaceFbm(laneQ, 3) * 0.5 + 0.5;
     band *= mix(0.28, 1.0, smoothstep(0.30, 0.72, lanes));
 
-    // --- emission nebulae ---------------------------------------------------
-    // Two scales of cloud, the second used only to break up the first's
-    // silhouette. Thresholded so most of the sky stays empty: nebulae that cover
-    // everything stop reading as objects and start reading as fog.
-    let n1 = spaceFbm(rayDir * 1.6 + vec3f(4.1, 0.0, 2.7), 4) * 0.5 + 0.5;
+    // --- the aurora ---------------------------------------------------------
+    // Curtains, not clouds, and the difference is one line: the sample point's
+    // vertical axis is squashed to a quarter, so the field varies quickly in
+    // azimuth and slowly in elevation and its features run as vertical streaks.
+    // Sampled isotropically the same noise gives blobs, and blobs read as
+    // nebulae — which is what this was, and which is a completely different
+    // thing to look at.
+    //
+    // Thresholded hard, so most of the sky stays empty. A curtain that covers
+    // everything is fog; a curtain with black either side of it is an aurora.
+    let q = rayDir * 2.4 * vec3f(1.0, 0.26, 1.0);
+    let n1 = spaceFbm(q + vec3f(4.1, 0.0, 2.7), 4) * 0.5 + 0.5;
     let n2 = spaceFbm(rayDir * 2.9 + vec3f(19.3, 7.2, 3.4), 3) * 0.5 + 0.5;
-    let cloud = smoothstep(0.38, 0.92, n1) * (0.40 + 0.60 * n2);
-    // Concentrated toward the plane, where the gas actually is, but not confined
-    // to it — a hard cutoff at the band edge looks like a mask.
-    let nebGate = mix(0.22, 1.0, exp(-(planeD * planeD) / 0.130));
-    let nebCol = mix(NEB_COOL, NEB_WARM, coreBoost * 0.75);
+    let curtain = smoothstep(0.44, 0.96, n1) * (0.40 + 0.60 * n2);
+    // Held close to the galactic plane, so the curtains hang around the band
+    // rather than wrapping the whole dome. The floor is small but not zero: a
+    // hard cutoff at the band edge looks like a mask.
+    let auroraGate = mix(0.09, 1.0, exp(-(planeD * planeD) / 0.090));
+    let auroraCol = mix(AURORA_COOL, AURORA_WARM, coreBoost * 0.75);
 
-    var col = VOID_COL * 0.06;
-    col += BAND_COL * band * bandAmt * 0.9;
-    col += nebCol * cloud * nebGate * nebulaAmt * 0.90;
+    var col = VOID_COL * 0.010;
+    col += BAND_COL * band * bandAmt * 0.26;
+    col += auroraCol * curtain * auroraGate * auroraAmt * 1.35;
     col *= sunIntensity * SKY_SCALE;
 
     // --- the dust sea -------------------------------------------------------
@@ -165,10 +178,12 @@ fn spaceSky(
     // to dissolve into, because whatever sits in this band *is* the fog colour
     // of everything on the horizon. At the old 0.82 it flattened the galactic
     // band to grey wherever the two crossed, which is the most interesting
-    // twenty degrees in the frame; at 0.22 it only takes the edge off.
+    // twenty degrees in the frame. Weaker again now that the sky it is averaging
+    // is black: there is far less there to smear, and what there is — a curtain
+    // crossing the horizon — is the thing worth keeping intact.
     let grazing = 1.0 - smoothstep(0.0, 0.26, abs(rayDir.y));
     let pale = dot(col, vec3f(0.30, 0.42, 0.28));
-    col = mix(col, vec3f(pale) * vec3f(1.02, 0.98, 1.06), grazing * 0.22);
+    col = mix(col, vec3f(pale) * vec3f(1.02, 0.98, 1.06), grazing * 0.12);
 
     return col;
 }

@@ -333,7 +333,7 @@ export class Sky {
             t.setVector3("galaxyPole", this.galaxyPole);
             t.setVector3("galaxyCore", this.galaxyCore);
             t.setFloat("galaxyBand", S.galaxyBand);
-            t.setFloat("nebulaAmount", S.nebulaStrength);
+            t.setFloat("auroraAmount", S.nebulaStrength);
             t.render();
         }
     }
