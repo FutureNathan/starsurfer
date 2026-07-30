@@ -28,13 +28,13 @@ uniform waterCols: f32;
 uniform waterRings: f32;
 uniform waterTime: f32;
 /// Per strand: (profile, entrained dust, alpha, column count).
-uniform strandParams: array<vec4f, 8>;
+uniform strandParams: array<vec4f, 12>;
 /// Per strand: (normalised hue, peak radiance) of the body's own emission.
 ///
 /// Carried through to the fragment stage with the gain already folded in, which
 /// is one interpolant rather than a second uniform fetch keyed on a strand index
 /// the fragment shader does not otherwise have.
-uniform strandEmissive: array<vec4f, 8>;
+uniform strandEmissive: array<vec4f, 12>;
 
 var waterTex: texture_2d<f32>;
 var waterTexSampler: sampler;

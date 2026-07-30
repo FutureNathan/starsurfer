@@ -44,8 +44,23 @@ import { SPELL_LIGHT_UNIFORMS } from "./spellLights.js";
 import { POWERS } from "./powers.js";
 import { LIN } from "../core/brand.js";
 
-/** Must match `array<vec4f, 8>` in `water.vertex.wgsl`. */
-export const STRAND_MAX = 8;
+/**
+ * Must match `array<vec4f, 12>` in `water.vertex.wgsl`.
+ *
+ * Twelve, and the number is a budget rather than a round figure: the Asteroid
+ * storm holds up to five at once, the Vortex takes three for its helices, and the
+ * Flare, the Ion Stream and the Supernova take one each. Eleven, with one spare.
+ *
+ * It was eight, which was enough until the Asteroid became something you could
+ * have five of. The cost of the four extra is honest and small: the lattice is
+ * static, so this many strands' worth of vertices are shaded every frame whether
+ * or not anything is cast — 50,688 against 33,792 — but an unused strand has a
+ * zero radius, which collapses every one of its triangles to a point, and a
+ * degenerate triangle is discarded before it reaches a fragment. So what the four
+ * extra actually buy is 17,000 vertex invocations, not 34,000 triangles' worth of
+ * shading.
+ */
+export const STRAND_MAX = 12;
 
 /**
  * Spine *samples* per strand — the width of the data texture, and the most

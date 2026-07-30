@@ -29,7 +29,7 @@ import { WaterBody } from "./waterBody.js";
 import { Sweep } from "./sweep.js";
 import { Ribbon } from "./ribbon.js";
 import { Bloom } from "./bloom.js";
-import { Asteroid } from "./asteroid.js";
+import { Asteroid, STANDOFF as ROCK_STANDOFF, FALL as ROCK_FALL } from "./asteroid.js";
 import { Vortex } from "./vortex.js";
 import { aimPoint, clamp01 } from "./bending.js";
 
@@ -224,11 +224,11 @@ export class SpellSystem {
             return;
         }
 
-        if (key === 3 || key === 4) {
-            // Both are placed where the player is looking. The ray starts at the
-            // eye, so what the power hits is exactly what is under the centre of
-            // the screen — which is the only targeting rule that needs no
-            // explanation and no reticle.
+        if (key === 3) {
+            // Placed where the player is looking. The ray starts at the eye, so
+            // what the power hits is exactly what is under the centre of the
+            // screen — which is the only targeting rule that needs no explanation
+            // and no reticle.
             //
             // Capped at 22 m of ray, not the 40 the terrain could answer for.
             // Looking out across the field the first surface the ray meets is
@@ -237,11 +237,6 @@ export class SpellSystem {
             // squint at. Beyond the cap the power lands at the cap distance
             // instead, which is always in front of them and always at a size
             // worth looking at.
-            //
-            // The Asteroid uses the same rule and gains something the Supernova
-            // does not: the cap keeps the impact close enough that the shake, the
-            // ejecta and the crater all land on the player rather than being
-            // watched from outside.
             const eye = rig.camera.position;
             aimPoint(
                 _aim, ctx.terrain,
@@ -249,8 +244,38 @@ export class SpellSystem {
                 this.aim.x, this.aim.y, this.aim.z,
                 22, 13
             );
-            if (key === 3) this.bloom.trigger(_aim[0], _aim[1], _aim[2]);
-            else this.asteroid.trigger(_aim[0], _aim[1], _aim[2]);
+            this.bloom.trigger(_aim[0], _aim[1], _aim[2]);
+            return;
+        }
+
+        if (key === 4) {
+            // The Asteroid is the one power that is *not* aimed at whatever the
+            // crosshair is over, and it cannot be. Two reasons, and they compound.
+            //
+            // It takes 2.6 seconds to arrive, and the rider does 19.5 m/s. Fire it
+            // at the ground under the crosshair — twenty metres out — and by the
+            // time the rock gets there the player has travelled fifty and is
+            // standing thirty metres *past* the crater, watching it happen behind
+            // them. So the target is led: the rider's own velocity, times the
+            // exact fall time the power will take, both read from the same two
+            // constants so they cannot drift.
+            //
+            // And it needs distance regardless. A crater twice the Supernova's
+            // with an ejecta curtain reaching twenty-eight metres is not something
+            // to be standing in the middle of; it is something to watch land in
+            // front of you. So the placement is a fixed stand-off along the aim
+            // bearing from where the rider *will be*, rather than a ray that gets
+            // shorter the more steeply they happen to be looking down.
+            //
+            // Flattened aim, so pointing at the sky is not a way to miss the
+            // ground. This power always lands, and always well ahead.
+            const ch = ctx.controller;
+            const fl = Math.hypot(this.aim.x, this.aim.z) || 1;
+            const tx = ch.position.x + ch.velocity.x * ROCK_FALL
+                     + (this.aim.x / fl) * ROCK_STANDOFF;
+            const tz = ch.position.z + ch.velocity.z * ROCK_FALL
+                     + (this.aim.z / fl) * ROCK_STANDOFF;
+            this.asteroid.trigger(tx, ctx.terrain.heightAt(tx, tz), tz);
             return;
         }
 

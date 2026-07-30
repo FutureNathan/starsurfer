@@ -304,7 +304,7 @@ smeared along its own path, stated at the radiance that smear leaves it with.
 
 ### The five powers
 
-One plasma material, one mesh, one draw, eight strands of 64 columns. All five
+One plasma material, one mesh, one draw, twelve strands of 64 columns. All five
 move a coherent body of ignited dust and are structurally the same object: a
 swept surface along a spine, with a radius, a parallel-transported frame and an
 ignition-front channel — the same construction as the surf wake. A strand that is
@@ -334,15 +334,42 @@ bright pass thresholds at 3.
    them — collapses back down its own axis, and leaves four seconds of fallout lit
    from below. Body radiance 26, three stops over the bloom knee, cooling down the
    same warm ramp the ground's own discharge sits on.
-4. **Asteroid** — a rock comes in from orbit and hits the ground where you are
-   looking. A hundred and fifty metres of entry over a second and a half, on a
-   fifty-nine degree path that puts it over your shoulder and away from the
-   camera, accelerating the whole way; then a crater twice the Supernova's, an
-   ejecta curtain, and the hardest camera shake in the project.
+4. **Asteroid** — a rock comes in from orbit and hits the ground well ahead of
+   you. Three hundred metres of entry over two and a half seconds, on a
+   twenty-three degree path that crosses the frame diagonally; then a crater
+   twice the Supernova's, an ejecta curtain, and the hardest camera shake in the
+   project. Press it again and another one comes; **up to five can be falling at
+   once**, and the more of them there are the wider they scatter.
 
    It is the only power you *watch arrive*. Everything else here is instantaneous
-   — press a key and a thing is already happening — and a second of anticipation
-   turns the impact from something that occurred into something you saw coming.
+   — press a key and a thing is already happening — and two and a half seconds of
+   anticipation turns the impact from something that occurred into something you
+   saw coming.
+
+   Which only works if it is *in the picture*, and the first version was not. It
+   entered behind the rider and fell steeply, sixty-seven degrees above the
+   horizon; the camera sits 6.1 m back and 2.9 m up, pitched ten degrees down,
+   with a 58-degree vertical field, so the top edge of the frame is nineteen and a
+   half degrees up. The asteroid spent the first ninety-three per cent of its fall
+   outside the frame and appeared for the last tenth of a second — 0.11 s of a
+   1.5 s cast.
+
+   The geometry is unforgiving. An object falling to a point in front of you is at
+   its highest apparent elevation the moment it enters, because the height shrinks
+   faster than the distance does, so there is one condition and it decides the
+   whole trajectory: the horizontal run has to be about two and three quarter
+   times the entry height, and the entry has to be *beyond* the impact rather than
+   behind it. At the numbers above the worst of forty randomised casts is on
+   screen for **100% of the fall**, at rest and at full surf speed.
+
+   It is also the one power that is not aimed at whatever the crosshair is over,
+   and it cannot be. It takes 2.6 s to arrive and the rider does 19.5 m/s, so a
+   target placed under the crosshair twenty metres out is somewhere the player has
+   already gone past by the time the rock reaches it. Instead the impact is put a
+   fixed 38 m along the aim bearing from where the rider *will be*: their velocity
+   times the exact fall time, both read from the same two exported constants so
+   they cannot drift. Standing still that is 38 m ahead; flat out it is 89 m ahead
+   at the press and 38 m ahead when it lands.
 
    Body radiance 16 in a hot orange that is not in the palette anywhere else: the
    Flare is the house gold and the Supernova is white, so an entry trail in either
@@ -356,6 +383,16 @@ bright pass thresholds at 3.
    be, and it costs one argument. The curtain reaches about 28 m and peaks 14 m
    up; ninety-three per cent of it touches down inside its own lifetime, which is
    the number that decides the launch speeds.
+
+   A storm shares out two budgets, harmonically, so the first rock is unaffected
+   and five together are worth about 2.7 of one. The spray pool is a fixed ring of
+   5,120 and `emit` drops silently once it is full, so five impacts at a lone
+   rock's count would hold 3,200 grains at once and the thing that visibly broke
+   would not be the asteroid — it would be the *wake*, thinning out for a second
+   and a half with no obvious cause. Shared, the peak is 2,646, a little over half
+   the pool. Camera trauma is shared on the same curve for the same reason: it
+   accumulates and clamps at one, so five undivided impacts pin the shake at
+   maximum and the storm becomes unwatchable.
 
    It replaced *Star Crystal*, which grew a lattice of violet prisms out of the
    ground. That power was built for a sea of cosmic dust and did not survive the
@@ -537,8 +574,16 @@ behind the loading screen and nothing at all per frame.
 | — far range | ~1.2 ms |
 | — character (skeleton, pose solve, nap, grains) | < 0.02 ms |
 | Draw calls | 13–17 |
-| Triangles | ~348,000 |
+| Triangles | ~382,000 |
 | Headroom against a 90 FPS budget | **7.9 ms** |
+
+The plasma body's strand pool went from eight to twelve to hold an asteroid storm
+alongside every other power. That is a permanent cost and a small one: the lattice
+is static, so twelve strands' worth of vertices are shaded every frame whether
+anything is cast or not — 50,688 against 33,792 — but an unused strand has a zero
+radius, which collapses all of its triangles to a point, and a degenerate triangle
+is discarded before it reaches a fragment. What the four extra buy is 17,000
+vertex invocations, not 34,000 triangles of shading.
 
 Two changes push in opposite directions and have not been weighed against each
 other on hardware. Depth of field now takes its early-out over the whole sky
