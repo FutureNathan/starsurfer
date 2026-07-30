@@ -46,6 +46,7 @@ export function initAudio() {
             frame() {},
             get nowPlaying() { return null; },
             get trackCount() { return 0; },
+            get playlistNames() { return []; },
         };
     }
 
@@ -56,15 +57,39 @@ export function initAudio() {
     let noiseBuf = null;
 
     // ------------------------------------------------------------- music
-    /** @type {{file:string,title:string,artist:string}[]} */
-    let pool = [];
+    /**
+     * Named playlists, Minecraft-style: one is the default, the sound tab
+     * switches between them, and `S.musicPlaylist` remembers the choice.
+     * @type {Map<string, {file:string,title:string,artist:string}[]>}
+     */
+    const playlists = new Map();
+    /** Files dropped for failing to load, so a bad file cannot loop forever. */
+    const dead = new Set();
     let nowPlaying = null;
     let musicTimer = 0;
+    /** @type {HTMLAudioElement|null} */
+    let currentEl = null;
 
     fetch("/music/manifest.json")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((list) => { if (Array.isArray(list)) pool = list.slice(); })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((m) => {
+            if (Array.isArray(m)) {
+                // The old flat shape, kept working: one anonymous playlist.
+                playlists.set("Default", m.slice());
+            } else if (m && Array.isArray(m.playlists)) {
+                for (const p of m.playlists) {
+                    if (p?.name && Array.isArray(p.tracks)) {
+                        playlists.set(p.name, p.tracks.slice());
+                    }
+                }
+            }
+        })
         .catch(() => {});
+
+    function currentPool() {
+        const p = playlists.get(S.musicPlaylist);
+        return p ? p.filter((tr) => !dead.has(tr.file)) : [];
+    }
 
     function applyVolumes() {
         if (!ctx) return;
@@ -86,10 +111,12 @@ export function initAudio() {
     }
 
     function playNext() {
-        if (!ctx || pool.length === 0) return;
-        if (!S.musicOn) {
-            // Check back in — switching music on mid-gap should not have to
-            // wait out a timer that was armed while it was off.
+        if (!ctx) return;
+        const pool = currentPool();
+        if (pool.length === 0 || !S.musicOn) {
+            // Check back in — an empty playlist may get its files uploaded,
+            // and music switched on mid-gap should not have to wait out a
+            // timer that was armed while it was off.
             scheduleNext(10);
             return;
         }
@@ -98,18 +125,28 @@ export function initAudio() {
         el.crossOrigin = "anonymous";
         el.addEventListener("error", () => {
             // Missing or unreadable: drop it from the rotation and move on.
-            pool = pool.filter((p) => p !== pick);
+            dead.add(pick.file);
             nowPlaying = null;
             scheduleNext(2);
         });
         el.addEventListener("ended", () => {
             nowPlaying = null;
+            currentEl = null;
             scheduleNext(GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN));
         });
         ctx.createMediaElementSource(el).connect(musicGain);
-        el.play().then(() => { nowPlaying = pick; })
+        el.play().then(() => { nowPlaying = pick; currentEl = el; })
             .catch(() => scheduleNext(8));
     }
+
+    // Changing playlist changes the sound *now* — stopping mid-track is what
+    // tells the person the switch took, and the next song confirms it.
+    onChange("musicPlaylist", () => {
+        if (!ctx) return;
+        if (currentEl) { currentEl.pause(); currentEl = null; }
+        nowPlaying = null;
+        scheduleNext(1.5);
+    });
 
     // ---------------------------------------------------------- synthesis
     function noise(t) {
@@ -176,17 +213,24 @@ export function initAudio() {
     let ionNodes = null;
     function ionSet(onNow) {
         if (onNow && !ionNodes) {
+            // A warm rounded hum, not a whine. The first version ran two
+            // sawtooths through a resonant filter that opened to 3.6 kHz at
+            // full speed — which is, note for note, the recipe for a
+            // mosquito. Triangles carry almost no energy above their third
+            // partial, the filter stays low with barely any resonance, and
+            // the two oscillators sit a soft octave apart so the beat between
+            // them reads as a slow shimmer rather than a buzz.
             const t = ctx.currentTime;
-            const o1 = ctx.createOscillator(); o1.type = "sawtooth";
-            const o2 = ctx.createOscillator(); o2.type = "sawtooth";
-            o1.frequency.value = 96; o2.frequency.value = 97.6;
-            const lp = filter("lowpass", 650, 6);
-            const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
-            const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 190;
+            const o1 = ctx.createOscillator(); o1.type = "triangle";
+            const o2 = ctx.createOscillator(); o2.type = "triangle";
+            o1.frequency.value = 82; o2.frequency.value = 164.8;
+            const lp = filter("lowpass", 480, 1.1);
+            const lfo = ctx.createOscillator(); lfo.frequency.value = 3.6;
+            const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 60;
             lfo.connect(lfoAmt); lfoAmt.connect(lp.frequency);
             const g = ctx.createGain();
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.17, t + 0.18);
+            g.gain.exponentialRampToValueAtTime(0.20, t + 0.18);
             o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(sfxGain);
             o1.start(t); o2.start(t); lfo.start(t);
             ionNodes = { o1, o2, lfo, lp, g };
@@ -211,14 +255,19 @@ export function initAudio() {
         const t = ctx.currentTime;
         const sp = ch.speed01;
         const alt = Math.min(1, Math.max(0, ch.position.y / 90));
-        const base = 96 * (1 + 0.55 * sp) * (1 + 0.18 * alt);
+        // The ranges are deliberately musical rather than dramatic: pitch
+        // rises a major third flat out (not the old octave-and-a-half of
+        // filter sweep), altitude adds a whole tone, and the filter never
+        // opens past the hum's own low partials. The state of the run is
+        // still audible; it just stops being a thing that bites.
+        const base = 82 * (1 + 0.26 * sp) * (1 + 0.12 * alt);
         ionNodes.o1.frequency.setTargetAtTime(base, t, 0.10);
-        ionNodes.o2.frequency.setTargetAtTime(base * 1.017, t, 0.10);
+        ionNodes.o2.frequency.setTargetAtTime(base * 2.01, t, 0.10);
         ionNodes.lp.frequency.setTargetAtTime(
-            650 + 2100 * sp + 900 * alt, t, 0.12
+            480 + 620 * sp + 260 * alt, t, 0.12
         );
-        ionNodes.lfo.frequency.setTargetAtTime(5.2 + 8.5 * sp, t, 0.15);
-        ionNodes.g.gain.setTargetAtTime(0.17 + 0.07 * sp, t, 0.12);
+        ionNodes.lfo.frequency.setTargetAtTime(3.6 + 3.4 * sp, t, 0.15);
+        ionNodes.g.gain.setTargetAtTime(0.20 + 0.05 * sp, t, 0.12);
     }
 
     function sfxNova(t) {
@@ -244,7 +293,7 @@ export function initAudio() {
         const lp = filter("lowpass", 110);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.45, t + FALL);
+        g.gain.exponentialRampToValueAtTime(0.62, t + FALL);
         g.gain.exponentialRampToValueAtTime(0.0001, t + FALL + 0.12);
         rum.connect(lp); lp.connect(g); g.connect(sfxGain);
         rum.stop(t + FALL + 0.3);
@@ -264,7 +313,7 @@ export function initAudio() {
         thud.type = "sine";
         thud.frequency.setValueAtTime(90, ti);
         thud.frequency.exponentialRampToValueAtTime(32, ti + 0.7);
-        const tg = env(ti, 1.25, 0.010, 1.1);
+        const tg = env(ti, 1.7, 0.010, 1.1);
         thud.connect(tg);
         thud.start(ti); thud.stop(ti + 1.2);
 
@@ -272,19 +321,19 @@ export function initAudio() {
         sub.type = "sine";
         sub.frequency.setValueAtTime(52, ti);
         sub.frequency.exponentialRampToValueAtTime(24, ti + 1.4);
-        const sg = env(ti, 1.0, 0.03, 1.8);
+        const sg = env(ti, 1.45, 0.03, 1.8);
         sub.connect(sg);
         sub.start(ti); sub.stop(ti + 1.9);
 
         const crack = noise(ti);
         const clp = filter("lowpass", 520);
-        const cg = env(ti, 0.65, 0.008, 0.45);
+        const cg = env(ti, 0.9, 0.008, 0.45);
         crack.connect(clp); clp.connect(cg);
         crack.stop(ti + 0.5);
 
         const shock = noise(ti + 0.12);
         const slp = filter("lowpass", 85);
-        const shg = env(ti + 0.12, 0.5, 0.10, 2.1);
+        const shg = env(ti + 0.12, 0.75, 0.10, 2.1);
         shock.connect(slp); slp.connect(shg);
         shock.stop(ti + 2.4);
     }
@@ -398,7 +447,9 @@ export function initAudio() {
             ionRide(ch);
         },
         get nowPlaying() { return nowPlaying; },
-        /** How many tracks survived the manifest — 0 means none installed. */
-        get trackCount() { return pool.length; },
+        /** Tracks in the *selected* playlist — 0 means it is empty. */
+        get trackCount() { return currentPool().length; },
+        /** Playlist names, for the sound tab's picker. */
+        get playlistNames() { return [...playlists.keys()]; },
     };
 }

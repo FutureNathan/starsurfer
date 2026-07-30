@@ -127,11 +127,18 @@ export const S = {
      * in from CC0 sources so the project never ships audio it does not own).
      * The effects are synthesised live in `core/audio.js` — no files at all.
      * Volumes are perceptual: they are squared on the way to the gain nodes.
+     *
+     * Music sits *above* the effects by default, on request: the effects are
+     * meant to be audible punctuation under the soundtrack, not the other way
+     * round. `musicPlaylist` names one of the playlists in
+     * `public/music/manifest.json`; an unknown or empty playlist simply plays
+     * nothing until its files arrive.
      */
     musicOn: true,
-    musicVolume: 0.55,
+    musicVolume: 0.7,
+    musicPlaylist: "Synthwave Chill",
     sfxOn: true,
-    sfxVolume: 0.8,
+    sfxVolume: 0.55,
 
     // -------------------------------------------------------------- the moon
     /**

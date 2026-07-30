@@ -1,34 +1,38 @@
 # Music
 
-Three original tracks ship with the project — **Drift**, **Low Gravity** and
-**Afterglow** — composed and rendered offline for STARSURFER (additive
-felt-piano, generated reverb, everything diatonic and slow). They are released
-CC0 / public domain along with the rest of the repo's own work: use them for
-anything.
+The player runs *named playlists*, Minecraft-style: `manifest.json` names
+them, one is the default, and the pause menu's sound tab switches between
+them. One track plays, then a couple of minutes of vacuum, then another —
+shuffled without repeats.
 
-The player shuffles `manifest.json` without repeats, plays one track, then
-leaves a couple of minutes of vacuum before the next, the way Minecraft does;
-the title shows on the pause menu's sound tab while a track plays.
+Two playlists are waiting for their files — **Synthwave Chill** (the default)
+and **Noor's Mixtape** — and a third, **STARSURFER Originals**, carries three
+ambient pieces composed for the project (CC0, keep or delete). A playlist
+with no files simply plays nothing until they arrive, and a listed file that
+is missing is quietly skipped, so nothing here can break the site.
 
-## Swapping or adding tracks
+## Adding the files
 
-1. Find music that is genuinely free. Good sources as of 2026:
-   - **Pixabay Music** (pixabay.com/music) — free for any use, no attribution.
-   - **OpenGameArt.org** — filter licence to **CC0**.
-   - **incompetech.com** (Kevin MacLeod) — CC-BY: free with a credit line,
-     which the sound tab's artist field can carry.
-   - **Do not use actual Minecraft music** — C418's soundtrack is copyrighted.
-     (freepd.com was the original recommendation here; it has since closed.)
-2. Drop the MP3 files into this folder.
-3. List them in `manifest.json`:
+This project deploys from GitHub, so the files have to be *in the repo* —
+a cloud build cannot see anyone's Downloads folder:
+
+1. On github.com, open this folder (`public/music/`) and use
+   **Add file → Upload files**; drag the MP3s in and commit.
+2. Add one line per track to `manifest.json` under the right playlist:
 
 ```json
-[
-  { "file": "drift.mp3", "title": "Drift", "artist": "a STARSURFER original" },
-  { "file": "your-track.mp3", "title": "Your Track", "artist": "Somebody" }
-]
+{
+  "default": "Synthwave Chill",
+  "playlists": [
+    { "name": "Synthwave Chill", "tracks": [
+      { "file": "some-song.mp3", "title": "Some Song", "artist": "Somebody" }
+    ] },
+    { "name": "Noor's Mixtape", "tracks": [] }
+  ]
+}
 ```
 
-That is the whole job — no code changes. A file listed here but missing from
-the folder is quietly dropped from the rotation, so a half-finished manifest
-breaks nothing.
+Mind the licence: only upload music you have the right to publish — the site
+serves these files to everyone. Safe sources: Pixabay Music (free, no
+attribution), OpenGameArt filtered to CC0, incompetech (CC-BY — put the
+credit in the `artist` field). Actual Minecraft music is copyrighted; don't.

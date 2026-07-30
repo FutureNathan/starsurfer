@@ -237,6 +237,23 @@ const CSS = `
     border-radius: 50%;
     background: var(--accent);
 }
+#pm-pl { display: flex; flex-wrap: wrap; gap: 0.5em; }
+.pm-pill {
+    padding: 0.45em 1.0em;
+    border: 1px solid rgba(184, 162, 255, 0.25);
+    border-radius: 999px;
+    background: none;
+    color: var(--dim);
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.pm-pill.on {
+    border-color: rgba(255, 196, 107, 0.55);
+    color: var(--accent);
+}
 .pm-np {
     margin-top: 1.5em;
     font-size: 10px;
@@ -388,6 +405,8 @@ export function initPauseMenu(canvas, overlay, audio) {
                         <button class="pm-tgl" data-k="musicOn"></button>
                         <input type="range" min="0" max="1" step="0.01" data-k="musicVolume" />
                     </div>
+                    <div class="pm-h">playlist</div>
+                    <div id="pm-pl"></div>
                     <div class="pm-h">effects</div>
                     <div class="pm-srow"><dt>effects</dt>
                         <button class="pm-tgl" data-k="sfxOn"></button>
@@ -435,16 +454,36 @@ export function initPauseMenu(canvas, overlay, audio) {
         r.addEventListener("input", () => set(k, parseFloat(r.value)));
     }
     const np = root.querySelector("#pm-np");
+    const pl = root.querySelector("#pm-pl");
+    const syncPlaylists = () => {
+        if (!pl || !audio) return;
+        // Rebuilt on every visit to the tab, because the manifest loads
+        // asynchronously and playlists may appear after the menu mounts.
+        pl.innerHTML = "";
+        for (const name of audio.playlistNames) {
+            const b = document.createElement("button");
+            b.className = "pm-pill" + (S.musicPlaylist === name ? " on" : "");
+            b.textContent = name;
+            b.addEventListener("click", () => {
+                set("musicPlaylist", name);
+                syncPlaylists();
+                syncNowPlaying();
+            });
+            pl.appendChild(b);
+        }
+    };
     const syncNowPlaying = () => {
         if (!np) return;
         const track = audio?.nowPlaying;
         if (track) {
-            np.innerHTML = `now playing · <b>${track.title}</b> — ${track.artist}`;
+            np.innerHTML = `now playing · <b>${track.title}</b>`
+                + (track.artist ? ` — ${track.artist}` : "");
         } else if (!audio || audio.trackCount === 0) {
-            // Say it plainly. "Nothing playing" with an empty folder reads
-            // as a bug; "no tracks installed" reads as the truth.
-            np.innerHTML = "no music installed yet — <b>public/music/README.md</b> "
-                + "is the three-minute recipe";
+            // Say it plainly. "Nothing playing" against an empty playlist
+            // reads as a bug; the truth reads as a to-do.
+            np.innerHTML = `<b>${S.musicPlaylist}</b> has no tracks yet — `
+                + "upload MP3s to <b>public/music/</b> and list them in "
+                + "<b>manifest.json</b>";
         } else {
             np.innerHTML = "between tracks — the vacuum is part of the mix";
         }
@@ -455,7 +494,7 @@ export function initPauseMenu(canvas, overlay, audio) {
     const selectTab = (name) => {
         for (const t of tabs) t.classList.toggle("on", t.dataset.page === name);
         for (const p of pages) p.hidden = p.dataset.page !== name;
-        if (name === "sound") syncNowPlaying();
+        if (name === "sound") { syncPlaylists(); syncNowPlaying(); }
         if (!overlay) return;
         if (name === "settings") {
             // Adopt. The element keeps its listeners and its state; only its
