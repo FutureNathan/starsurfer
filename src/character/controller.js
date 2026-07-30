@@ -153,6 +153,10 @@ export class CharacterController {
         this.airTime = 0;
         /** Flying on the pack — see the JET_* constants. */
         this.jetting = false;
+        /** Falling after the pack cut out — thrusters still brake the drop. */
+        this.jetFall = false;
+        /** 1 at a hard flight touchdown, decaying: the three-point landing. */
+        this.heroLand = 0;
         this._jetArm = false;
         this._jetTapAt = -9;
         this._prevJetKey = false;
@@ -211,11 +215,13 @@ export class CharacterController {
             if (this.vy < 0) this.vy = 0;
         } else if (!wantJet && this.jetting) {
             this.jetting = false;
+            this.jetFall = true;
             // Hand over to the ballistic branch with the trick timeline
             // already spent, so letting go does not replay a jump's spin.
             this.airTime = (2 * JUMP_V) / AIR_G;
             this.airTuck = 0;
         }
+        this.heroLand = Math.max(0, this.heroLand - h / 0.8);
 
         if (this.surf > 0.5 && !this.airborne) this._surfStep(h, rig);
         else if (this.surf <= 0.5 && !this.jetting) this._walkStep(h);
@@ -252,13 +258,19 @@ export class CharacterController {
                 this.trickFlip = 0;
             }
         } else if (this.jetting) {
-            // Boba Fett mode. Thrust settles into a steady climb until the
-            // ceiling, where it hovers; the stick steers a flat glide and
-            // the body turns to face where it is going. The moment the key
-            // lifts, the ordinary ballistic branch takes the same velocity
-            // and flies it down to the same landing everyone else gets.
+            // Iron Man mode. The mouse is the stick: the camera's own pitch
+            // steers the climb — look up and rise, look at the horizon and
+            // hold with a gentle float, look at the ground and dive. The
+            // move keys steer the glide, the body turns to face it, and the
+            // ceiling only clips the climb, never the dive. The moment the
+            // key lifts, the ballistic branch takes the same velocity down
+            // to the landing.
             const lift = this.position.y - this.groundY;
-            const targetVy = lift < JET_CEIL ? JET_CLIMB : 0;
+            // `?? 0.2`: a rig without a full look vector (the test harness)
+            // flies a gentle default climb.
+            const aimY = rig.forward ? rig.forward.y : 0.2;
+            let targetVy = aimY * 11 + 1.2;
+            if (lift >= JET_CEIL) targetVy = Math.min(targetVy, 0);
             this.vy += (targetVy - this.vy) * Math.min(1, 3.2 * h);
             this.position.y += this.vy * h;
             this.airTuck = 0;
@@ -286,11 +298,23 @@ export class CharacterController {
                     this.velocity.z *= k;
                 }
             }
-            // Flying into a rising slope: ride up its face, stay flying.
-            if (this.position.y < this.groundY) this.position.y = this.groundY;
+            // Flying into the ground: a dive that meets it plants the
+            // three-point landing; a shallow skim just rides the face.
+            if (this.position.y < this.groundY) {
+                this.position.y = this.groundY;
+                if (this.vy < -4) {
+                    this.heroLand = 1;
+                    rig.addTrauma(0.10 + Math.min(0.10, -this.vy * 0.012));
+                }
+                if (this.vy < 0) this.vy = 0;
+            }
         } else {
             this.airTime += h;
             this.vy -= AIR_G * h;
+            // After flight the pack keeps braking the drop — a controlled
+            // descent that arrives hard enough to land like it means it,
+            // never the flailing plummet of a thirty-metre fall.
+            if (this.jetFall && this.vy < -11) this.vy = -11;
             this.position.y += this.vy * h;
 
             // The second tap, early in the arc: convert to a front flip.
@@ -326,6 +350,12 @@ export class CharacterController {
                 this.airborne = false;
                 this.landed = true;
                 this.landVy = -this.vy;
+                if (this.jetFall) {
+                    // The superhero arrival: down on one knee, fist to the
+                    // regolith, up and walk away.
+                    this.heroLand = 1;
+                    this.jetFall = false;
+                }
                 this.trickSpin = 0;
                 this.trickFlip = 0;
                 this._flip = false;

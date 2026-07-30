@@ -345,6 +345,10 @@ export class Figure {
         // ------------------------------------------------- smoothed pose state
         this.hipY = HIP_HEIGHT;
         this.pitch = 0;
+        /** Flight blend: the Iron Man lean, eased in and out. */
+        this.jetLean = 0;
+        /** Board stow blend: 1 = on the pack/underfoot, 0 = vanished. */
+        this._boardK = 1;
         this.roll = 0;
         this.bob = 0;
         this.headYaw = 0;
@@ -405,10 +409,22 @@ export class Figure {
         // order of magnitude larger than anything walking produces: letting go at
         // top speed decelerates at 30 m/s^2, which unclamped throws the torso
         // twenty degrees backwards and reads as a fall rather than as a scrub.
+        // Flight and arrival. The lean is the whole Iron Man read — most of
+        // a right angle at speed — and the hero blend is the controller's
+        // decaying touchdown flourish, worn as extra forward pitch and (in
+        // the crouch and the arms below) the three-point stance.
+        this.jetLean = damp(this.jetLean, ch.jetting ? 1 : 0, 5.5, h);
+        this._boardK = damp(
+            this._boardK, (ch.jetting || ch.jetFall) ? 0 : 1, 9, h
+        );
+        const hero = ch.heroLand || 0;
+
         const pitchWant =
             0.10 * run
             + 0.012 * clamp(fwdAcc, -9, 22)
-            + surf * (0.30 + 0.16 * ch.speed01);
+            + surf * (0.30 + 0.16 * ch.speed01)
+            + this.jetLean * (0.72 + 0.38 * ch.speed01)
+            + hero * 0.20;
         this.pitch = damp(this.pitch, pitchWant, 7, h);
 
         const rollWant = ch.lean * (0.16 + 0.34 * surf);
@@ -424,7 +440,9 @@ export class Figure {
         // Crouch: a little at running speed, a lot on the board — and most
         // of all at the apex of a trick.
         const crouch = 0.035 * run + surf * (0.13 + 0.05 * ch.speed01)
-            + (ch.airTuck || 0) * 0.17;
+            + (ch.airTuck || 0) * 0.17
+            // The superhero landing is mostly a very deep crouch.
+            + hero * 0.34;
         this.hipY = damp(this.hipY, HIP_HEIGHT - crouch, 9, h);
 
         // The figure settles into the dust it is standing on. Reading the real
@@ -684,6 +702,25 @@ export class Figure {
                 this.footWeight[f] = Math.max(this.footWeight[f], surf);
             }
         }
+
+        // Flying: the boots trail down and behind the lean. The reach clamp
+        // in `_poseLeg` brings these onto the leg's own sphere, so what
+        // survives is the direction — legs streaming aft of a body pitched
+        // toward prone, which is the other half of the Iron Man silhouette.
+        const jl = this.jetLean;
+        if (jl > 0.01 && (ch.airborne || ch.jetFall)) {
+            for (let f = 0; f < 2; f++) {
+                const side = f === 0 ? -0.13 : 0.13;
+                const txf = ch.position.x - fwdX * 0.42 + rgtX * side;
+                const tyf = ch.position.y - 0.30;
+                const tzf = ch.position.z - fwdZ * 0.42 + rgtZ * side;
+                const o = f * 3;
+                this.footPos[o] += (txf - this.footPos[o]) * jl;
+                this.footPos[o + 1] += (tyf - this.footPos[o + 1]) * jl;
+                this.footPos[o + 2] += (tzf - this.footPos[o + 2]) * jl;
+                this.footWeight[f] = Math.min(this.footWeight[f], 1 - jl);
+            }
+        }
     }
 
     /**
@@ -896,6 +933,20 @@ export class Figure {
             sNx + (nx - sNx) * w, sNy + (ny - sNy) * w, sNz + (nz - sNz) * w,
             sUx + (fbx - sUx) * w, sUy + (fby - sUy) * w, sUz + (fbz - sUz) * w
         );
+
+        // Flight stows the board by scale. A bone has no scale channel, but
+        // its world basis is ours: shrinking it collapses the skinned deck
+        // toward the bone origin — into the pack, out of sight — and the
+        // landing grows it back. Never quite zero, so the normals keep a
+        // length to renormalise from. (The blend itself advances in
+        // `update`, which owns the timestep.)
+        if (this._boardK < 0.999) {
+            const o = B_BOARD * 16;
+            const s = Math.max(0.02, this._boardK);
+            for (let i = 0; i < 11; i++) {
+                if (i % 4 !== 3) this.world[o + i] *= s;
+            }
+        }
     }
 
     /**
@@ -975,6 +1026,41 @@ export class Figure {
                 tx += (sx - tx) * surf;
                 ty += (sy - ty) * surf;
                 tz += (sz - tz) * surf;
+            }
+
+            // ---- flight: both hands swept down and aft, palms as thrusters --
+            // In the *body* frame, which is pitched most of the way to prone,
+            // so the arms trail like Iron Man's rather than dangling.
+            const jl = this.jetLean;
+            if (jl > 0.001) {
+                const jx = _sh[0] - uX * 0.32 - fX * 0.18 + rX * (sgn * 0.20);
+                const jy = _sh[1] - uY * 0.32 - fY * 0.18 + rY * (sgn * 0.20);
+                const jz = _sh[2] - uZ * 0.32 - fZ * 0.18 + rZ * (sgn * 0.20);
+                tx += (jx - tx) * jl;
+                ty += (jy - ty) * jl;
+                tz += (jz - tz) * jl;
+            }
+
+            // ---- the superhero landing: right fist to the regolith ----------
+            // The reach clamp keeps the arm honest when the crouch has not
+            // caught up yet; the other arm sweeps back and up for balance.
+            const hero = ch.heroLand || 0;
+            if (hero > 0.001) {
+                if (a === 1) {
+                    const gx2 = ch.position.x + rX * 0.28 + fX * 0.14;
+                    const gy2 = (ch.groundY ?? ch.position.y) + 0.10;
+                    const gz2 = ch.position.z + rZ * 0.28 + fZ * 0.14;
+                    tx += (gx2 - tx) * hero;
+                    ty += (gy2 - ty) * hero;
+                    tz += (gz2 - tz) * hero;
+                } else {
+                    const bx2 = _sh[0] - fX * 0.24 + uX * 0.16 + rX * (sgn * 0.28);
+                    const by2 = _sh[1] - fY * 0.24 + uY * 0.16 + rY * (sgn * 0.28);
+                    const bz2 = _sh[2] - fZ * 0.24 + uZ * 0.16 + rZ * (sgn * 0.28);
+                    tx += (bx2 - tx) * hero;
+                    ty += (by2 - ty) * hero;
+                    tz += (bz2 - tz) * hero;
+                }
             }
 
             // Never hand the solver a target past the arm. The IK clamps the
