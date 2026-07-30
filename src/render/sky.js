@@ -158,6 +158,7 @@ export class Sky {
                     "planetDir", "planetAxis", "planetSize", "planetGlow",
                     "planet2Dir", "planet2Axis", "planet2Size",
                     "planet3Dir", "planet3Axis", "planet3Size",
+                    "planet4Dir", "planet4Axis", "planet4Size",
                     "fogDensity",
                     "fogHeightFalloff",
                     "fogStart",
@@ -464,6 +465,18 @@ export class Sky {
         _planet3Axis.normalize();
         m.setVector3("planet3Axis", _planet3Axis);
         m.setFloat("planet3Size", (1.1 * Math.PI) / 180);
+
+        // The Mars-like one sits low — eight degrees, where the tallest ridge
+        // silhouettes can genuinely clip it, which is the point: a world that
+        // rises from behind the mountains is *in* the scene, not printed on it.
+        const p4az = paz + 1.050, p4el = 0.140;   // +60 deg, 8 deg up
+        const p4ce = Math.cos(p4el);
+        _planet4Dir.set(Math.sin(p4az) * p4ce, Math.sin(p4el), Math.cos(p4az) * p4ce);
+        m.setVector3("planet4Dir", _planet4Dir);
+        _planet4Axis.set(Math.sin(p4az - 0.5) * 0.30, 1, Math.cos(p4az - 0.5) * 0.30);
+        _planet4Axis.normalize();
+        m.setVector3("planet4Axis", _planet4Axis);
+        m.setFloat("planet4Size", (2.6 * Math.PI) / 180);
         _dustEmit.set(
             DUST_EMISSION[0] * S.dustGlow,
             DUST_EMISSION[1] * S.dustGlow,
@@ -493,6 +506,8 @@ const _planet2Dir = new Vector3();
 const _planet2Axis = new Vector3();
 const _planet3Dir = new Vector3();
 const _planet3Axis = new Vector3();
+const _planet4Dir = new Vector3();
+const _planet4Axis = new Vector3();
 const _shBasis = new Float32Array(9);
 const _irrTmp = new Float32Array(3);
 const _dustEmit = new Color3(0, 0, 0);

@@ -117,6 +117,38 @@ fn craterField(p: vec2f) -> f32 {
     return h;
 }
 
+/// The seed's landmark: one great ring — a complex crater with a standing
+/// wall, a sunken floor and a central peak, the profile every large lunar
+/// crater shares. Placed by the world seed a few hundred metres from spawn,
+/// in *unoffset* world space, so every map has one within an easy ride.
+///
+/// Every other feature on this ground repeats statistically — another swell,
+/// another bowl, another massif. This one is singular per world, and that is
+/// its whole job: a map with a landmark is a place you can be lost in, and a
+/// map without one is a texture.
+fn ringStructure(p: vec2f, seed: f32) -> f32 {
+    let ang = seed * 2.399963;
+    let dist = 380.0 + fract(seed * 0.3170) * 220.0;
+    let centre = vec2f(sin(ang), cos(ang)) * dist;
+    let bigR = 120.0 + fract(seed * 0.7710) * 80.0;
+    let d = length(p - centre);
+    if (d > bigR * 2.2) { return 0.0; }
+
+    // The wall: a gaussian ridge on the radius, its crest swung by low noise
+    // so the ring reads as geology rather than as a stamped torus.
+    let w = bigR * 0.16;
+    let g = (d - bigR) / w;
+    let broken = 0.80 + 0.35 * noise2(p * 0.02 + seed);
+    var h = exp(-g * g) * bigR * 0.14 * broken;
+
+    // The floor, sunk and near-flat, and the central peak standing out of it.
+    let sunk = smoothstep(bigR * 0.92, bigR * 0.55, d);
+    h -= sunk * bigR * 0.055;
+    let pk = d / (bigR * 0.16);
+    h += exp(-pk * pk) * bigR * 0.075;
+    return h;
+}
+
 // ------------------------------------------------------------------- macro
 
 /// Broad + medium landform. Returns metres.

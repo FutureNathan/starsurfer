@@ -310,14 +310,16 @@ const LOOK_SCALE = 0.0042;
 
 /**
  * The five powers, in the order the number keys fire them. Labels are short
- * enough to read at 8px on a phone, which rules out the full names.
+ * enough to read at 8px on a phone — but they are the powers' *names*, not
+ * abbreviations of them: "ROCK" and "WELL" read as placeholder text, and a
+ * button that sounds boring is a button that never gets pressed.
  */
 const POWERS = [
     { n: 1, label: "FLARE" },
     { n: 2, label: "ION" },
     { n: 3, label: "NOVA" },
-    { n: 4, label: "ROCK" },
-    { n: 5, label: "WELL" },
+    { n: 4, label: "ASTEROID" },
+    { n: 5, label: "GRAVITY" },
 ];
 
 /**

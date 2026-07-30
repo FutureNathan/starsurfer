@@ -97,12 +97,15 @@ export const HEX = {
      *
      * A radiance and not a reflectance, and the only reason it is a hex code at
      * all is that its *hue* is a design decision even though its magnitude is
-     * not — the magnitude lives in `S.dustGlow`. Neutral and barely cool: it
-     * used to be a saturated violet, which was right when the ground was made of
-     * violet dust and was most of what made this read as lava once the ground
-     * was made of rock.
+     * not — the magnitude lives in `S.dustGlow`. Genuinely neutral now, leaning
+     * warm the way the regolith does: the previous value still carried a
+     * violet-blue lean, and because this triple rides the LUT's ground
+     * hemisphere, the SH ambient, the ridge fill and the ground's own emission
+     * all at once, that small lean multiplied into the "ground looks purple"
+     * screenshot every time the star was low or behind a slope. Moon rock in
+     * shadow is grey. If a fill tints anything, it tints like the rock does.
      */
-    nebulaFill: "#595d6a",
+    nebulaFill: "#5c5955",
     /** Warm gold. Faceplate, wake lip, trim, UI accent. The signature. */
     accent: "#ffc46b",
     /**

@@ -20,6 +20,7 @@ import {
 } from "./core/perf.js";
 import { initInput, pollInput, endFrame, input } from "./core/input.js";
 import { initTouch, wantsTouchControls } from "./core/touch.js";
+import { initPauseMenu } from "./core/pauseMenu.js";
 import { MOBILE_TIER } from "./core/device.js";
 import { CameraRig } from "./core/camera.js";
 import { CharacterController } from "./character/controller.js";
@@ -53,7 +54,7 @@ async function boot() {
     // fixed render targets off the same tier.
     if (MOBILE_TIER) applyPreset("mobile");
 
-    await loading.phase("creating device", 0.05);
+    await loading.phase("waking the star drive", 0.05);
 
     const engine = new WebGPUEngine(canvas, {
         antialias: false, // TAA handles edges; MSAA here would just cost bandwidth
@@ -90,7 +91,7 @@ async function boot() {
     engine.captureGPUFrameTime(true);
     registerShaders();
 
-    await loading.phase("building scene", 0.12);
+    await loading.phase("charting the void", 0.12);
 
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -107,7 +108,7 @@ async function boot() {
     scene.activeCamera = rig.camera;
 
     // ------------------------------------------------------------------ sky
-    await loading.phase("seeding the star field", 0.2);
+    await loading.phase("scattering the stars", 0.2);
     const sky = new Sky(scene);
     sky.mesh.renderingGroupId = 0;
     await sky.solve();
@@ -174,10 +175,13 @@ async function boot() {
     // The on-screen controls, when the primary pointer is a finger. They mount
     // after the overlay because the settings button on them toggles it.
     if (wantsTouchControls()) initTouch(canvas, { input, onToggleOverlay: toggleOverlay });
+    // Escape: frees the mouse, pauses the loop below, shows the controls.
+    // Keyboard-shaped by nature, so it mounts alongside the desktop input.
+    const pauseMenu = wantsTouchControls() ? null : initPauseMenu(canvas);
 
     // ------------------------------------------------------------- warm-up
     // Everything that can compile, compiles here — behind the loading screen.
-    await loading.phase("compiling pipelines", 0.78);
+    await loading.phase("waxing the board", 0.78);
     shadows.update(rig.camera, sky.sunDir);
     sky.render(rig, 0);
     await terrain.warmUp();
@@ -199,7 +203,7 @@ async function boot() {
         await whenReady(passes[i], "post:" + passes[i].name);
     }
 
-    await loading.phase("warming render targets", 0.92);
+    await loading.phase("travelling the stars", 0.92);
     // A few real frames so every render target is allocated and every pipeline
     // has actually been bound at least once.
     for (let i = 0; i < 3; i++) {
@@ -218,6 +222,10 @@ async function boot() {
         const now = performance.now();
         let dtMs = now - prev;
         prev = now;
+        // Paused: keep the clock current so resume gets an honest dt, keep the
+        // last rendered frame on the canvas, and spend nothing. The menu is
+        // DOM, so it does not need the engine's help to draw itself.
+        if (pauseMenu?.paused) return;
         if (dtMs > 100) dtMs = 100;
         const dt = S.freezeTime ? 0 : dtMs / 1000;
         time += dt;

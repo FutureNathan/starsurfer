@@ -105,6 +105,11 @@ export class Heightfield {
         this.heightTex.setFloat("worldSize", this.size);
         this.heightTex.setFloat("windAngle", windAngle);
         this.heightTex.setFloat("heightAmp", S.macroHeightScale);
+        this.heightTex.setFloat("worldSeed", S.worldSeed);
+        // eslint-disable-next-line no-console
+        console.info(
+            `STARSURFER world ${S.worldSeed} — return to it with ?seed=${S.worldSeed}`
+        );
         await bakeOnce(this.heightTex, "heightBake");
 
         // The aux bake differentiates the height bake, so it has to run after.

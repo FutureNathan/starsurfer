@@ -366,6 +366,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     var albedo = mix(
         uniforms.regolithHigh, uniforms.regolithLow, smoothstep(0.35, 0.78, mare)
     );
+    // Ejecta rays: streaks of fresher, brighter fines thrown across the plain,
+    // the second thing lunar ground has that one flat grey does not. Two
+    // stretched noise lookups multiplied so the pattern runs in broken lanes
+    // rather than blobs, thresholded hard so most ground carries none, and
+    // strongest over the highlands — rays over mare is where the real contrast
+    // lives, but a full-strength ray *field* reads as zebra.
+    let rayA = noise2(world.xz * vec2f(0.011, 0.0032) + vec2f(7.3, 2.1)) * 0.5 + 0.5;
+    let rayB = noise2(world.xz * vec2f(0.0028, 0.010) + vec2f(1.9, 5.4)) * 0.5 + 0.5;
+    let rays = smoothstep(0.60, 0.86, max(rayA, rayB));
+    albedo = mix(albedo, vec3f(0.158, 0.148, 0.135), rays * 0.30);
     var roughness = 0.78;
     var f0 = vec3f(0.020);
     var thickness = 1.0; // 1 = deep fines, 0 = thin over bedrock

@@ -41,6 +41,9 @@ uniform planet2Size: f32;
 uniform planet3Dir: vec3f;
 uniform planet3Axis: vec3f;
 uniform planet3Size: f32;
+uniform planet4Dir: vec3f;
+uniform planet4Axis: vec3f;
+uniform planet4Size: f32;
 
 // The field's own aerial perspective, so the range is hazed by the same nebula
 // the dust in front of it is. See `shadeRidge`.
@@ -75,8 +78,8 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     let steep = 1.0 - N.y;
     let dustMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
-    let rock  = vec3f(0.128, 0.122, 0.114);
-    let fines = vec3f(0.106, 0.099, 0.093);
+    let rock  = vec3f(0.150, 0.143, 0.134);
+    let fines = vec3f(0.127, 0.117, 0.107);
     let albedo = mix(rock, fines, dustMask);
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
@@ -139,10 +142,14 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // What makes one atmosphere work at these distances is the height falloff
     // the field's fog already has: at 0.045 per metre the haze has a 22 m scale
     // height, so a summit at two kilometres sits almost entirely clear of it
-    // while its own feet are buried. On the current settings a 2 km peak keeps
-    // about two thirds of its contrast at 9 km and a fifth at 35 km, and
-    // anything below ~300 m is gone by 8 km — peaks emerging from a sea of
-    // haze, on the same curve the dunes 600 m away are already on.
+    // while its feet catch what little there is. And there is now very little:
+    // the density came down to a fifth in the vacuum pass, because from a
+    // summit the old value put everything past a kilometre and a half at
+    // 60-97% extinction — a featureless pale wash with the range floating on
+    // top of it, which was the floating-mountains report all three times it
+    // was filed. The range now keeps most of its contrast to the last massif,
+    // the way an airless horizon actually does, and this inscatter path is a
+    // seasoning rather than a wall.
     let hitPos = vec3f(hit.pos.x, hit.height, hit.pos.y);
     let t = aerialTransmittance(
         uniforms.cameraPosition, hitPos,
@@ -190,6 +197,13 @@ const P2_STORM: vec3f = vec3f(0.820, 0.640, 0.430);
 const P3_DEEP: vec3f = vec3f(0.095, 0.080, 0.150);
 const P3_PALE: vec3f = vec3f(0.440, 0.390, 0.590);
 const P3_STORM: vec3f = vec3f(0.680, 0.630, 0.800);
+// The Mars-like one, low on the horizon: rust and butterscotch, with the
+// "storm" slot doing duty as pale dust-basin ground. Its band frequency is
+// the lowest of the four, so what the bands read as is albedo provinces —
+// maria and highlands — rather than a gas giant's stripes.
+const P4_DEEP: vec3f = vec3f(0.140, 0.062, 0.034);
+const P4_PALE: vec3f = vec3f(0.560, 0.290, 0.150);
+const P4_STORM: vec3f = vec3f(0.720, 0.490, 0.340);
 
 /// Shade one world. Returns (radiance, coverage); coverage 0 outside the disc,
 /// easing over the last ~1.5% of radius so the limb is a couple of anti-aliased
@@ -226,15 +240,19 @@ fn shadeGlobe(
     let lat = dot(N, paxis);
     let wob = noise2(vec2f(lat * 6.5, px * 2.3 + py * 0.7) + vec2f(seed, seed * 2.8)) * 0.55;
     let fine = noise2(vec2f(lat * 46.0 + wob * 7.0, px * 8.3 + py * 3.1 + seed)) * detail;
-    let bandT = sin(lat * bandFreq + wob * 3.4 + fine * 1.3) * 0.5 + 0.5;
+    // A fourth, still finer octave, added when the hero grew to forty degrees:
+    // at that size the 46-cycle octave alone is features tens of pixels wide,
+    // which is "scaled up", not "high res". This one puts texture inside them.
+    let fine2 = noise2(vec2f(lat * 118.0 - wob * 9.0, px * 20.0 + py * 7.5 + seed * 3.0)) * detail;
+    let bandT = sin(lat * bandFreq + wob * 3.4 + fine * 1.3 + fine2 * 0.55) * 0.5 + 0.5;
     let swirl = noise2(vec2f(lat * 21.0 + wob * 5.0, px * 3.1 + 2.4 + seed)) * 0.5 + 0.5;
     var alb = mix(deep, pale, bandT);
     alb = mix(alb, storm, swirl * swirl * 0.30);
     // Bright filaments where the fine octave crests inside a shear zone, dark
     // threads where it troughs, and one pale storm oval per world's seed —
     // the anticyclone every gas giant photograph has exactly one of.
-    alb = mix(alb, storm, smoothstep(0.55, 0.90, swirl) * max(fine, 0.0) * 0.9);
-    alb = mix(alb, deep, max(-fine, 0.0) * 0.55);
+    alb = mix(alb, storm, smoothstep(0.55, 0.90, swirl) * max(fine + fine2 * 0.4, 0.0) * 0.9);
+    alb = mix(alb, deep, max(-fine - fine2 * 0.4, 0.0) * 0.55);
     let eye = noise2(vec2f(lat * 9.0 + seed * 1.7, px * 4.2 - py * 1.6 + 7.7));
     alb = mix(alb, storm, smoothstep(0.34, 0.50, eye) * 0.75 * detail);
 
@@ -312,7 +330,16 @@ fn starField(dir: vec3f, density: f32, t: f32) -> vec3f {
 
     // ~2 px across at 1440p. Smaller than that and TAA treats each star as
     // sub-pixel noise and dissolves the field into a faint grey haze.
-    let core = exp(-d * d * 420.0) * (0.35 + 3.4 * mag);
+    //
+    // Except the beacons: the top ~2% of the magnitude curve draw at roughly
+    // twice the diameter and brighter still. Two sizes is what turns a stipple
+    // into a field with *depth* — a couple of obviously nearer stars against a
+    // background of far ones — and every beacon is forced into one of the
+    // saturated classes below, because a big star with no colour reads as a
+    // rendering artefact rather than a sun.
+    let beacon = step(0.976, m);
+    let core = exp(-d * d * mix(420.0, 150.0, beacon))
+             * (0.35 + 3.4 * mag) * (1.0 + beacon * 0.9);
 
     // Colour by spectral class, roughly: hot blue-white through to cool amber,
     // with the bright end of the population running warm to sit with the gold.
@@ -324,7 +351,7 @@ fn starField(dir: vec3f, density: f32, t: f32) -> vec3f {
     // has no area to carry a subtle one: by the time TAA and the display have
     // had it, "slightly blue" is white.
     let jewel = fract(h.x * 57.31 + h.y * 13.77);
-    if (jewel > 0.86) {
+    if (jewel > 0.86 || beacon > 0.5) {
         let pick = fract(jewel * 41.7);
         if (pick < 0.30)      { col = vec3f(0.52, 0.62, 1.0); }    // sapphire
         else if (pick < 0.58) { col = vec3f(1.0, 0.52, 0.28); }    // ember
@@ -369,7 +396,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     if (uniforms.planetGlow > 0.001
         && (dot(dir, uniforms.planetDir) > cos(uniforms.planetSize)
          || dot(dir, uniforms.planet2Dir) > cos(uniforms.planet2Size)
-         || dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size))) {
+         || dot(dir, uniforms.planet3Dir) > cos(uniforms.planet3Size)
+         || dot(dir, uniforms.planet4Dir) > cos(uniforms.planet4Size))) {
         planetHit = true;   // provisional; confirmed against the discs below
     }
 
@@ -408,6 +436,11 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
             pc = shadeGlobe(dir, uniforms.planet3Dir, uniforms.planet3Axis,
                             uniforms.planet3Size, P3_DEEP, P3_PALE,
                             P3_STORM, 11.0, 21.9, 0.0);
+        }
+        if (pc.a <= 0.0 && dot(dir, uniforms.planet4Dir) > cos(uniforms.planet4Size)) {
+            pc = shadeGlobe(dir, uniforms.planet4Dir, uniforms.planet4Axis,
+                            uniforms.planet4Size, P4_DEEP, P4_PALE,
+                            P4_STORM, 4.5, 33.2, 0.0);
         }
         if (pc.a <= 0.001) { planetHit = false; }   // grazed the corner of a cone
         else {

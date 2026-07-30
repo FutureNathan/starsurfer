@@ -33,10 +33,20 @@ export const S = {
     // There is no atmosphere out here; what these drive is the nebula the field
     // is drifting through, which scatters in much the same way and much more
     // thinly.
-    fogDensity: 0.0072,
+    //
+    // Much more thinly than it used to say, too. At 0.0072 this was a haze a
+    // hundred times thicker than air hugging the ground on a 22 m scale
+    // height: from a summit, everything past a kilometre and a half sat at
+    // 60-97% extinction, so the mid-ground dissolved into a featureless pale
+    // wash with the mountains standing on top of it — the floating-mountains
+    // report, all three times, was this number, not the geometry. A fifth of
+    // it keeps a whisper of depth cueing at eye level and lets the ground stay
+    // ground all the way out to the massifs, which is what an airless horizon
+    // does: Apollo photographs are crisp to the last ridge.
+    fogDensity: 0.0014,
     fogHeightFalloff: 0.045,
     fogStart: 24,
-    aerialStrength: 1.0,
+    aerialStrength: 0.75,
     // Degrees. Drives the shear on the dust ripples and the orientation of the
     // long swells. Held 70-80 degrees away from `sunAzimuth`: the ripples run
     // along the drift, so when the two align the star rakes down every ridge,
@@ -56,8 +66,14 @@ export const S = {
     shaftStrength: 0.12,
 
     // ---------------------------------------------------------------- galaxy
-    /** Star field density multiplier. */
-    starDensity: 1.0,
+    /**
+     * Star field density multiplier. Halved from 1.0: a sparser field reads
+     * *deeper* — what sells distance is a few unmistakable stars against real
+     * void, not coverage — and it hands the frame to the planets and to the
+     * beacon stars (see `starField`), which need empty sky around them to
+     * register as individuals.
+     */
+    starDensity: 0.5,
     /** Star field brightness multiplier. */
     starBrightness: 1.0,
     /**
@@ -79,17 +95,19 @@ export const S = {
      * its bearing at fixed offsets, so this one control swings the family.
      *
      * The bright beautiful things up there, and deliberately the things
-     * guaranteed never to glow: the hero's lit face tops out near 3 linear
-     * against a bloom knee of 6.5, so it stays crisp at any size — the "from
-     * within" light is painted shading, not bloom. `planetSize` is the angular
-     * *radius* in degrees — 7.6 reads as a looming world; push it past fifteen
-     * to fill the sky.
+     * guaranteed never to glow: the hero's lit face stays well under the 6.5
+     * bloom knee, so it stays crisp at any size — the "from within" light is
+     * painted shading, not bloom. `planetSize` is the angular *radius* in
+     * degrees; at 20 the hero spans forty degrees of sky, the looming-world
+     * read, and the glow sits *lower* than it did when the disc was small —
+     * a bigger world at the same brightness reads nearer, and this one is
+     * meant to read enormous and far.
      */
     showPlanet: true,
     planetBearing: 232,
-    planetElevation: 27,
-    planetSize: 7.6,
-    planetGlow: 3.3,
+    planetElevation: 31,
+    planetSize: 20,
+    planetGlow: 2.7,
 
     /**
      * Strength of the auroral curtains. Near zero by default: at the LUT's
@@ -100,6 +118,24 @@ export const S = {
     nebulaStrength: 0.12,
 
     // -------------------------------------------------------------- the moon
+    /**
+     * Which stretch of the moon this session surfs, 0-999.
+     *
+     * Fresh each visit, pinned with `?seed=N` in the URL — the number is
+     * logged to the console at boot so a good map can be shared. It slides
+     * the height bake's noise domain (see heightBake.fragment.wgsl), so
+     * every seed has its own swells, craters and massifs, and each carries
+     * one landmark ring crater a few hundred metres from spawn.
+     */
+    worldSeed: (() => {
+        if (typeof location !== "undefined") {
+            const q = new URLSearchParams(location.search).get("seed");
+            if (q !== null && q !== "" && Number.isFinite(+q)) {
+                return Math.abs(Math.floor(+q)) % 1000;
+            }
+        }
+        return Math.floor(Math.random() * 1000);
+    })(),
     /**
      * Master scale on the nebula fill the ground carries.
      *
@@ -258,7 +294,7 @@ export const SCHEMA = [
             { k: "showPlanet", l: "Planet", t: "b" },
             { k: "planetBearing", l: "Planet bearing", t: "f", min: 0, max: 360, step: 1 },
             { k: "planetElevation", l: "Planet height", t: "f", min: 5, max: 70, step: 1 },
-            { k: "planetSize", l: "Planet size", t: "f", min: 1, max: 22, step: 0.1 },
+            { k: "planetSize", l: "Planet size", t: "f", min: 1, max: 45, step: 0.1 },
             { k: "planetGlow", l: "Planet bright", t: "f", min: 0, max: 6, step: 0.05 },
         ],
     },
@@ -389,8 +425,9 @@ export const PRESETS = {
         sharpen: false,
         shaftStrength: 0.10,
         // Fewer stars, brighter each. A dense field at a phone's pixel pitch is
-        // a grey haze; a sparse one still reads as stars.
-        starDensity: 0.7,
+        // a grey haze; a sparse one still reads as stars. Scaled against the
+        // halved desktop default, same ratio as before.
+        starDensity: 0.35,
         starBrightness: 1.15,
     },
 };

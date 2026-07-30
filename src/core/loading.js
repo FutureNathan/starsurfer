@@ -41,7 +41,7 @@ const KEYS = [
     ["shift", "sprint"],
     ["right mouse", "star-surf"],
     ["1 – 5", "the five powers · 2 is held"],
-    ["F1", "settings and stats"],
+    ["esc", "menu · pause"],
 ];
 
 const TOUCH_KEYS = [
@@ -57,7 +57,7 @@ const TOUCH_KEYS = [
  * source as the table above, cut to the three things somebody who skipped the
  * loading screen still needs.
  */
-const HINT = "click to look · wasd to move · right mouse to surf · f1 for settings";
+const HINT = "click to look · wasd to move · right mouse to surf · esc for the menu";
 const TOUCH_HINT = "drag to look · nudge the stick to walk · push it out to surf";
 
 /**
@@ -98,7 +98,7 @@ export async function phase(text, to) {
 }
 
 export async function done() {
-    await phase("ready", 1);
+    await phase("surf's up", 1);
     // Let the bar visibly land before the fade starts.
     await new Promise((r) => setTimeout(r, 360));
     root?.classList.add("gone");

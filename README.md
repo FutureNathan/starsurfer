@@ -26,7 +26,17 @@ are no textures, no meshes, no HDRIs and no animation data in this repository.
 | `Shift` | sprint |
 | **Right mouse (hold)** | star-surf — carve across the regolith and throw a luminous wake |
 | `1` – `5` | the five powers (`2` is a held cast) |
+| `Esc` | pause menu — frees the mouse, shows the controls |
 | `F1` or `` ` `` | settings and performance overlay |
+
+`Esc` is the player's menu and `F1` is the instrument panel, and they are
+deliberately two different things. Escape drops pointer lock (the browser does
+that part and no page may veto it), the lock loss opens the menu, and the
+menu's presence pauses the simulation — so alt-tab and focus loss pause the
+game through the identical path, which is what anyone would want anyway. The
+menu itself is eleven keycaps, the world's seed, and a resume button; the F1
+overlay is every art parameter and timing graph in the project. Normal people
+need the first one and never the second.
 
 The controls are also on the loading screen, which is the one moment anybody is
 going to read them — there is a captive audience there for as long as the
@@ -138,6 +148,24 @@ is drawn rather than a re-implementation of it. The crater field is part of that
 bake and costs nothing at runtime. The fine half is evaluated live, with exact
 analytic derivatives, and is never baked at all. (Every figure here is the desktop
 tier; the mobile tier halves each of these — see [On a phone](#on-a-phone).)
+
+**Every visit is a different stretch of this moon.** A world seed, drawn fresh
+each load and pinned with `?seed=N` in the URL (the number is logged at boot
+and shown in the pause menu), slides the bake's noise domain tens of
+kilometres — different swells, different craters, different massifs — while
+the material, physics and readback pipelines never know anything changed,
+because the seed lives in the bake shader and nowhere else. And each world
+carries one **landmark ring**: a great complex crater a few hundred metres
+from spawn, standing wall, sunken floor, central peak — the profile every
+large lunar crater shares. Every other feature repeats statistically; the ring
+is singular per world, and that is its whole job. A map with a landmark is a
+place you can be lost in; a map without one is a texture.
+
+The albedo carries markings as well as relief: highland/mare provinces at the
+625 m wavelength that give the real moon its face, and **ejecta rays** — lanes
+of fresher, brighter fines thresholded hard so most ground carries none,
+running in broken streaks rather than blobs. Both are what stops a crater
+field reading as one grey plane with holes in it.
 
 ### Regolith shading
 
@@ -502,30 +530,38 @@ rather than curtain, and the screenshot review called it exactly that. The
 sky's resting state is dark — stars, a faint band, one planet — and the sliders
 still run to two for anyone who wants the weather back.
 
-The planets are the bright things that darkness bought — three of them now. The
+The planets are the bright things that darkness bought — four of them now. The
 hero is an analytic teal gas giant shaded in the skybox fragment shader — banded
 latitudes warped by noise, a soft terminator lit from the scene's own star
-bearing, limb darkening, a thin atmospheric rim — about fifteen degrees across,
-sitting high off the galactic band. Because every part of it keys off the
-sphere's own normal rather than a texture, growing it costs nothing in
-resolution: at the larger size a third, finer noise octave shears the band
-edges, threads bright and dark filaments through the shear zones, and works one
-pale storm oval into the banding — detail that only resolves on a disc this
-large, which is what keeps it looking drawn at full resolution rather than
-scaled up. Its limb is anti-aliased over its last percent and a half, and a
-faint self-lit inner term — strongest at the centre of the disc, independent of
-the star — leaves the night side a dim luminous crescent instead of a bite out
-of the star field. That is the "glowing from within" read, done as painted
-shading: the lit face lands near 3 linear, still under the bloom knee, so the
-glow is in the world and never in the lens.
+bearing, limb darkening, a thin atmospheric rim — forty degrees across,
+sitting high off the galactic band: the looming-world read, and *dimmer* than
+it was when it was small, because a bigger disc at the same radiance reads
+nearer and this one is meant to read enormous and far. Because every part of
+it keys off the sphere's own normal rather than a texture, growing it costs
+nothing in resolution: a third noise octave shears the band edges, threads
+bright and dark filaments through the shear zones, and works one pale storm
+oval into the banding, and a fourth, still finer octave puts texture inside
+features that would otherwise be tens of pixels wide — detail that only
+resolves on a disc this large, which is what keeps it looking drawn at full
+resolution rather than scaled up. Its limb is anti-aliased over its last
+percent and a half, and a faint self-lit inner term — strongest at the centre
+of the disc, independent of the star — leaves the night side a dim luminous
+crescent instead of a bite out of the star field. That is the "glowing from
+within" read, done as painted shading: the lit face stays under the bloom
+knee, so the glow is in the world and never in the lens.
 
-Two companions hang off the hero's bearing at fixed offsets, so the one slider
-swings the whole family and no setting can park one world behind another: a
-small amber world a third of the sky round and high, and a dimmer violet one
-the other way, low near the band. They share the hero's shader with the fine
-octave off — a two-degree disc has no pixels to show it. The far range occludes
-all three like everything else in the sky, and they are gated out of the star's
-aureole and the point-star field, so stars do not twinkle through them.
+Three companions hang off the hero's bearing at fixed offsets, so the one
+slider swings the whole family and no setting can park one world behind
+another: a small amber world a third of the sky round and high, a dimmer
+violet one the other way low near the band, and a Mars — rust and
+butterscotch, its band frequency dropped so low the stripes read as albedo
+provinces rather than weather — sitting at eight degrees, where the tallest
+ridge silhouettes genuinely clip it: a world that rises from behind the
+mountains is in the scene, not printed on it. They share the hero's shader
+with the fine octaves off — a two-degree disc has no pixels to show them. The
+far range occludes all four like everything else in the sky, and they are
+gated out of the star's aureole and the point-star field, so stars do not
+twinkle through them.
 
 The lower hemisphere of that LUT is not sky. It holds the ground's own solved
 radiance, and the solve is a genuine iteration: bake, project to SH, work out what
@@ -548,6 +584,12 @@ sub-pixel noise. Most run a quiet spectral ramp from blue-white to warm amber,
 and about one in seven is genuinely coloured — sapphire, ember, teal or rose,
 at full saturation, because a two-pixel point has no area to carry a subtle
 tint: by the time TAA and the display have had it, "slightly blue" is white.
+
+The field is also half as dense as it was, and its top two per cent draw at
+roughly twice the diameter, brighter, and always in one of the saturated
+classes. Both moves serve the same read: a sparser field with a few
+unmistakable beacons in it has *depth* — a couple of obviously nearer suns
+against a background of far ones — where uniform coverage reads as wallpaper.
 
 The near star is a third of a degree across with limb darkening: smaller and harder
 than the sun seen from Earth, because there is no air to soften its edge. Its
@@ -586,16 +628,27 @@ pale smear with the range floating above it. The window now runs 18° down, with
 a floor that adapts to eye height, and the march starts at 820 m rather than
 five and a half kilometres out.
 
-That last number is the fix for the mountains floating, which survived a first
-pass because the real cause was never the window. Between the clipmap's 870 m
-edge and the massifs' 5.5 km start line there was genuinely *nothing* — the
-range's seven-kilometre bowl was dead flat — so from a summit the eye crossed
-real terrain, then a level fully-hazed band, then mountains, and the level band
-read as the range hovering over a gap. The bowl now carries a mid-field fill:
-two octaves of rolling ground, a few metres high and biased low so it never
-competes with the clipmap in front of it, continuous under the massifs. The eye
-crosses swells all the way out, and the range sits on ground that was always
-there.
+That last number is half the fix for the mountains floating, which survived a
+first pass because the real cause was never the window. Between the clipmap's
+870 m edge and the massifs' 5.5 km start line there was genuinely *nothing* —
+the range's seven-kilometre bowl was dead flat — so from a summit the eye
+crossed real terrain, then a level fully-hazed band, then mountains, and the
+level band read as the range hovering over a gap. The bowl now carries a
+mid-field fill: two octaves of rolling ground, a few metres high and biased
+low so it never competes with the clipmap in front of it, continuous under the
+massifs.
+
+The other half — the half that made the *third* floating-mountains report,
+after the fill was already in — was the haze itself. The scene's fog was a
+hundred times thicker than air, hugging the ground on a 22-metre scale height;
+from a summit, everything past a kilometre and a half sat at 60–97%
+extinction, so the fill that was supposed to close the gap was being painted
+over with featureless pale inscatter — a mid-field that existed and could not
+be seen, with the LUT's texel rows striping through the wash. The density is
+now a fifth of what it was, with the extinction curve relaxed to match. An
+airless horizon is crisp to the last ridge — Apollo photographs are the
+reference — and now that the ground stays ground all the way out, the eye
+crosses swells to the massifs' feet and the range stands on them.
 
 ### Post-processing
 
