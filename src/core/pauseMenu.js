@@ -106,7 +106,16 @@ const CSS = `
     color: var(--accent);
     border-bottom-color: rgba(255, 196, 107, 0.55);
 }
-.pm-body { overflow-y: auto; margin-top: 0.2em; }
+/* The one scroll container in the panel. `min-height: 0` is load-bearing: a
+   flex child's default minimum is its content height, so without it the body
+   refuses to shrink below the overlay's full height and nothing ever
+   scrolls — the panel just quietly overflows its own max-height instead. */
+.pm-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin-top: 0.2em;
+}
 .pm-body::-webkit-scrollbar { width: 7px; }
 .pm-body::-webkit-scrollbar-thumb {
     background: rgba(184, 162, 255, 0.18);
@@ -189,25 +198,45 @@ const CSS = `
 #pm-resume:hover { background: rgba(255, 196, 107, 0.12); }
 
 /* The standing invitation, while playing: bottom-right, out of the frame's
-   way, gone the moment the menu it advertises is open. */
+   way, gone the moment the menu it advertises is open. A real button — chip
+   background, border, keycap — because bare dim text over a sunlit moonscape
+   was invisible exactly when it was needed. It is clickable for whenever the
+   mouse is free (before the first pointer lock, or on a trackpad); with the
+   pointer locked there is no cursor to click it with, and the keycap it is
+   wearing *is* the instruction for that case. */
 #esc-hint {
     position: fixed;
-    right: 18px;
+    right: 16px;
     bottom: 14px;
     z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.55em 1.0em;
+    border: 1px solid rgba(255, 246, 224, 0.30);
+    border-radius: 999px;
+    background: rgba(5, 6, 15, 0.78);
+    color: rgba(255, 246, 224, 0.85);
+    font: inherit;
     font-size: 10px;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.20em;
     text-transform: uppercase;
-    color: rgba(255, 246, 224, 0.34);
-    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
-    pointer-events: none;
-    transition: opacity 400ms ease;
+    cursor: pointer;
+    transition: opacity 400ms ease, background 140ms ease;
 }
-#esc-hint.off { opacity: 0; }
+#esc-hint:hover { background: rgba(20, 20, 44, 0.92); }
+#esc-hint .pm-key { font-size: 9px; padding: 0.3em 0.5em; }
+#esc-hint.off { opacity: 0; pointer-events: none; }
 
 /* The overlay, when the settings tab has adopted it: docked into the panel
    flow instead of pinned to the viewport edge. Same element, same handlers —
-   only its frame changes. */
+   only its frame changes.
+
+   The scroll overrides are the fix for the wheel doing nothing on this tab.
+   Standalone, #ov is its own scroller and carries `overscroll-behavior:
+   contain`; docked, it has no height limit, so it can never scroll itself —
+   and `contain` then swallows every wheel event instead of letting it chain
+   up to .pm-body, which is the element actually holding the scrollbar. */
 .pm-page #ov {
     position: static;
     display: block;
@@ -218,6 +247,8 @@ const CSS = `
     -webkit-backdrop-filter: none;
     padding: 4px 2px 12px;
     text-align: left;
+    overflow-y: visible;
+    overscroll-behavior: auto;
 }
 @media (max-height: 560px) {
     .pm-panel { padding: 1.3em 1.6em 1.2em; }
@@ -284,12 +315,12 @@ export function initPauseMenu(canvas, overlay) {
         </div>`;
     document.body.appendChild(root);
 
-    // The invitation the menu needs to be found at all: a quiet corner label
-    // while riding. It is mounted here rather than in the HTML because it is
+    // The invitation the menu needs to be found at all: a corner chip while
+    // riding. It is mounted here rather than in the HTML because it is
     // desktop-shaped — a touchscreen has no Escape key to advertise.
-    const escHint = document.createElement("div");
+    const escHint = document.createElement("button");
     escHint.id = "esc-hint";
-    escHint.textContent = "esc — pause · menu";
+    escHint.innerHTML = `<span class="pm-key">esc</span> pause · menu`;
     document.body.appendChild(escHint);
 
     const tabs = /** @type {HTMLElement[]} */ ([...root.querySelectorAll(".pm-tab")]);
@@ -331,6 +362,7 @@ export function initPauseMenu(canvas, overlay) {
         // on the player's page — the depth is opt-in per visit.
         selectTab("controls");
     };
+    escHint.addEventListener("click", () => { if (!open) show(); });
 
     // Resume re-locks the pointer, because a click is a real user activation
     // and Escape is not — the browser refuses a lock request made from the
