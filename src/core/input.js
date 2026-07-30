@@ -3,7 +3,15 @@
  * no events fired into game code, no per-frame allocation.
  *
  * Mouse look uses pointer lock, which frees the right button for star-surf.
+ *
+ * Touch arrives through the same struct. `core/touch.js` owns the on-screen
+ * controls and keeps its own axes; they are folded in here rather than written
+ * straight into `input`, because `pollInput` rebuilds the movement axes from
+ * held keys every frame and would overwrite anything already sitting in them.
+ * Nothing downstream of this file can tell which device drove it.
  */
+
+import { touch } from "./touch.js";
 
 export const input = {
     // Movement axes, camera-relative, already normalised to a unit disc.
@@ -31,6 +39,20 @@ export const input = {
 
 const keys = Object.create(null);
 
+/**
+ * Held state for the two inputs that can arrive from either device, tracked per
+ * device and combined in `pollInput`.
+ *
+ * The naive version — have each device write `input.surf` directly — cannot work:
+ * `pollInput` runs every frame, so an OR leaves the flag stuck on once either
+ * device has set it, and a plain assignment lets whichever device ran last clear
+ * the other's hold. Keeping one flag per device and combining them is the only
+ * arrangement where releasing a mouse button and lifting a thumb both do what
+ * they say.
+ */
+let mouseSurf = false;
+let keyHeld2 = false;
+
 const LOOK_SCALE = 0.0022;
 
 /** @type {(() => void)|null} */
@@ -43,7 +65,11 @@ let onToggleOverlay = null;
 export function initInput(canvas, hooks) {
     onToggleOverlay = hooks?.onToggleOverlay ?? null;
 
+    // Pointer lock only makes sense for a mouse. Requesting it from a tap either
+    // fails silently or, worse, succeeds and hides the controls behind a
+    // fullscreen prompt.
     canvas.addEventListener("click", () => {
+        if (touch.active) return;
         if (!input.locked) canvas.requestPointerLock();
     });
 
@@ -52,8 +78,8 @@ export function initInput(canvas, hooks) {
         if (!input.locked) {
             // Drop held state so the character doesn't run off while unfocused.
             for (const k in keys) keys[k] = false;
-            input.surf = false;
-            input.spellHeld2 = false;
+            mouseSurf = false;
+            keyHeld2 = false;
         }
     });
 
@@ -67,11 +93,11 @@ export function initInput(canvas, hooks) {
 
     document.addEventListener("mousedown", (e) => {
         if (!input.locked) return;
-        if (e.button === 2) input.surf = true;
+        if (e.button === 2) mouseSurf = true;
     });
 
     document.addEventListener("mouseup", (e) => {
-        if (e.button === 2) input.surf = false;
+        if (e.button === 2) mouseSurf = false;
     });
 
     document.addEventListener(
@@ -97,19 +123,19 @@ export function initInput(canvas, hooks) {
         const n = SPELL_KEYS[e.code];
         if (n) {
             input.spellPressed = n;
-            if (n === 2) input.spellHeld2 = true;
+            if (n === 2) keyHeld2 = true;
         }
     });
 
     window.addEventListener("keyup", (e) => {
         keys[e.code] = false;
-        if (SPELL_KEYS[e.code] === 2) input.spellHeld2 = false;
+        if (SPELL_KEYS[e.code] === 2) keyHeld2 = false;
     });
 
     window.addEventListener("blur", () => {
         for (const k in keys) keys[k] = false;
-        input.surf = false;
-        input.spellHeld2 = false;
+        mouseSurf = false;
+        keyHeld2 = false;
     });
 }
 
@@ -136,10 +162,21 @@ export function pollInput() {
         x /= len;
         z /= len;
     }
+    // The stick wins when it is being held: a finger on it is an explicit
+    // instruction, and on a hybrid device the keys are almost certainly at rest.
+    if (touch.active && (touch.moveX !== 0 || touch.moveZ !== 0)) {
+        x = touch.moveX;
+        z = touch.moveZ;
+    }
+
     input.moveX = x;
     input.moveZ = z;
-    input.moving = len > 0.001;
-    input.sprint = !!(keys.ShiftLeft || keys.ShiftRight);
+    input.moving = Math.hypot(x, z) > 0.001;
+
+    input.sprint = !!(keys.ShiftLeft || keys.ShiftRight) || touch.sprint;
+    input.surf = mouseSurf || touch.surf;
+    input.spellHeld2 = keyHeld2 || touch.held2;
+    if (touch.pressed) input.spellPressed = touch.pressed;
 }
 
 /** Clear per-frame accumulators. Called at the very end of the frame. */
@@ -148,6 +185,8 @@ export function endFrame() {
     input.lookY = 0;
     input.zoomDelta = 0;
     input.spellPressed = 0;
+    // A button press is one frame long whichever device sent it.
+    touch.pressed = 0;
 }
 
 export function isDown(code) {

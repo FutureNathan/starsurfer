@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Real-time procedural galaxy and cosmic-dust rendering tech demo (Babylon.js / WebGPU)",
   "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

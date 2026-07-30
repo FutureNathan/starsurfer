@@ -7,9 +7,13 @@ repository.
 
 **▶ Deployed URL: TBD**
 
-> Requires a WebGPU-capable desktop browser (Chrome/Edge 113+, Firefox 141+,
-> Safari 26+) and a discrete or recent integrated GPU. There is no WebGL
-> fallback by design — if `navigator.gpu` is missing the page says so and stops.
+> Needs WebGPU. Chrome or Edge 113+, Firefox 141+, Safari 26+ on the desktop;
+> Chrome 121+ on Android; iOS 26+ on an iPhone or iPad. There is no WebGL fallback
+> by design — without `navigator.gpu` the page says so and stops, and says which
+> browsers do have it.
+>
+> Phones and tablets get on-screen controls and a reduced quality tier
+> automatically. See [On a phone](#on-a-phone) for what that trades away.
 
 ---
 
@@ -24,6 +28,24 @@ repository.
 | **Right mouse (hold)** | star-surf — carve across the dust sea and throw a luminous wake |
 | `1` – `5` | the five powers (`2` is a held cast) |
 | `F1` or `` ` `` | settings and performance overlay |
+
+On a touchscreen the on-screen controls appear instead, and nothing else changes —
+they write into the same input struct the keyboard and mouse do.
+
+| | |
+|---|---|
+| Drag anywhere | look |
+| Left thumbstick | move · push it out to the ring to sprint |
+| Two-finger pinch | zoom |
+| **SURF** (bottom right) | star-surf, held |
+| Five ringed buttons | the powers · **ION** is held |
+| ⚙ (top right) | settings and performance overlay |
+
+The stick floats: its ring is drawn wherever the thumb lands in the lower-left
+quadrant rather than at a fixed spot, so it can be grabbed without looking, and
+its centre is dragged along if the thumb runs past the ring so it can never run
+out of travel mid-turn. Append `?touch=1` to force the controls on for a look at
+the layout from a desktop, or `?touch=0` to force them off.
 
 The overlay exposes every art parameter as a live slider — the star's bearing and
 elevation, the galactic band's tilt and core bearing, nebula density, the dust's
@@ -55,7 +77,8 @@ over a 2048 m field (0.5 m per texel) plus a 2048² RGBA16F auxiliary of slopes,
 outcrop mask and exposure, and is mirrored back to the CPU — so character
 grounding samples exactly the surface that is drawn rather than a
 re-implementation of it. The fine half is evaluated live, with exact analytic
-derivatives, and is never baked at all.
+derivatives, and is never baked at all. (Every figure here is the desktop tier;
+the mobile tier halves each of these — see [On a phone](#on-a-phone).)
 
 ### Dust shading
 
@@ -382,6 +405,45 @@ npm run dev      # vite dev server on :5173
 npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
+
+Node 20.19+ or 22.12+, which is what Vite 8 wants.
+
+## Deploying
+
+It is a static build with no server side, so any static host will do. `vercel.json`
+declares the Vite preset, `npm run build`, `dist` as the output, and immutable
+caching on the hashed assets with the entry document left revalidating.
+
+Nothing needs configuring beyond that: there are no environment variables, no API
+routes, no redirects, and no `base` path — the app assumes it is served from the
+root of its domain. Source maps ship with the build. That is deliberate rather
+than an oversight: the whole project is MIT and readable anyway, and being able to
+read a stack trace off a real phone is worth more here than the download it costs,
+since a browser only fetches them with devtools open.
+
+## On a phone
+
+It runs. Whether it runs *well* depends on the phone, and the honest answer is
+that this is a demanding scene being asked to fit somewhere it was not designed
+for.
+
+A coarse pointer switches the whole thing to a mobile tier before anything
+allocates. The height field drops from 4096² to 2048², the auxiliary map and the
+three shadow cascades halve, the grain map halves, the trail buffer halves, and
+the render scale goes to 0.75 — together roughly 250 MB of GPU memory that a
+shared-memory device does not have to find. Screen-space reflections and depth of
+field are switched off, being the two passes whose cost is per-pixel and whose
+contribution is least legible at arm's length.
+
+Bloom, TAA and the tonemap all stay on, and that is not a matter of taste. Bloom
+is how the wake's crest, the thrown grains and the galactic band read as bright
+rather than merely pale; TAA is what stops a two-pixel star field aliasing into
+a crawling mess, which a phone's pixel density makes worse rather than better.
+
+Every one of those is a slider in the overlay, reachable from the ⚙ in the corner,
+so a device with headroom can be pushed back up. The fixed render targets are the
+exception — they are sized at construction and a reload is the only way to change
+them.
 
 ## Layout
 

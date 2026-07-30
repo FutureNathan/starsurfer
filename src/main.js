@@ -14,11 +14,13 @@ import { Scene } from "@babylonjs/core/scene";
 import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
 
 import { registerShaders } from "./shaders/registry.js";
-import { S, onChange } from "./core/settings.js";
+import { S, onChange, applyPreset } from "./core/settings.js";
 import {
     sample, checkSpike, stats, mark, installDrawCounter, endFrameDraws,
 } from "./core/perf.js";
 import { initInput, pollInput, endFrame, input } from "./core/input.js";
+import { initTouch, wantsTouchControls } from "./core/touch.js";
+import { MOBILE_TIER } from "./core/device.js";
 import { CameraRig } from "./core/camera.js";
 import { CharacterController } from "./character/controller.js";
 import { Character } from "./character/character.js";
@@ -45,6 +47,11 @@ async function boot() {
         loading.fail("WebGPU is not available in this browser.");
         return;
     }
+
+    // Before anything allocates. The preset's resolution scale and trail-buffer
+    // size are read during construction, and `device.js` has already sized the
+    // fixed render targets off the same tier.
+    if (MOBILE_TIER) applyPreset("mobile");
 
     await loading.phase("creating device", 0.05);
 
@@ -163,7 +170,11 @@ async function boot() {
     const post = new PostChain(scene, rig.camera, depthPass, sky);
 
     const overlay = new Overlay({ rig, character });
-    initInput(canvas, { onToggleOverlay: () => overlay.toggle() });
+    const toggleOverlay = () => overlay.toggle();
+    initInput(canvas, { onToggleOverlay: toggleOverlay });
+    // The on-screen controls, when the primary pointer is a finger. They mount
+    // after the overlay because the settings button on them toggles it.
+    if (wantsTouchControls()) initTouch(canvas, { input, onToggleOverlay: toggleOverlay });
 
     // ------------------------------------------------------------- warm-up
     // Everything that can compile, compiles here — behind the loading screen.

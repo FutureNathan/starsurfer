@@ -33,9 +33,17 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { QUALITY } from "../core/device.js";
 
 export const CASCADE_COUNT = 3;
-const RESOLUTION = 2048;
+/**
+ * Texels per cascade. From the device tier: three of these exist, so it is the
+ * third-largest allocation in the scene. Halving it doubles the world-space texel
+ * in every cascade, and because the PCSS filter's radius is computed in metres
+ * rather than in texels, the penumbra keeps its physical size — only its sampling
+ * coarsens.
+ */
+const RESOLUTION = QUALITY.shadowRes;
 
 /** Far distance of each cascade, metres. */
 const SPLITS = [26, 95, 330];

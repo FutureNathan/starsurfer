@@ -28,6 +28,14 @@
         color: var(--star);
         font-family: ui-sans-serif, "Inter", "Segoe UI", system-ui, sans-serif;
         -webkit-font-smoothing: antialiased;
+        /* Touch housekeeping. The canvas already sets `touch-action: none`, but a
+           drag that begins a pixel outside it would otherwise pull-to-refresh on
+           Android or rubber-band on iOS, and a held thumb on a control raises the
+           long-press callout. */
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
     }
 
     #view {
@@ -190,6 +198,14 @@
 
     #nogpu.show { display: grid; }
     #nogpu b { color: var(--star); font-weight: 500; }
+    #nogpu .nogpu-list {
+        display: inline-block;
+        text-align: left;
+        color: var(--dust);
+        font-size: 12px;
+        line-height: 2;
+        letter-spacing: 0.04em;
+    }
 
     /* ------------------------------------------------------------- hint */
 
@@ -234,7 +250,14 @@
     <div id="nogpu">
         <div>
             <b>WebGPU is not available in this browser.</b><br />
-            STARSURFER requires a WebGPU-capable browser. Try Chrome 113+ on a desktop GPU.
+            STARSURFER renders entirely on the GPU through WebGPU, and there is no
+            WebGL fallback.<br /><br />
+            <span class="nogpu-list">
+                Desktop &nbsp;·&nbsp; Chrome or Edge 113+, Firefox 141+, Safari 26+<br />
+                Android &nbsp;·&nbsp; Chrome 121+<br />
+                iPhone / iPad &nbsp;·&nbsp; iOS 26+ (any browser)
+            </span><br />
+            It is also a demanding scene. On a phone expect it to run, not to fly.
         </div>
     </div>
 

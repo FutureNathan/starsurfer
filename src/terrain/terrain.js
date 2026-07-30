@@ -13,7 +13,7 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { ProceduralTexture } from "@babylonjs/core/Materials/Textures/Procedurals/proceduralTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 
-import { Heightfield, WORLD_SIZE } from "./heightfield.js";
+import { Heightfield, WORLD_SIZE, HEIGHT_RES } from "./heightfield.js";
 import { DeformationField } from "./deformation.js";
 import {
     buildClipmapMesh,
@@ -23,11 +23,12 @@ import {
 } from "./clipmapMesh.js";
 import { S } from "../core/settings.js";
 import { LIN } from "../core/brand.js";
+import { QUALITY } from "../core/device.js";
 import { CASCADE_COUNT } from "../render/shadows.js";
 import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
 import { bakeOnce, whenReady, bindMatrixArray } from "../core/gpuUtil.js";
 
-const DETAIL_RES = 1024;
+const DETAIL_RES = QUALITY.detailRes;
 
 const _splits = new Vector4(0, 0, 0, 0);
 const _lod = new Vector2();
@@ -314,7 +315,7 @@ export class Terrain {
         m.setFloat("gridHalfN", GRID_HALF_N);
         m.setVector2("worldOrigin", hf.origin);
         m.setFloat("worldSize", hf.size);
-        m.setFloat("heightRes", 4096);
+        m.setFloat("heightRes", HEIGHT_RES);
         m.setFloat("windAngle", windAngle);
         m.setFloat("macroAmp", S.macroHeightScale);
         m.setFloat("sastrugiAmp", S.sastrugiStrength);
@@ -375,7 +376,7 @@ export class Terrain {
             pm.setFloat("gridHalfN", GRID_HALF_N);
             pm.setVector2("worldOrigin", hf.origin);
             pm.setFloat("worldSize", hf.size);
-            pm.setFloat("heightRes", 4096);
+            pm.setFloat("heightRes", HEIGHT_RES);
             pm.setFloat("windAngle", windAngle);
             pm.setFloat("sastrugiAmp", S.sastrugiStrength);
             pm.setVector2("deformCenter", deformCenter);
@@ -396,7 +397,7 @@ export class Terrain {
                 d.setFloat("gridHalfN", GRID_HALF_N);
                 d.setVector2("worldOrigin", hf.origin);
                 d.setFloat("worldSize", hf.size);
-                d.setFloat("heightRes", 4096);
+                d.setFloat("heightRes", HEIGHT_RES);
                 d.setFloat("windAngle", windAngle);
                 d.setFloat("sastrugiAmp", S.sastrugiStrength);
                 d.setVector2("deformCenter", deformCenter);

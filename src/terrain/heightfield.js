@@ -22,11 +22,22 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { S } from "../core/settings.js";
+import { QUALITY } from "../core/device.js";
 import { bakeOnce } from "../core/gpuUtil.js";
 
 export const WORLD_SIZE = 2048; // metres across the whole field
-export const HEIGHT_RES = 4096; // 0.5 m per texel
-export const AUX_RES = 2048;
+/**
+ * Texels across the baked height field, and across the derived auxiliary map.
+ *
+ * Both come from the device tier rather than being fixed, because between them
+ * they are the largest allocation in the scene — 67 MB and 33 MB at desktop
+ * sizes — and a phone cannot spare either. At the mobile tier the height texel
+ * goes from 0.5 m to 1.0 m, which the bicubic fetch absorbs: the macro layer's
+ * shortest wavelength is 13.5 m, so a metre still oversamples it several times
+ * over.
+ */
+export const HEIGHT_RES = QUALITY.heightRes;
+export const AUX_RES = QUALITY.auxRes;
 
 /** Half-extent the player is kept inside, leaving margin for the far rings. */
 export const PLAY_RADIUS = 620;

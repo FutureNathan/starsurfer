@@ -285,6 +285,37 @@ export const PRESETS = {
         deformResolution: 1024, resolutionScale: 0.85,
         ssr: false, dof: false,
     },
+    /**
+     * Phones and tablets. Applied automatically at boot on a coarse-pointer
+     * device — see `core/device.js`, which also steps the fixed render targets
+     * down, since those cannot be changed after construction.
+     *
+     * What survives and what goes is not arbitrary. The passes cut are the ones
+     * whose cost is per-pixel and whose contribution is subtle at arm's length:
+     * screen-space reflections run a march per mirror pixel to add a reflection
+     * of a mostly-black sky, and depth of field runs a sixteen-tap gather to
+     * defocus a background nobody is studying on a five-inch screen.
+     *
+     * Bloom, TAA and the tonemap all stay. Bloom is not decoration here — it is
+     * how the wake's crest, the thrown grains and the galactic band read as
+     * bright rather than merely pale, and without it the whole frame goes flat.
+     * TAA stays because the point-star field is a two-pixel feature and aliases
+     * horribly without it, and a phone's pixel density makes that worse, not
+     * better. Sharpening goes because the resolution scale already softens the
+     * image and sharpening a upscaled frame just amplifies its own artefacts.
+     */
+    mobile: {
+        deformResolution: 1024,
+        resolutionScale: 0.75,
+        ssr: false,
+        dof: false,
+        sharpen: false,
+        shaftStrength: 0.18,
+        // Fewer stars, brighter each. A dense field at a phone's pixel pitch is
+        // a grey haze; a sparse one still reads as stars.
+        starDensity: 0.7,
+        starBrightness: 1.15,
+    },
 };
 
 /** @type {Map<string, Set<(v:any, k:string) => void>>} */
