@@ -6,15 +6,15 @@
 // billboard has:
 //
 //   forward scatter   Looking toward the star through a veil, it is *brighter*
-//                     than the field behind it and it is warm. Looking the other
-//                     way it is a dim violet. That swing is enormous — several
+//                     than the ground behind it and it is warm. Looking the other
+//                     way it is a dim cold grey. That swing is enormous — several
 //                     stops — and it is the entire difference between "grains
 //                     catching the light" and "grey smoke".
 //   shadowing         Grains thrown inside the figure's own shadow must go dark,
 //                     or every footfall looks self-illuminated. It reads the
 //                     same cascades everything else does.
 //   its own charge    Each grain carries a share of the discharge that freshly
-//                     broken dust sheds, and they do not all carry the same
+//                     broken ground sheds, and they do not all carry the same
 //                     share. A few per cent are hot enough to cross the bloom
 //                     threshold alone and the rest are nowhere near it, which is
 //                     what turns a plume into a spray of sparks inside a haze
@@ -66,7 +66,8 @@ uniform ambientIntensity: f32;
 
 /// The grain discharge ramp, off the brand palette with its gains folded in.
 /// `grainGlowColor` is what a white-hot freshly thrown grain burns at,
-/// `grainCoolColor` the nebula violet it falls back to as it cools.
+/// `grainCoolColor` the warm pale grey of settling regolith it falls back to as
+/// it cools — the same pair the wake's own wall runs.
 uniform grainGlowColor: vec3f;
 uniform grainCoolColor: vec3f;
 /// Global emission scale, shared with the dust field and the wake.
@@ -123,11 +124,11 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // Dust grains in vacuum scatter almost isotropically at the surface and very
     // strongly forward through the volume, so both terms are needed.
     //
-    // The albedo is the field's *loose* endpoint rather than the value the wake
+    // The albedo is the ground's *loose* endpoint rather than the value the wake
     // wall carries. A grain in flight has no packing at all — it is the loosest
     // this material ever gets — and that is the honest end of the same ramp the
     // terrain and the wake read off.
-    let albedo = vec3f(0.155, 0.115, 0.265);
+    let albedo = vec3f(0.170, 0.158, 0.146);
     let diff = wrapDiffuse(dot(N, L), 0.75);
     var color = albedo * INV_PI * sun * diff * shadow;
 
@@ -144,7 +145,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let fwd = phaseMie(mu, 0.55) * 0.55;
     color += sun * albedo * fwd * mix(0.25, 1.0, shadow) * (1.0 - kind * 0.5);
 
-    // Sky, which is what fills the shadowed side and keeps it violet.
+    // Sky, which is what fills the shadowed side and keeps it cool.
     color += albedo * INV_PI * shIrradiance(N, uniforms.shR) * uniforms.ambientIntensity;
 
     // Spell light. Airborne dust inside a spell is the most legible thing the
@@ -177,7 +178,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
     // Cooling, on the same square law the alpha envelope fades on, so a grain can
     // never outlive its own glow. White-hot at separation, falling back through
-    // the ramp to the nebula violet of the field it came out of.
+    // the ramp to the pale grey of the ground it came out of.
     let cool = (1.0 - state.x) * (1.0 - state.x);
     let heat = flare * cool;
     // Tight radial core: the emission comes from the body of the grain rather

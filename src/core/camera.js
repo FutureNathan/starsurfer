@@ -14,6 +14,7 @@ import { Vector3, Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { input } from "./input.js";
+import { S } from "./settings.js";
 
 // ------------------------------------------------------- module-scope scratch
 const _pivot = new Vector3();
@@ -30,6 +31,32 @@ const PITCH_MIN = -0.62; // looking up
 const PITCH_MAX = 1.05; // looking down
 const DIST_MIN = 2.6;
 const DIST_MAX = 11.0;
+
+/**
+ * The follow camera. See `S.followCamera` — off on a desktop, on for touch.
+ *
+ * Three constants, and each is guarding against a different way this goes wrong.
+ *
+ * `FOLLOW_DELAY` is how long the look input has to be idle before the rig starts
+ * taking the camera back. Without it, letting go of a deliberate look drags the
+ * view straight back where it came from and the look was pointless; a beat over
+ * a second is long enough to glance at something and short enough that it never
+ * feels like waiting.
+ *
+ * `FOLLOW_EASE` ramps the rate in from zero over that first moment, because a
+ * follow that switches on at full strength yanks — the delay makes the *start*
+ * of the motion the thing the eye notices, so the start has to be gentle.
+ *
+ * The rate itself scales with speed, and the floor is low on purpose. At a
+ * standstill a fast follow makes the camera chase every small heading change
+ * while walking, which reads as the rig being nervous. At nineteen metres a
+ * second the board's own heading can swing at 2.35 rad/s and the camera has to
+ * be able to stay with it, so the ceiling is comfortably above that.
+ */
+const FOLLOW_DELAY = 1.1;
+const FOLLOW_EASE = 0.6;
+const FOLLOW_RATE_MIN = 0.55;
+const FOLLOW_RATE_MAX = 4.15;
 
 export class CameraRig {
     /**
@@ -50,6 +77,8 @@ export class CameraRig {
 
         this.yaw = 2.4;
         this.pitch = 0.17;
+        /** Seconds since the look input last moved. Gates the follow camera. */
+        this.lookIdle = 999;
 
         this.distance = 6.2;
         this.distanceTarget = 6.2;
@@ -106,11 +135,29 @@ export class CameraRig {
      * @param {Vector3} targetVel character world velocity
      * @param {number} lean signed lean amount, -1..1, for banking
      * @param {number} speed01 normalised speed for FOV widening
+     * @param {number} [heading] the rider's yaw, for the follow camera
      */
-    update(dt, targetPos, targetVel, lean, speed01) {
+    update(dt, targetPos, targetVel, lean, speed01, heading) {
         // ------------------------------------------------------------- look
+        const looked = input.lookX !== 0 || input.lookY !== 0;
         this.yaw += input.lookX;
         this.pitch = Scalar.Clamp(this.pitch + input.lookY, PITCH_MIN, PITCH_MAX);
+
+        // ----------------------------------------------------------- follow
+        // Take the camera back behind the rider once the look input has been
+        // idle for a moment. See the constants above.
+        this.lookIdle = looked ? 0 : this.lookIdle + dt;
+        if (S.followCamera && heading !== undefined && this.lookIdle > FOLLOW_DELAY) {
+            const ease = Math.min(1, (this.lookIdle - FOLLOW_DELAY) / FOLLOW_EASE);
+            const rate =
+                (FOLLOW_RATE_MIN + (FOLLOW_RATE_MAX - FOLLOW_RATE_MIN) * speed01) * ease;
+            // Through the shortest arc, so coming about does not send the camera
+            // the long way round the compass.
+            let d = heading - this.yaw;
+            while (d > Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            this.yaw += d * (1 - Math.exp(-rate * dt));
+        }
 
         // ------------------------------------------------------------- zoom
         this.distanceTarget = Scalar.Clamp(

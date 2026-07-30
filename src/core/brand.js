@@ -82,6 +82,17 @@ export const HEX = {
      */
     regolithDark: "#4a494a",
     /**
+     * Regolith thrown into the air — the wake's wall, its curtain, and the mass
+     * a power lifts.
+     *
+     * Far brighter than the ground it came out of, and legitimately so. Airborne
+     * dust is lit from every side rather than only from above, it scatters
+     * strongly forward, and it has just been broken open so none of it is
+     * space-weathered. Warm, because it is a warm star lighting grey rock and
+     * there is nothing else in the sky to cool it.
+     */
+    wakeDust: "#d8d2c8",
+    /**
      * The nebula fill the ground glows with in shadow.
      *
      * A radiance and not a reflectance, and the only reason it is a hex code at
@@ -134,8 +145,16 @@ export const LIN = /** @type {Record<keyof typeof HEX, [number,number,number]>} 
 export const EMIT = {
     /** The visor's own glow. It is mostly a mirror, not a lamp — but it blooms. */
     visor: { hue: LIN.accent, gain: 4.0 },
-    /** The crest of the stardust wake, at a full carve. Comfortably over. */
-    wake: { hue: LIN.dust, gain: 8.0 },
+    /**
+     * The wall of thrown regolith, at a full carve. Comfortably over the knee.
+     *
+     * The gain is higher than the violet it replaced — 11.5 against 8 — and lands
+     * in the same place. `LIN.dust` was a lavender whose blue channel was almost
+     * exactly 1.0, so the old gain *was* the wall's peak radiance; `LIN.wakeDust`
+     * peaks at 0.69, so the same 7.9 on screen costs a larger number here. The
+     * wall did not get brighter. It stopped being purple.
+     */
+    wake: { hue: LIN.wakeDust, gain: 11.5 },
     /** Individual grains flung clear of the wake. The brightest thing thrown. */
     grain: { hue: LIN.star, gain: 14.0 },
 };

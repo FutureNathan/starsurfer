@@ -34,24 +34,41 @@ they write into the same input struct the keyboard and mouse do.
 | | |
 |---|---|
 | Drag anywhere | look |
-| Left thumbstick | **the throttle** — nudge to walk, most of the way to run, out to the ring to surf |
+| Thumbstick (bottom left) | **the throttle** — nudge to walk, most of the way to run, out to the ring to surf |
 | Two-finger pinch | zoom |
 | Five ringed buttons (bottom right) | the powers · **ION** is held |
 | ⚙ (top right) | settings and performance overlay |
 
-There is no surf button, and that is not just one fewer control to hit. A button
-makes surfing a mode you are in or out of; a throttle makes speed something you
-lean into, which is what the scene is about. It also frees the corner — the one
-spot a thumb reaches without moving the hand — for the powers.
+**The camera follows you.** Once the look input has been idle for a beat, the rig
+takes the view back behind the rider's heading, at a rate that scales with speed
+and eases in so it never yanks. That is a touch-only default and the split is the
+point of it: a mouse aims the camera and the board at once, so a camera that
+quietly re-aimed itself would be fighting the hand already steering it. A thumb
+cannot — the stick and the look pad are different hands, and holding a heading
+through a carve while also dragging the view round to see where the carve is going
+is not something anyone manages on a phone. It is a toggle in the overlay either
+way.
 
-The gear change has hysteresis, and needs it. The stick's ring is drawn wherever
-the thumb lands in the lower-left quadrant rather than at a fixed spot, so it can
-be grabbed without looking, and its centre is dragged along if the thumb runs past
-the ring so it can never run out of travel mid-turn. That last part means a thumb
-still travelling outward is pinned at full deflection by definition — so a
-threshold placed near the edge would sit right under a resting thumb and the
-astronaut would flicker between a walk and a nineteen-metre-a-second carve. Surf
-engages at 0.84 of travel and does not release until 0.62.
+**There is no surf button**, and that is not just one fewer control to hit. A
+button makes surfing a mode you are in or out of; a throttle makes speed something
+you lean into, which is what the scene is about. It also frees the corner — the
+one spot a thumb reaches without moving the hand — for the powers.
+
+The stick sits at one fixed spot. It used to float, drawn wherever the thumb
+landed in the lower-left quadrant, which is the better ergonomic on paper and
+worse in practice for one reason: a stick with no fixed home has no *memory*.
+Every re-grab starts a new frame of reference, so after a couple of lifts you no
+longer know where centre is — and on a control whose whole job is a graduated
+throttle, that matters more than not having to aim. Pinned, the ring is always on
+screen in the same place, and half a second of use is enough to stop looking at it.
+
+The gear change still has hysteresis, because a thumb resting on a threshold
+shakes across it and the cost of a false crossing is the astronaut flickering
+between a walk and a nineteen-metre-a-second carve. But the band is much narrower
+than the floating stick needed: full deflection now means the thumb is genuinely
+at the edge of the ring, which is a place it can be held, rather than "still
+travelling outward", which pinned any moving thumb at the top of the range by
+definition. Surf engages at 0.78 of travel and releases at 0.64.
 
 Append `?touch=1` to force the controls on for a look at the layout from a
 desktop, or `?touch=0` to force them off.
@@ -249,11 +266,27 @@ full-speed carve and collapses 0.88 s after it is laid, which makes wake length
 `wakePoint` the geometry uses, so they cannot disagree with it.
 
 The wake is luminous, and its brightness is a readout of how hard the board is
-being driven. The wall wells nebula violet at a linear radiance of 8; the lip —
-the hottest, freshest mass — reaches warm gold at 10, which clears both sunlit
-ground at 5.5 and the bloom threshold at 3, so the crest is the brightest and the
-warmest point on the whole structure. On a straight run the crest sits at 3,
-right in the bloom's soft knee, and barely glows.
+being driven. The wall is thrown regolith and wells the warm pale grey of it at a
+linear radiance of 7.9 — airborne dust is lit from every side rather than only
+from above, scatters strongly forward, and has just been broken open, so it is
+legitimately far brighter than the ground it came out of. The lip — the hottest,
+freshest mass — reaches gold at 13, which clears both sunlit ground at 5.5 and the
+bloom threshold at 3, so the crest is the brightest and by a long way the warmest
+point on the whole structure. On a straight run the crest sits at 3, right in the
+bloom's soft knee, and barely glows.
+
+The board will not travel tail-first. That reads as a styling rule and is really a
+physics one, and it was a bug for a while: the carve scrub used to be subtracted
+straight out of the thrust, which quietly turned a brake into a reverse gear. At a
+full come-about the scrub is 16 against a thrust of 11, so the sum went to -21 — a
+force pointing out of the tail — and since the lateral grip only removes
+*sideways* velocity, nothing took the resulting backwards component away again.
+Alignment then sat at -1, which held the scrub at maximum, which held the thrust
+negative: a stable equilibrium, riding backwards at nineteen metres a second with
+the astronaut facing the other way. It needed a slope to trigger, and the ground
+now has a great many more of those. The scrub is applied against the velocity
+where it belongs, thrust is clamped at zero, and any reverse component is removed
+outright.
 
 Two grain populations come off the same spine — a dense slow curtain hugging the
 crest, and ballistic grains flung clear that burn at fourteen times starlight

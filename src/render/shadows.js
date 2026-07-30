@@ -159,8 +159,8 @@ export class ShadowSystem {
      * `cascades` limits how far out a caster is drawn. The terrain needs all
      * three; a two-metre figure does not — cascade 2 covers 330 m at 32 cm
      * per texel, where the whole astronaut is two texels wide and its shadow is
-     * a smudge nobody can distinguish from the swell it is standing on. Skipping
-     * it saves a full re-skin and re-solve of the cloth grid per frame.
+     * a smudge nobody can distinguish from the crater rim it is standing on.
+     * Skipping it saves a full re-skin of the figure per frame.
      *
      * @param {import("@babylonjs/core/Meshes/mesh").Mesh} mesh
      * @param {(cascade:number) => ShaderMaterial} makeMaterial

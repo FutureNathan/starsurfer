@@ -80,12 +80,24 @@ const CSS = `
 
 /* ------------------------------------------------------------------- stick */
 
+/* The stick sits at one fixed spot, and the zone is a square centred on it —
+   104 px each way, so the furthest a touch inside the zone can start from the
+   base is a deliberate poke into a corner.
+
+   It used to float: the ring was drawn wherever the thumb landed anywhere in the
+   bottom-left 46% x 58% of the screen. That is the better ergonomic on paper —
+   grab it without looking — and worse in practice for one reason. A stick with no
+   fixed home has no *memory*: every re-grab starts a new frame of reference, so
+   after a couple of lifts you no longer know where centre is, and on a control
+   whose whole job is a graduated throttle that matters more than the convenience
+   of not aiming. Pinned, the ring is always on screen, always in the same place,
+   and half a second of use is enough to stop looking at it. */
 #tc-zone {
     position: absolute;
     left: 0;
     bottom: 0;
-    width: 46%;
-    height: 58%;
+    width: 196px;
+    height: 196px;
     pointer-events: auto;
 }
 
@@ -93,27 +105,36 @@ const CSS = `
     position: absolute;
     border-radius: 50%;
     pointer-events: none;
-    opacity: 0;
     transition: opacity 180ms ease;
     will-change: transform, opacity;
 }
 
+/* Both are anchored on the zone's centre by their own negative margins, so the
+   base is one pair of numbers and nothing in the JS has to know where it is. */
 #tc-ring {
     width: 132px;
     height: 132px;
-    margin: -66px 0 0 -66px;
+    left: 104px;
+    bottom: 104px;
+    margin: 0 0 -66px -66px;
     border: 1.5px solid rgba(184, 162, 255, 0.34);
     background: radial-gradient(circle, rgba(42, 26, 77, 0.30) 0%, rgba(5, 6, 15, 0.16) 70%, transparent 100%);
     backdrop-filter: blur(2px);
+    /* Always visible, at a level that reads as furniture rather than as UI. A
+       fixed stick you cannot see is worse than a floating one. */
+    opacity: 0.5;
 }
 
 #tc-knob {
     width: 54px;
     height: 54px;
-    margin: -27px 0 0 -27px;
+    left: 104px;
+    bottom: 104px;
+    margin: 0 0 -27px -27px;
     border: 1.5px solid rgba(255, 196, 107, 0.75);
     background: radial-gradient(circle, rgba(255, 196, 107, 0.30) 0%, rgba(255, 196, 107, 0.08) 100%);
     box-shadow: 0 0 18px rgba(255, 196, 107, 0.35);
+    opacity: 0.55;
 }
 
 #tc.hold #tc-ring, #tc.hold #tc-knob { opacity: 1; }
@@ -170,7 +191,15 @@ const CSS = `
     box-shadow: 0 0 22px rgba(255, 196, 107, 0.45), inset 0 0 18px rgba(255, 196, 107, 0.18);
 }
 
-.tc-power { width: 52px; height: 52px; }
+/* Position comes from two custom properties the mount sets off ARC, rather
+   than from inline left/bottom, so a media query can scale the whole fan with
+   one rule instead of the JS having to know about breakpoints. */
+.tc-power {
+    width: 52px;
+    height: 52px;
+    right: var(--tc-r);
+    bottom: var(--tc-b);
+}
 .tc-power span { font-size: 8px; }
 
 /* --------------------------------------------------------------- overlay tab */
@@ -197,18 +226,63 @@ body.tc-on #hint {
     line-height: 1.9;
 }
 
+/* A narrow phone. 320 px is the floor worth supporting and it is genuinely
+   tight: at full size the stick's ring reaches x=171 and the power fan starts at
+   x=140, so the two overlap by thirty pixels. The buttons still take the taps —
+   they are later siblings and hit-test above the ring — but a control ring drawn
+   through a button reads as broken whether or not it behaves.
+
+   Both sides give a little: the stick comes down to a 112 px ring and the fan
+   pulls in toward its corner. That leaves 27 px of clear space between them. */
+@media (max-width: 380px) {
+    #tc-zone { width: 168px; height: 168px; }
+    #tc-ring {
+        width: 112px; height: 112px;
+        left: 86px; bottom: 92px; margin: 0 0 -56px -56px;
+    }
+    #tc-knob {
+        width: 48px; height: 48px;
+        left: 86px; bottom: 92px; margin: 0 0 -24px -24px;
+    }
+    .tc-power {
+        width: 46px; height: 46px;
+        right: calc(var(--tc-r) * 0.82);
+        bottom: calc(var(--tc-b) * 0.86);
+    }
+    .tc-power span { font-size: 7px; }
+}
+
 /* Landscape on a phone: barely any vertical room, so everything comes in. */
 @media (max-height: 460px) {
-    #tc-ring { width: 108px; height: 108px; margin: -54px 0 0 -54px; }
-    #tc-knob { width: 46px; height: 46px; margin: -23px 0 0 -23px; }
+    #tc-zone { width: 172px; height: 160px; }
+    #tc-ring {
+        width: 108px; height: 108px;
+        left: 86px; bottom: 80px; margin: 0 0 -54px -54px;
+    }
+    #tc-knob {
+        width: 46px; height: 46px;
+        left: 86px; bottom: 80px; margin: 0 0 -23px -23px;
+    }
     .tc-power { width: 46px; height: 46px; }
     .tc-power span { font-size: 7px; }
     #tc-pad { right: 12px; bottom: 12px; }
 }
 `;
 
-/** Radius of the stick's travel, px. Matches the ring's visual radius. */
-const STICK_R = 58;
+/**
+ * How far the knob's centre travels, as a fraction of the ring's width.
+ *
+ * A fraction rather than a fixed pixel count, because the ring has three sizes
+ * across the breakpoints and a constant would only be right for one of them —
+ * the landscape ring was already 108 px wide against a hard-coded 58 px travel,
+ * so the knob ran past its own ring there. Reading the ring's real width makes
+ * the CSS the single place the stick's size is stated.
+ *
+ * 0.44 puts the knob's centre a little inside the ring, so its outer edge sits
+ * on the ring's line at full deflection rather than clear of it. That contact is
+ * the visual cue that there is no more travel.
+ */
+const STICK_TRAVEL = 0.44;
 /**
  * The two gear changes, as fractions of the stick's travel.
  *
@@ -216,16 +290,19 @@ const STICK_R = 58;
  * offset is a slow walk — which is the gear that actually matters, because
  * walking is what you do to turn round and line up a run.
  *
- * `SURF_ON` drops onto the board. It has hysteresis and `SURF_OFF` is a long way
- * below it, for a reason that is specific to a floating origin: a thumb still
- * travelling outward is pinned at full deflection by definition, so a resting
- * thumb sits right on top of any threshold placed near the edge and drifts back
- * and forth across it. Without the gap the astronaut would flicker between a walk
- * and a nineteen-metre-a-second carve for as long as the thumb stayed there.
+ * `SURF_ON` drops onto the board, and it still has hysteresis — a thumb resting
+ * at a threshold shakes across it, and the cost of a false crossing here is the
+ * astronaut flickering between a walk and a nineteen-metre-a-second carve. But
+ * the gap is much narrower than it was. With a floating origin a thumb still
+ * travelling outward was pinned at full deflection *by definition*, so any
+ * threshold near the edge sat right under a resting thumb and the band had to be
+ * wide enough to cover an entire gear. Pinned, full deflection means the thumb is
+ * genuinely at the edge of the ring, which is a place it can be held; the band
+ * only has to cover a tremor.
  */
 const RUN_AT = 0.55;
-const SURF_ON = 0.84;
-const SURF_OFF = 0.62;
+const SURF_ON = 0.78;
+const SURF_OFF = 0.64;
 /** Radians of camera rotation per pixel dragged. Below the mouse's, on purpose:
  *  a thumb has a fraction of a mouse's usable travel, and a 1:1 mapping makes
  *  the camera feel like it is fighting you. */
@@ -304,8 +381,8 @@ export function initTouch(canvas, hooks) {
         b.className = "tc-btn tc-power";
         b.id = "tc-p" + p.n;
         b.setAttribute("aria-label", p.label);
-        b.style.right = ARC[i][0] + "px";
-        b.style.bottom = ARC[i][1] + "px";
+        b.style.setProperty("--tc-r", ARC[i][0] + "px");
+        b.style.setProperty("--tc-b", ARC[i][1] + "px");
         b.innerHTML = `<span>${p.label}</span>`;
         pad.appendChild(b);
         bindPower(b, p.n);
@@ -313,53 +390,65 @@ export function initTouch(canvas, hooks) {
 
     // --------------------------------------------------------------- stick
     let stickId = -1;
-    let originX = 0;
-    let originY = 0;
+    /** Viewport coordinates of the ring's centre, and its travel radius in px. */
+    let baseX = 0;
+    let baseY = 0;
+    let stickR = 58;
 
-    const place = (el, x, y) => {
-        el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    // Read off the element rather than computed, so the CSS above is the only
+    // place the stick's position and size are stated — including both media
+    // overrides and the safe-area padding the root applies. Re-read on every
+    // grab, which also covers rotation and resize without a listener.
+    const readBase = () => {
+        const r = ring.getBoundingClientRect();
+        baseX = r.left + r.width * 0.5;
+        baseY = r.top + r.height * 0.5;
+        stickR = Math.max(24, r.width * STICK_TRAVEL);
+    };
+
+    /** Move the knob off its pinned base by a deflection in px. */
+    const placeKnob = (dx, dy) => {
+        knob.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+    };
+
+    const applyStick = (e) => {
+        let dx = e.clientX - baseX;
+        let dy = e.clientY - baseY;
+        const len = Math.hypot(dx, dy);
+
+        // Clamped to the ring. The origin no longer travels with the thumb, so a
+        // thumb pushed past the edge simply stays at full deflection — which is
+        // what a stick does, and what makes "all the way out" a place rather than
+        // a moment.
+        if (len > stickR) {
+            dx = (dx / len) * stickR;
+            dy = (dy / len) * stickR;
+        }
+        placeKnob(dx, dy);
+
+        // Screen down is +y and forward is -y, hence the negation on Z. Both are
+        // already inside the unit disc because `dx`/`dy` were clamped above.
+        touch.moveX = dx / stickR;
+        touch.moveZ = -dy / stickR;
+        const t = Math.min(1, len / stickR);
+        touch.sprint = t >= RUN_AT;
+        touch.surf = t >= (touch.surf ? SURF_OFF : SURF_ON);
+        root.classList.toggle("surf", touch.surf);
     };
 
     zone.addEventListener("pointerdown", (e) => {
         if (stickId !== -1) return;
         stickId = e.pointerId;
         zone.setPointerCapture(e.pointerId);
-        originX = e.clientX;
-        originY = e.clientY;
-        place(ring, originX, originY);
-        place(knob, originX, originY);
+        readBase();
         root.classList.add("hold");
+        applyStick(e);
         e.preventDefault();
     });
 
     zone.addEventListener("pointermove", (e) => {
         if (e.pointerId !== stickId) return;
-        let dx = e.clientX - originX;
-        let dy = e.clientY - originY;
-        const len = Math.hypot(dx, dy);
-
-        // Past the ring the origin is dragged along, so the stick can never run
-        // out of travel mid-turn — the alternative is the thumb pinning at the
-        // edge and the player having to lift to recentre.
-        if (len > STICK_R) {
-            const over = len - STICK_R;
-            originX += (dx / len) * over;
-            originY += (dy / len) * over;
-            dx = (dx / len) * STICK_R;
-            dy = (dy / len) * STICK_R;
-            place(ring, originX, originY);
-        }
-
-        place(knob, originX + dx, originY + dy);
-
-        // Screen down is +y and forward is -y, hence the negation on Z. Both are
-        // already inside the unit disc because `dx`/`dy` were clamped above.
-        touch.moveX = dx / STICK_R;
-        touch.moveZ = -dy / STICK_R;
-        const t = Math.min(1, len / STICK_R);
-        touch.sprint = t >= RUN_AT;
-        touch.surf = t >= (touch.surf ? SURF_OFF : SURF_ON);
-        root.classList.toggle("surf", touch.surf);
+        applyStick(e);
         e.preventDefault();
     });
 
@@ -370,6 +459,7 @@ export function initTouch(canvas, hooks) {
         touch.moveZ = 0;
         touch.sprint = false;
         touch.surf = false;
+        placeKnob(0, 0);
         root.classList.remove("hold", "surf");
     };
     zone.addEventListener("pointerup", dropStick);

@@ -74,9 +74,10 @@ uniform glintGrazing: f32;
 uniform wakeTime: f32;
 
 /// The discharge ramp, straight off the brand palette and matching the terrain's
-/// own pair. `wakeBodyColor` is the nebula violet the whole wall wells with;
-/// `wakeLipColor` is the warm gold only the hottest, freshest mass reaches. Both
-/// arrive with their radiance gains already folded in — see `surfWake.js`.
+/// own pair. `wakeBodyColor` is the warm pale grey of regolith in the air, which
+/// the whole wall wells with; `wakeLipColor` is the gold only the hottest,
+/// freshest mass reaches. Both arrive with their radiance gains already folded in
+/// — see `surfWake.js`.
 uniform wakeBodyColor: vec3f;
 uniform wakeLipColor: vec3f;
 /// Global emission scale, shared with the dust field so the wall and the berm it
@@ -159,16 +160,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     }
 
     // ------------------------------------------------------------- material
-    // Freshly displaced dust: looser, rougher and a little brighter than the pack
-    // it came out of, and violet for the same reason the field is.
+    // Freshly displaced regolith: looser, rougher and brighter than the ground it
+    // came out of, because space weathering only reaches the top few millimetres
+    // and this has just been opened.
     //
     // This is not a free choice. It is exactly the value the terrain's own
-    // deformation berm resolves to — `mix(packed, loose, 0.55)` in the dust
+    // deformation berm resolves to — `mix(regolith, loose, 0.55)` in the ground
     // material — because the wall and the berm are one continuous body of thrown
     // mass and the wall grows straight out of it. Any seam in albedo across that
     // join reads as a ribbon pasted onto the ground, which is the single most
     // artificial thing this surface can do.
-    let albedo = vec3f(0.124, 0.091, 0.216);
+    let albedo = vec3f(0.152, 0.140, 0.129);
     // Fully loose, so the rougher end of the field's range rather than the middle.
     let roughness = 0.86;
     let f0 = vec3f(0.020);
@@ -176,12 +178,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // Thin at the lip, deep at the base. This is the gradient the transmission
     // rests on — see the note at the top.
     //
-    // The lip end does not go to zero. A wall of thrown dust is ten to thirty
+    // The lip end does not go to zero. A wall of thrown regolith is ten to thirty
     // centimetres through, not tissue: at 0.04 the transmission lobe runs at near
     // full amplitude with almost no tint, and since it is multiplied by a star
-    // whose beam is roughly 231:190:139, the result is several times brighter than
-    // the direct diffuse and unmistakably warm — a hot white edge all the way down
-    // a wall that is supposed to be reading violet.
+    // whose beam is roughly 168:138:101, the result is several times brighter than
+    // the direct diffuse — a hot white edge all the way down a wall that should be
+    // reading as the ground standing up.
     let thickness = mix(0.92, 0.32, smoothstep(0.15, 0.95, q));
 
     // ------------------------------------------------------------- lighting
@@ -320,7 +322,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // glow comes from grains that are already inside the cave, so a hollow that
     // glows must not be dimmed by its own hollowness. That exemption is also what
     // gives the barrel its colour — everything reflective drops away and the
-    // nebula violet underneath is what is left.
+    // dust's own discharge underneath is what is left.
     let load = clamp((input.vCurl - 0.26) / 0.74, 0.0, 1.0);
     let mass = clamp(input.vAmp / max(uniforms.wakeAmpRef, 1e-3), 0.0, 1.0);
     let cool = exp(-input.vAge * 3.2);
@@ -328,9 +330,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let heat = cool * mix(0.30, 1.0, load) * mix(0.20, 1.0, mass);
 
     // One material at two temperatures, so the ramp is a *mix* and not a sum.
-    // Adding gold on top of violet gives white, which is the one colour this
-    // palette exists to avoid; interpolating keeps the crest gold, the body
-    // violet, and everything between them on a continuous ramp.
+    // Adding gold on top of a pale grey drives every channel past the shoulder
+    // and the whole wall clips to flat white; interpolating keeps the crest gold,
+    // the body neutral, and everything between them on a continuous ramp.
     //
     // The gold fraction goes as heat *squared* so it stays confined to the crest
     // of a loaded carve instead of washing the whole sheet warm. An accent has to

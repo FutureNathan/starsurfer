@@ -61,7 +61,7 @@ const TERMINAL = 1.9;
  * `_grainGlow` is `EMIT.grain`, starlight white — the palette's brightest
  * emissive, and it has to be, because a grain at full charge is meant to clear
  * the bloom knee on its own while the haze around it does not. `_grainCool` is
- * `EMIT.wake`, the same nebula violet the wall of thrown mass wells with, which
+ * `EMIT.wake`, the same warm pale grey the wall of thrown mass wells with, which
  * is where a grain ends up once it has cooled: it came out of that wall and it
  * goes back to its colour.
  */

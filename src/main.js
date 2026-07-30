@@ -239,7 +239,10 @@ async function boot() {
         const tChar = performance.now();
 
         _vel.copyFrom(character.velocity);
-        rig.update(dt, character.position, _vel, character.lean, character.speed01);
+        rig.update(
+            dt, character.position, _vel,
+            character.lean, character.speed01, character.facing
+        );
 
         // Jitters the projection and republishes everything the screen-space
         // passes derive from the camera. Must be after the rig has moved and

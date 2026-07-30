@@ -73,27 +73,28 @@ const MAX_HEIGHT = 2.4;
  * Radiance gain on the gold at the hottest point of the lip.
  *
  * Derived rather than dialled in. `LIN.accent`'s red channel is exactly 1.0, so
- * this number *is* the crest's peak radiance in red — and it has two floors to
- * clear. The bloom bright pass thresholds at linear 3.0, and lit dust sits near
- * 5; the lip has to be past both or it is not the brightest thing thrown. And it
- * has to beat the violet it is interpolating away from, whose blue channel is
- * `EMIT.wake.gain` — a lip dimmer than the wall underneath it draws a dark line
- * along the crest, which is exactly backwards.
+ * this number *is* the crest's peak radiance in red — and it has three floors to
+ * clear. The bloom bright pass thresholds at linear 3.0 and sunlit ground sits
+ * near 5.5, so the lip has to be past both or it is not the brightest thing
+ * thrown. And it has to beat the body it is interpolating away from, which now
+ * peaks at 7.9: a lip dimmer than the wall underneath it draws a dark line along
+ * the crest, which is exactly backwards.
  *
- * Ten clears the knee by a stop and three quarters and sits a third of a stop
- * above the body, so the crest is both the hottest point on the wake and the
- * warmest.
+ * Thirteen clears the knee by better than two stops and sits three quarters of a
+ * stop above the body, so the crest is both the hottest point on the wake and by
+ * far the warmest. It stays under `EMIT.grain` at 14, which is the palette's
+ * ceiling and belongs to the individual grains flung clear.
  */
-const LIP_GAIN = 10.0;
+const LIP_GAIN = 13.0;
 
 /**
- * The discharge ramp. Same pair the dust material carries, same reason: the wall
- * and the berm at its foot are one body of thrown mass and must glow as one.
+ * The discharge ramp. Same pair the ground material carries, same reason: the
+ * wall and the berm at its foot are one body of thrown mass and must glow as one.
  *
- * `_wakeBody` is the nebula violet the whole wall wells with, at the wake's own
- * brand gain; `_wakeLip` is the warm gold the hottest, freshest mass reaches.
- * Both are linear radiances with their gains already folded in, so the shader
- * multiplies by nothing but its own heat term.
+ * `_wakeBody` is the warm pale grey of regolith in the air, at the wake's own
+ * brand gain; `_wakeLip` is the gold the hottest, freshest mass reaches. Both are
+ * linear radiances with their gains already folded in, so the shader multiplies
+ * by nothing but its own heat term.
  */
 const _wakeBody = new Color3(...emissive(EMIT.wake));
 const _wakeLip = new Color3(

@@ -104,6 +104,19 @@ export const S = {
     wakeHeight: 1.0,
     /** Density of the plume shed off the wake's lip. */
     wakeSpray: 1.0,
+    /**
+     * The camera settles behind the direction of travel whenever the look input
+     * is idle.
+     *
+     * Off on a desktop and on for touch — `PRESETS.mobile` turns it on. That
+     * split is the whole point of the setting. A mouse aims the camera and the
+     * board at once and a camera that quietly re-aimed itself would be fighting
+     * the hand that is already steering it. A thumb cannot: the stick and the
+     * look pad are different hands, and holding a heading through a carve while
+     * also dragging the camera round to see where the carve is going is not
+     * something anyone manages on a phone. So on touch the camera does it.
+     */
+    followCamera: false,
     /** Screen-space speed streaks while surfing. */
     windStreaks: true,
     streakStrength: 1.0,
@@ -254,6 +267,7 @@ export const SCHEMA = [
         items: [
             { k: "wakeHeight", l: "Wake height", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "wakeSpray", l: "Plume density", t: "f", min: 0, max: 2.5, step: 0.01 },
+            { k: "followCamera", l: "Follow camera", t: "b" },
             { k: "windStreaks", l: "Speed streaks", t: "b" },
             { k: "streakStrength", l: "Streak amt", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "showWake", l: "Wake mesh", t: "b" },
@@ -332,6 +346,9 @@ export const PRESETS = {
     mobile: {
         deformResolution: 1024,
         resolutionScale: 0.75,
+        // See `followCamera` above: with the stick and the look pad on different
+        // thumbs, a camera that does not follow means surfing blind.
+        followCamera: true,
         ssr: false,
         dof: false,
         sharpen: false,

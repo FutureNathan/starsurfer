@@ -240,13 +240,29 @@ export class CharacterController {
         // throwing mass instead of into travel. Keyed to the angle between the
         // heading and the velocity rather than to a single input axis, so it is
         // true whichever direction you asked for.
-        let thrust = SURF_THRUST + slopeAssist;
+        //
+        // Applied *against the velocity*, and that is a correctness fix rather
+        // than a preference. It used to be subtracted straight out of `thrust`,
+        // which quietly turned a brake into a reverse gear: at a full come-about
+        // the scrub is 16 and the thrust 11, so the sum went to -21 — a force
+        // pointing out of the tail — and since the grip below only removes
+        // *sideways* velocity, nothing took the resulting backwards component
+        // away again. Align then sat at -1, which kept the scrub at maximum,
+        // which kept the thrust negative. That is a stable equilibrium, and it is
+        // exactly the bug where the board occasionally gets caught and rides off
+        // tail-first with the astronaut facing the other way.
         const vs = Math.hypot(this.velocity.x, this.velocity.z);
         if (vs > 1.0) {
             const align = (this.velocity.x * fx + this.velocity.z * fz) / vs;
-            thrust -= 16 * Scalar.Clamp(1.0 - align, 0, 1);
+            const scrub = 16 * Scalar.Clamp(1.0 - align, 0, 1);
+            const k = Math.max(0, vs - scrub * h) / vs;
+            this.velocity.x *= k;
+            this.velocity.z *= k;
         }
 
+        // Thrust, which can only ever push forward. A board with no speed on a
+        // steep uphill simply gets nothing rather than being driven backwards.
+        const thrust = Math.max(0, SURF_THRUST + slopeAssist);
         this.velocity.x += fx * thrust * h;
         this.velocity.z += fz * thrust * h;
 
@@ -258,6 +274,24 @@ export class CharacterController {
         const grip = Math.min(1, SURF_GRIP * h);
         this.velocity.x -= rx * lat * grip;
         this.velocity.z -= rz * lat * grip;
+
+        // And a board does not travel tail-first. The fin and the rails make it
+        // physically impossible, and the pose here assumes it too — the rider is
+        // standing across the deck looking at the nose, so any reverse component
+        // draws an astronaut being pulled along backwards by their own board.
+        //
+        // A hard constraint rather than a strong damping, for the same reason the
+        // planted foot is a hard constraint: "cannot happen" is a much easier
+        // thing to reason about than "is usually pulled back within a few frames",
+        // and there is no state in which a fraction of a reverse component is
+        // wanted. In practice it removes almost nothing, because the lateral grip
+        // has already eaten the velocity by the time the heading passes ninety
+        // degrees off it — it is the guarantee that matters, not the magnitude.
+        const along = this.velocity.x * fx + this.velocity.z * fz;
+        if (along < 0) {
+            this.velocity.x -= fx * along;
+            this.velocity.z -= fz * along;
+        }
 
         // Quadratic drag → a natural terminal speed.
         const s = Math.hypot(this.velocity.x, this.velocity.z);
