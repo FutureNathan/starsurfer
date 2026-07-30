@@ -182,11 +182,22 @@ and shown in the pause menu), slides the bake's noise domain tens of
 kilometres — different swells, different craters, different massifs — while
 the material, physics and readback pipelines never know anything changed,
 because the seed lives in the bake shader and nowhere else. And each world
-carries one **landmark ring**: a great complex crater a few hundred metres
-from spawn, standing wall, sunken floor, central peak — the profile every
-large lunar crater shares. Every other feature repeats statistically; the ring
-is singular per world, and that is its whole job. A map with a landmark is a
-place you can be lost in; a map without one is a texture.
+carries one **landmark complex**, a few hundred metres from spawn: a great
+crater — standing wall, sunken floor, central peak, the profile every large
+lunar crater shares — with a second, smaller crater driven into its flank at
+an angle, the two floors joined by a canyon through the shared wall, and a
+rock arch left standing over the cut so the way from one crater into the next
+is a surf under a bridge. Off the far rim runs a **rille**: a collapsed lava
+tube, sunk channel and raised levees, diving under a dome mountain where
+three reaches of the original roof still stand — you drop in through one
+skylight and come out another, the way lunar tubes actually present
+themselves to the surface. The heightfield carves everything open (a
+heightfield cannot hold a tunnel); the arch and the roofs are the only built
+meshes in the world, closing what should be closed, with the physics riding
+the carved ground beneath them — which is why surfing through just works.
+Every other feature repeats statistically; the complex is singular per world,
+and that is its whole job. A map with a landmark is a place you can be lost
+in; a map without one is a texture.
 
 The albedo carries markings as well as relief: highland/mare provinces at the
 625 m wavelength that give the real moon its face, and **ejecta rays** — lanes

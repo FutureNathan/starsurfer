@@ -431,8 +431,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // to silhouette.
     let rockExposed = rockMask * smoothstep(0.32, 0.66, 1.0 - N.y);
     if (rockExposed > 0.001) {
-        let rn = noise2(world.xz * 2.3) * 0.5 + 0.5;
-        let rockCol = mix(vec3f(0.070, 0.072, 0.075), vec3f(0.146, 0.149, 0.154), rn);
+        // Two octaves and a narrower spread. One smooth octave at 2:1
+        // contrast painted the near massif faces with pale blobs — the same
+        // stain artefact the far range had, at a different scale.
+        let rn = noise2(world.xz * 2.3) * 0.3
+               + noise2(world.xz * 9.1 + vec2f(3.7, 8.2)) * 0.2 + 0.5;
+        let rockCol = mix(vec3f(0.095, 0.097, 0.101), vec3f(0.140, 0.143, 0.148), rn);
         albedo = mix(albedo, rockCol, rockExposed);
         roughness = mix(roughness, 0.85, rockExposed);
         thickness = mix(thickness, 0.0, rockExposed);

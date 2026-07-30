@@ -111,41 +111,139 @@ fn craterOctave(
 /// result out of a texture.
 fn craterField(p: vec2f) -> f32 {
     var h = 0.0;
-    h += craterOctave(p, 340.0, 0.85, 60.0, 165.0, 0.135, 0.30, 0.0);
-    h += craterOctave(p,  96.0, 0.90, 14.0,  46.0, 0.165, 0.34, 37.3);
-    h += craterOctave(p,  27.0, 0.85,  3.6,  11.0, 0.190, 0.38, 91.1);
+    h += craterOctave(p, 340.0, 0.92, 60.0, 165.0, 0.135, 0.30, 0.0);
+    h += craterOctave(p,  96.0, 0.95, 14.0,  46.0, 0.165, 0.34, 37.3);
+    h += craterOctave(p,  27.0, 0.92,  3.6,  11.0, 0.190, 0.38, 91.1);
+    // The fourth octave arrived with the reference photographs: on the real
+    // surface the craters *are* the texture, down to every scale the eye can
+    // resolve, and stopping at 3.6 m left the ground between bowls reading
+    // as fabric. Metre-and-a-half dimples, shallow enough that the board
+    // (which reads its grade over a 5.2 m base) never feels them.
+    h += craterOctave(p,  11.0, 0.75,  1.5,   4.2, 0.150, 0.40, 53.7);
     return h;
 }
 
-/// The seed's landmark: one great ring — a complex crater with a standing
-/// wall, a sunken floor and a central peak, the profile every large lunar
-/// crater shares. Placed by the world seed a few hundred metres from spawn,
-/// in *unoffset* world space, so every map has one within an easy ride.
+/// Distance from `p` to the segment [a, b].
+fn distSeg(p: vec2f, a: vec2f, b: vec2f) -> f32 {
+    let ab = b - a;
+    let t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    return length(p - (a + ab * t));
+}
+
+/// The seed's landmark, grown from one ring into a *place*:
 ///
-/// Every other feature on this ground repeats statistically — another swell,
-/// another bowl, another massif. This one is singular per world, and that is
-/// its whole job: a map with a landmark is a place you can be lost in, and a
-/// map without one is a texture.
-fn ringStructure(p: vec2f, seed: f32) -> f32 {
+///   the ring     a complex crater — standing wall, sunken floor, central
+///                peak — the profile every large lunar crater shares.
+///   the second   a smaller crater driven in at an angle, its rim
+///                interpenetrating the first's: two impacts, one late.
+///   the canyon   the shared wall between them, breached: a channel cut
+///                floor-to-floor, which the arch mesh spans overhead.
+///   the rille    a collapsed lava tube winding out the ring's far side —
+///                a sinuous channel with raised levees, the real landform
+///                (Hadley Rille is one) that a drained lava river leaves.
+///   the dome     a shield swelling over the rille's middle reach: the
+///                mountain the tube runs under. The roof meshes sit over
+///                the channel where it crosses the dome, so the tube is
+///                intact there and open to the sky between — skylights,
+///                which is exactly how real collapsed tubes breathe.
+///
+/// Everything here is closed-form from the seed, and `src/terrain/landmark.js`
+/// MIRRORS these formulas to place the arch and roof meshes — the two files
+/// must agree constant for constant, and each says so.
+///
+/// Placed in *unoffset* world space, so every map has all of it within an
+/// easy ride. Every other feature on this ground repeats statistically; this
+/// complex is singular per world, and that is its whole job.
+fn landmark(p: vec2f, seed: f32) -> f32 {
     let ang = seed * 2.399963;
     let dist = 380.0 + fract(seed * 0.3170) * 220.0;
-    let centre = vec2f(sin(ang), cos(ang)) * dist;
+    let c1 = vec2f(sin(ang), cos(ang)) * dist;
     let bigR = 120.0 + fract(seed * 0.7710) * 80.0;
-    let d = length(p - centre);
-    if (d > bigR * 2.2) { return 0.0; }
 
-    // The wall: a gaussian ridge on the radius, its crest swung by low noise
-    // so the ring reads as geology rather than as a stamped torus.
-    let w = bigR * 0.16;
-    let g = (d - bigR) / w;
-    let broken = 0.80 + 0.35 * noise2(p * 0.02 + seed);
-    var h = exp(-g * g) * bigR * 0.14 * broken;
+    // Everything below lives within this reach of the main ring; the rille
+    // runs the furthest, so the early-out is generous.
+    if (length(p - c1) > bigR * 2.2 + 340.0) { return 0.0; }
 
-    // The floor, sunk and near-flat, and the central peak standing out of it.
-    let sunk = smoothstep(bigR * 0.92, bigR * 0.55, d);
-    h -= sunk * bigR * 0.055;
-    let pk = d / (bigR * 0.16);
-    h += exp(-pk * pk) * bigR * 0.075;
+    // ---- the companion crater, driven in at an angle -----------------------
+    let phi2 = ang + 2.1 + fract(seed * 0.5310) * 1.1;
+    let dir2 = vec2f(sin(phi2), cos(phi2));
+    let r2 = bigR * 0.45;
+    let c2 = c1 + dir2 * (bigR + r2 * 0.55);
+
+    // ---- the canyon between the two floors ---------------------------------
+    // From well inside the first ring to well inside the second, so the cut
+    // opens both walls rather than stopping politely at either.
+    let ca = c1 + dir2 * (bigR * 0.55);
+    let cb = c2 - dir2 * (r2 * 0.40);
+    let dCan = distSeg(p, ca, cb);
+    let canyon = smoothstep(9.0, 3.5, dCan);
+    let wallMask = 1.0 - 0.94 * smoothstep(14.0, 5.0, dCan);
+
+    // ---- the rille ---------------------------------------------------------
+    // A sinuous path out the ring's far side, sampled as a polyline. Ten
+    // segments approximates the sine bend to well under a metre, and this
+    // whole function runs in the height bake only — never per frame.
+    let phi3 = phi2 + 3.14159 + 0.5;
+    let dir3 = vec2f(sin(phi3), cos(phi3));
+    let perp3 = vec2f(dir3.y, -dir3.x);
+    var dRil = 1e9;
+    var prev = c1 + dir3 * (bigR * 0.62);
+    for (var i = 1; i <= 10; i++) {
+        let t = f32(i) / 10.0;
+        let along = bigR * 0.62 + t * 260.0;
+        let sway = sin(t * 3.6 + seed * 0.71) * 30.0 * t;
+        let pt = c1 + dir3 * along + perp3 * sway;
+        dRil = min(dRil, distSeg(p, prev, pt));
+        prev = pt;
+    }
+    let rille = smoothstep(8.5, 3.2, dRil);
+    // Levees: the banks a lava river builds beside itself.
+    let lev = (dRil - 10.0) / 4.5;
+    let levee = exp(-lev * lev) * 2.2;
+
+    // ---- the dome the tube runs under --------------------------------------
+    // Over the rille's middle reach. Its height is carried on (1 - rille), so
+    // the channel keeps its floor *through* the dome — that pinch of high
+    // ground either side of a sunken channel is the tunnel the roofs close.
+    let domeC = c1 + dir3 * (bigR * 0.62 + 130.0)
+              + perp3 * (sin(0.5 * 3.6 + seed * 0.71) * 15.0);
+    let dDome = length(p - domeC);
+    let dome = exp(-(dDome * dDome) / (78.0 * 78.0)) * 54.0
+             * (0.88 + 0.24 * noise2(p * 0.02 + seed * 1.3));
+
+    // ---- assemble ----------------------------------------------------------
+    var h = 0.0;
+
+    // Main ring.
+    let d1 = length(p - c1);
+    let w1 = bigR * 0.16;
+    let g1 = (d1 - bigR) / w1;
+    let broken1 = 0.80 + 0.35 * noise2(p * 0.02 + seed);
+    h += exp(-g1 * g1) * bigR * 0.14 * broken1 * wallMask;
+    let sunk1 = smoothstep(bigR * 0.92, bigR * 0.55, d1);
+    h -= sunk1 * bigR * 0.055;
+    let pk1 = d1 / (bigR * 0.16);
+    h += exp(-pk1 * pk1) * bigR * 0.075;
+
+    // Companion ring: same construction, no peak of its own — small, fresh
+    // craters are bowls.
+    let d2 = length(p - c2);
+    let w2 = r2 * 0.20;
+    let g2 = (d2 - r2) / w2;
+    let broken2 = 0.80 + 0.35 * noise2(p * 0.023 + seed * 2.7);
+    h += exp(-g2 * g2) * r2 * 0.17 * broken2 * wallMask;
+    h -= smoothstep(r2 * 0.95, r2 * 0.45, d2) * r2 * 0.075;
+
+    // Canyon: on top of the wall suppression, a real cut down toward the
+    // floors, so the pass reads carved rather than merely unbuilt.
+    h -= canyon * 7.0;
+
+    // Dome and rille: the dome rises, the channel refuses it, the levees
+    // ride its flanks, and the trench itself steps down nine metres.
+    h += dome * (1.0 - 0.92 * rille);
+    h += levee * (1.0 - rille);
+    h -= rille * 9.0;
+
     return h;
 }
 

@@ -43,8 +43,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let rock = rockField(p, uniforms.windAngle);
     h += rock.x;
 
-    // The landmark ring, placed in unoffset space — see `ringStructure`.
-    h += ringStructure(pw, uniforms.worldSeed);
+    // The landmark complex, placed in unoffset space — see `landmark`.
+    h += landmark(pw, uniforms.worldSeed);
 
     fragmentOutputs.color = vec4f(h, rock.y, 0.0, 1.0);
 }

@@ -81,6 +81,8 @@ export class Sky {
         this.sunScale = 1;
         /** Radiance leaving the ground, solved iteratively. */
         this.groundBounce = new Color3(0, 0, 0);
+        /** The ground's emission fill, published for the arch material. */
+        this.dustEmit = new Color3(0, 0, 0);
         /** Unit normal of the galactic plane. */
         this.galaxyPole = new Vector3(0, 1, 0);
         /** Unit vector toward the galactic core. */
@@ -495,11 +497,11 @@ export class Sky {
         m.setFloat("planet4Size", (2.6 * Math.PI) / 180);
 
         // The ember world: a young gas giant still radiating its formation
-        // heat — the licence for the one planet that visibly glows. Sits a
-        // third of the way round the other side from the hero, mid-sky, big
-        // enough to be unmissable without competing with the hero's forty
-        // degrees.
-        const p5az = paz - 0.62, p5el = 0.42;   // -36 deg, 24 deg up
+        // heat — the licence for the one planet that visibly glows. On the
+        // *opposite* side of the sky from the teal hero, so the two big
+        // worlds bracket the scene instead of sharing one glance: turn away
+        // from one and the other is waiting.
+        const p5az = paz + 3.02, p5el = 0.42;   // +173 deg, 24 deg up
         const p5ce = Math.cos(p5el);
         _planet5Dir.set(Math.sin(p5az) * p5ce, Math.sin(p5el), Math.cos(p5az) * p5ce);
         m.setVector3("planet5Dir", _planet5Dir);
@@ -513,6 +515,7 @@ export class Sky {
             DUST_EMISSION[2] * S.dustGlow
         );
         m.setColor3("dustEmission", _dustEmit);
+        this.dustEmit.copyFrom(_dustEmit);
 
         // The field's own haze, so the range is hazed by the same atmosphere the
         // dunes are and the two meet at one colour rather than two.

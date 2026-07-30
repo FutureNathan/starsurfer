@@ -34,6 +34,7 @@ import { Overlay } from "./ui/overlay.js";
 import { Sky } from "./render/sky.js";
 import { ShadowSystem } from "./render/shadows.js";
 import { Terrain } from "./terrain/terrain.js";
+import { Arches } from "./terrain/arches.js";
 import { DepthPass } from "./render/depthPass.js";
 import { PostChain } from "./post/postChain.js";
 import { whenReady } from "./core/gpuUtil.js";
@@ -134,6 +135,10 @@ async function boot() {
     onChange("showTerrain", (v) => (terrain.mesh.isVisible = v));
     depthPass.registerCaster(terrain.mesh, terrain.makePrepassMaterial());
 
+    // The canyon arch and the lava-tube roofs over the landmark complex.
+    // After the bake: their feet are planted through `terrain.heightAt`.
+    const arches = new Arches(scene, terrain, sky, shadows, depthPass);
+
     await loading.phase("suiting up", 0.62);
 
     const character = new CharacterController(terrain);
@@ -207,6 +212,7 @@ async function boot() {
     sky.render(rig, 0);
     await terrain.warmUp();
     terrain.update(rig.camera.position, character.position, 0);
+    await arches.warmUp();
     figure.update(0);
     figure.sync(rig.camera.position);
     await figure.warmUp();
@@ -290,6 +296,7 @@ async function boot() {
         spells.update(dt, rig.camera.position);
         const tSpells = performance.now();
         terrain.update(rig.camera.position, character.position, dt);
+        arches.update();
         const tTerrain = performance.now();
         // After the shadow refit, so the figure's uniforms carry this frame's
         // cascade matrices rather than last frame's.

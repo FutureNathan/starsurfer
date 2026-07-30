@@ -151,7 +151,8 @@ export const S = {
      * logged to the console at boot so a good map can be shared. It slides
      * the height bake's noise domain (see heightBake.fragment.wgsl), so
      * every seed has its own swells, craters and massifs, and each carries
-     * one landmark ring crater a few hundred metres from spawn.
+     * one landmark complex a few hundred metres from spawn: twin craters
+     * joined by an arched canyon, and a lava-tube rille under a dome.
      */
     worldSeed: (() => {
         if (typeof location !== "undefined") {

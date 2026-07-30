@@ -124,11 +124,15 @@ fn ridgeField(p: vec2f, amp: f32) -> vec3f {
     let raw = r.x * 0.78 + s.x * 0.22;
     let draw = r.yz * (0.78 * rk) + s.yz * (0.22 * sk);
 
-    // Sharpen the crests and widen the valleys. Ridged noise squares its ridge
-    // term, which rounds the top and is right for sastrugi; a mountain wants the
-    // opposite bias. Chain-ruled so the normals follow.
-    let peaks = raw * raw * raw * 0.55 + raw * 0.45;
-    let dpeaks = draw * (3.0 * raw * raw * 0.55 + 0.45);
+    // Rounded, not sharpened — the reversal of the first pass, on the
+    // reference photographs' authority. Lunar highland mountains are domes:
+    // four billion years of impact gardening rounds every crest, and the
+    // knife-edged alpine profile the old cubic bias produced is precisely a
+    // water-and-ice signature this place cannot have. (It also caught the
+    // light in long smooth facets, which was a good third of the "glassy
+    // mountains" read.) Chain-ruled so the normals follow.
+    let peaks = raw * raw * 0.30 + raw * 0.70;
+    let dpeaks = draw * (2.0 * raw * 0.30 + 0.70);
 
     // A *small* floor under the envelope: low foothills in the gaps between
     // massifs rather than absolute nothing, which reads as a cut-out.

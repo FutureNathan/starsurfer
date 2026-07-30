@@ -78,22 +78,39 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     // silhouette — which is the whole reason it is worth drawing at all at this
     // distance. Both numbers track `brand.js`: regolith is `LIN.regolith` and the
     // rock the same value the near field's massifs carry.
-    let steep = 1.0 - N.y;
+    // The boundary between fines and bare rock is *ragged*: dithered by
+    // noise before the threshold, because a clean smoothstep of slope draws
+    // contour lines around every peak — the terraced, dipped-in-paint look.
+    let rag = noise2(hit.pos * 0.031) * 0.17;
+    let steep = 1.0 - N.y + rag;
     let dustMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
     let rock  = vec3f(0.140, 0.143, 0.148);
     let fines = vec3f(0.117, 0.119, 0.127);
     var albedo = mix(rock, fines, dustMask);
 
-    // Albedo texture, two octaves. Without it the range is a smooth field of
-    // perfect mixing between two flat colours — under the now vacuum-thin
-    // haze that rendered as melted porcelain, which is what the "glassy
-    // mountains" screenshot was showing. Real massif faces are streaked by
-    // downslope movement, so the fine octave is stretched along the vertical
-    // through the same trick the aurora uses: squash one axis of the sample.
-    let tex1 = noise2(hit.pos * 0.0045) * 0.5 + 0.5;
-    let tex2 = noise2(vec2f(hit.pos.x * 0.055, hit.pos.y * 0.013)) * 0.5 + 0.5;
-    albedo *= 0.76 + 0.30 * tex1 + 0.18 * tex2 * tex1;
+    // Texture, and this is the second attempt at it. The first was two
+    // smooth low-frequency octaves, which read from the field as pale
+    // *stains* — smooth blobs are exactly what noise looks like when its
+    // features are bigger than the thing they are meant to portray. What a
+    // lunar massif face actually carries is craters: they are the texture,
+    // at every scale, on every photograph. So: a fine granular pair for the
+    // fines themselves, then a crater dapple — a thresholded field for the
+    // bowls, darkened, with the *far* (sun-side) rim of each bowl caught by
+    // sampling the same field a step toward the star and lighting where it
+    // rises. Reads as pocked ground from any distance, for three noise
+    // fetches.
+    let g1 = noise2(hit.pos * 0.020) * 0.5 + 0.5;
+    let g2 = noise2(hit.pos * 0.110 + vec2f(9.1, 3.3)) * 0.5 + 0.5;
+    albedo *= 0.84 + 0.20 * g1 + 0.10 * (g2 - 0.5);
+
+    let sunFlat = normalize(vec2f(L.x, L.z) + vec2f(1e-5, 0.0));
+    let cq = hit.pos * 0.014 + vec2f(4.7, 1.9);
+    let cDap = noise2(cq);
+    let cUp = noise2(cq + sunFlat * 0.9);
+    let bowl = smoothstep(0.26, 0.52, cDap);
+    albedo *= 1.0 - bowl * 0.28;
+    albedo *= 1.0 + max(cUp - cDap, 0.0) * bowl * 1.5;
 
     let shadow = ridgeShadow(hit.pos, hit.height, L, uniforms.ridgeAmp);
 
