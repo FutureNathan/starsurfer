@@ -117,6 +117,22 @@ export const S = {
      */
     nebulaStrength: 0.12,
 
+    // ----------------------------------------------------------------- sound
+    /**
+     * Music and effects, each with a switch and a volume — the Minecraft
+     * arrangement, because it is the one everybody already knows how to use.
+     *
+     * The music is real tracks from `public/music/` (see the README there:
+     * the repo ships the player and the manifest, and the tracks are dropped
+     * in from CC0 sources so the project never ships audio it does not own).
+     * The effects are synthesised live in `core/audio.js` — no files at all.
+     * Volumes are perceptual: they are squared on the way to the gain nodes.
+     */
+    musicOn: true,
+    musicVolume: 0.55,
+    sfxOn: true,
+    sfxVolume: 0.8,
+
     // -------------------------------------------------------------- the moon
     /**
      * Which stretch of the moon this session surfs, 0-999.
@@ -271,6 +287,15 @@ export const S = {
  * @type {{group:string, items:Array<{k:string,l:string,t:string,min?:number,max?:number,step?:number,opts?:string[]}>}[]}
  */
 export const SCHEMA = [
+    {
+        group: "Sound",
+        items: [
+            { k: "musicOn", l: "Music", t: "b" },
+            { k: "musicVolume", l: "Music volume", t: "f", min: 0, max: 1, step: 0.01 },
+            { k: "sfxOn", l: "Effects", t: "b" },
+            { k: "sfxVolume", l: "Effects volume", t: "f", min: 0, max: 1, step: 0.01 },
+        ],
+    },
     {
         group: "Star",
         items: [

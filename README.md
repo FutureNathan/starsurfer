@@ -42,6 +42,22 @@ the two routes share one DOM node, so they can never show different values.
 A quiet `esc — pause · menu` label sits in the bottom corner while riding,
 because a menu nobody knows about is a menu that does not exist.
 
+The menu's third tab is **sound** — music and effects, each with a switch and
+a volume, the Minecraft arrangement because it is the one everybody already
+knows. The two halves are deliberately different technologies. The effects are
+*synthesised live* in `core/audio.js`: the surf is filtered noise keyed to
+speed, a footfall is seventy milliseconds of it fired on the frame the gait
+actually plants a boot, and each power has its own few lines — a bandpass
+sweep for the Flare, a held detuned hum for the Ion Stream, a sine dropping
+two octaves for the Supernova, a rumble that swells for exactly the asteroid's
+exported fall time and lands its boom with the rock. No files, no licences,
+and they can never go missing. The music is *real tracks*, played one at a
+time with minutes of vacuum between, shuffled without repeats — but the repo
+ships only the player and an empty manifest, never audio it does not own:
+`public/music/README.md` is a three-minute recipe for dropping in CC0
+public-domain tracks (freepd.com's calming shelf is the intended source), and
+the player quietly skips anything missing.
+
 The controls are also on the loading screen, which is the one moment anybody is
 going to read them — there is a captive audience there for as long as the
 pipelines take and nothing else on screen. The list and the one-line hint under
@@ -909,11 +925,16 @@ files and change nothing a user can see.
 
 ## Assets and licences
 
-There are no third-party assets. Every texture, environment map and piece of
-geometry in the running demo is generated at load time on the GPU: the sky is a
-handful of noise calls, the grain map and the landform are noise, the crater field
-is three grids of hashes, the astronaut is lofted from a table of numbers, and the
-suit's weave and the insulation fibres are evaluated in the fragment shader. The
+There are no third-party assets in the repository. Every texture, environment
+map and piece of geometry in the running demo is generated at load time on the
+GPU: the sky is a handful of noise calls, the grain map and the landform are
+noise, the crater field is three grids of hashes, the astronaut is lofted from
+a table of numbers, and the suit's weave and the insulation fibres are
+evaluated in the fragment shader. Sound effects are synthesised live in
+WebAudio. Background music is the one deliberate exception: the repo ships a
+player and an empty playlist, and `public/music/README.md` explains how to
+drop in CC0 public-domain tracks — the project never ships audio it does not
+own. The
 favicon — a white star on black, nothing else — is a hand-written SVG in
 `public/`, served with a `?v=` bump because browsers hold favicons far longer
 than any other asset.

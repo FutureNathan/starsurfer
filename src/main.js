@@ -21,6 +21,7 @@ import {
 import { initInput, pollInput, endFrame, input } from "./core/input.js";
 import { initTouch, wantsTouchControls } from "./core/touch.js";
 import { initPauseMenu } from "./core/pauseMenu.js";
+import { initAudio } from "./core/audio.js";
 import { MOBILE_TIER } from "./core/device.js";
 import { CameraRig } from "./core/camera.js";
 import { CharacterController } from "./character/controller.js";
@@ -178,10 +179,15 @@ async function boot() {
     // The on-screen controls, when the primary pointer is a finger. They mount
     // after the overlay because the settings button on them toggles it.
     if (wantsTouchControls()) initTouch(canvas, { input, onToggleOverlay: toggleOverlay });
+    // Sound: the music player and the effect synthesiser. Arms itself on the
+    // first gesture, because browsers refuse audio before one.
+    const audio = initAudio();
     // Escape: frees the mouse, pauses the loop below, shows the controls —
     // and hosts the overlay on its settings tab. Keyboard-shaped by nature,
     // so it mounts alongside the desktop input.
-    const pauseMenu = wantsTouchControls() ? null : initPauseMenu(canvas, overlay);
+    const pauseMenu = wantsTouchControls()
+        ? null
+        : initPauseMenu(canvas, overlay, audio);
 
     // ------------------------------------------------------------- warm-up
     // Everything that can compile, compiles here — behind the loading screen.
@@ -228,8 +234,10 @@ async function boot() {
         prev = now;
         // Paused: keep the clock current so resume gets an honest dt, keep the
         // last rendered frame on the canvas, and spend nothing. The menu is
-        // DOM, so it does not need the engine's help to draw itself.
-        if (pauseMenu?.paused) return;
+        // DOM, so it does not need the engine's help to draw itself. The
+        // audio still gets its frame call — it ducks the ride's sounds and
+        // lets the music play on, which is what a pause should sound like.
+        if (pauseMenu?.paused) { audio.frame(character, true); return; }
         if (dtMs > 100) dtMs = 100;
         const dt = S.freezeTime ? 0 : dtMs / 1000;
         time += dt;
@@ -242,6 +250,7 @@ async function boot() {
         const tFrame = performance.now();
 
         character.update(dt, rig);
+        audio.frame(character, false);
         terrain.heightfield.clampToPlayArea(character.position);
         // Pose and simulate before the contact pass: the footprints are stamped
         // at the boot's actual planted position, which only exists once the

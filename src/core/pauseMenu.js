@@ -26,7 +26,7 @@
  * on the screen, labelled, all the time — the ⚙ button covers the overlay.
  */
 
-import { S } from "./settings.js";
+import { S, set } from "./settings.js";
 
 /**
  * The rows, as (what it does, the keycaps that do it). A key string is split
@@ -106,7 +106,7 @@ const CSS = `
     color: var(--accent);
     border-bottom-color: rgba(255, 196, 107, 0.55);
 }
-/* The one scroll container in the panel. `min-height: 0` is load-bearing: a
+/* The one scroll container in the panel. min-height: 0 is load-bearing: a
    flex child's default minimum is its content height, so without it the body
    refuses to shrink below the overlay's full height and nothing ever
    scrolls — the panel just quietly overflows its own max-height instead. */
@@ -180,6 +180,79 @@ const CSS = `
 }
 .pm-credit:hover { color: #ffffff; }
 .pm-credit .up { font-size: 9px; opacity: 0.7; }
+
+/* The sound tab: two switch-and-slider rows, Minecraft's arrangement. */
+.pm-srow {
+    display: flex;
+    align-items: center;
+    gap: 0.9em;
+    margin: 0.9em 0;
+}
+.pm-srow dt {
+    flex: 0 0 7.5em;
+    text-align: left;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--star);
+    opacity: 0.92;
+}
+.pm-tgl {
+    flex: none;
+    width: 34px;
+    height: 18px;
+    border: 0;
+    border-radius: 9px;
+    background: rgba(184, 162, 255, 0.18);
+    position: relative;
+    cursor: pointer;
+    transition: background 140ms ease;
+}
+.pm-tgl::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--dim);
+    transition: transform 140ms ease, background 140ms ease;
+}
+.pm-tgl.on { background: rgba(255, 196, 107, 0.38); }
+.pm-tgl.on::after { transform: translateX(16px); background: var(--accent); }
+.pm-srow input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(184, 162, 255, 0.22);
+    cursor: pointer;
+}
+.pm-srow input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.pm-np {
+    margin-top: 1.5em;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    min-height: 1.4em;
+}
+.pm-np b { color: var(--dust); font-weight: 500; }
+.pm-note {
+    margin-top: 1.1em;
+    font-size: 10px;
+    line-height: 1.7;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    text-align: left;
+}
 #pm-resume {
     flex: none;
     margin: 1.4em auto 0;
@@ -233,9 +306,9 @@ const CSS = `
    only its frame changes.
 
    The scroll overrides are the fix for the wheel doing nothing on this tab.
-   Standalone, #ov is its own scroller and carries `overscroll-behavior:
-   contain`; docked, it has no height limit, so it can never scroll itself —
-   and `contain` then swallows every wheel event instead of letting it chain
+   Standalone, #ov is its own scroller and carries overscroll-behavior:
+   contain; docked, it has no height limit, so it can never scroll itself —
+   and "contain" then swallows every wheel event instead of letting it chain
    up to .pm-body, which is the element actually holding the scrollbar. */
 .pm-page #ov {
     position: static;
@@ -271,9 +344,11 @@ function keycaps(spec) {
  * @param {HTMLCanvasElement} canvas
  * @param {import("../ui/overlay.js").Overlay} [overlay] adopted by the
  *   settings tab when present
+ * @param {{ nowPlaying: {title:string,artist:string}|null }} [audio] read by
+ *   the sound tab's now-playing line
  * @returns {{ readonly paused: boolean }}
  */
-export function initPauseMenu(canvas, overlay) {
+export function initPauseMenu(canvas, overlay, audio) {
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
@@ -294,6 +369,7 @@ export function initPauseMenu(canvas, overlay) {
             <div class="pm-mark">STARSURFER</div>
             <div class="pm-tabs">
                 <button class="pm-tab on" data-page="controls">controls</button>
+                <button class="pm-tab" data-page="sound">sound</button>
                 <button class="pm-tab" data-page="settings">settings &amp; stats</button>
             </div>
             <div class="pm-body">
@@ -305,6 +381,24 @@ export function initPauseMenu(canvas, overlay) {
                     <div class="pm-seed">world <b>${S.worldSeed}</b> · add
                         <b>?seed=${S.worldSeed}</b> to the address to come back
                         to it</div>
+                </div>
+                <div class="pm-page" data-page="sound" hidden>
+                    <div class="pm-h">music</div>
+                    <div class="pm-srow"><dt>music</dt>
+                        <button class="pm-tgl" data-k="musicOn"></button>
+                        <input type="range" min="0" max="1" step="0.01" data-k="musicVolume" />
+                    </div>
+                    <div class="pm-h">effects</div>
+                    <div class="pm-srow"><dt>effects</dt>
+                        <button class="pm-tgl" data-k="sfxOn"></button>
+                        <input type="range" min="0" max="1" step="0.01" data-k="sfxVolume" />
+                    </div>
+                    <div class="pm-np" id="pm-np"></div>
+                    <div class="pm-note">The effects — the board, the boots,
+                    the five powers — are synthesised live in the engine.
+                    The music is real tracks from <b>public/music/</b>, played
+                    one at a time with a stretch of vacuum between, the way
+                    Minecraft does it; every track is CC0 public domain.</div>
                 </div>
                 <div class="pm-page" data-page="settings" hidden></div>
             </div>
@@ -327,11 +421,34 @@ export function initPauseMenu(canvas, overlay) {
     const pages = /** @type {HTMLElement[]} */ ([...root.querySelectorAll(".pm-page")]);
     const settingsPage = pages.find((p) => p.dataset.page === "settings");
 
+    // The sound rows write straight into the same settings the F1 overlay
+    // reads, through the same `set`, so the two surfaces can never disagree.
+    for (const b of root.querySelectorAll(".pm-tgl")) {
+        const k = b.dataset.k;
+        const sync = () => b.classList.toggle("on", !!S[k]);
+        sync();
+        b.addEventListener("click", () => { set(k, !S[k]); sync(); });
+    }
+    for (const r of root.querySelectorAll(".pm-srow input[type=range]")) {
+        const k = r.dataset.k;
+        r.value = String(S[k]);
+        r.addEventListener("input", () => set(k, parseFloat(r.value)));
+    }
+    const np = root.querySelector("#pm-np");
+    const syncNowPlaying = () => {
+        if (!np) return;
+        const track = audio?.nowPlaying;
+        np.innerHTML = track
+            ? `now playing · <b>${track.title}</b> — ${track.artist}`
+            : "nothing playing — tracks land between stretches of vacuum";
+    };
+
     let open = false;
 
     const selectTab = (name) => {
         for (const t of tabs) t.classList.toggle("on", t.dataset.page === name);
         for (const p of pages) p.hidden = p.dataset.page !== name;
+        if (name === "sound") syncNowPlaying();
         if (!overlay) return;
         if (name === "settings") {
             // Adopt. The element keeps its listeners and its state; only its
