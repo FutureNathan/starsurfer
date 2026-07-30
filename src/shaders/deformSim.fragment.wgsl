@@ -180,13 +180,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         // 0.70, and molten rock must not linger the way glass does — radiative
         // cooling goes as the fourth power of temperature, so the white-hot
         // floor of a fresh crater dies fast and hands over to the slow tail.
-        // On a 26-second constant a 1.0 pool visibly dims through the molten
-        // band in fifteen or twenty seconds, exactly the "watch it cool" beat;
-        // the ion stream's scored lines at 0.58 sit below the band and keep
-        // their fifteen minutes. Banked dt keeps both multiplies clear of the
-        // half-float noise floor described above.
-        let hot = smoothstep(0.62, 0.95, ice);
-        ice *= exp(-dt * r * mix(1.0 / 900.0, 1.0 / 26.0, hot));
+        // The band reaches down to 0.45 with a gentle toe, so a crater keeps
+        // losing heat briskly well past the molten stage instead of stalling
+        // into a permanent ember at the band's edge — a fresh floor runs
+        // white-orange for a handful of seconds, is down to a warm scar inside
+        // a minute or two, and keeps fading. The surf rail and the ion
+        // stream's scored lines live at and below ~0.55, where the toe leaves
+        // most of their fifteen minutes intact. Banked dt keeps the multiply
+        // clear of the half-float noise floor described above.
+        let hot = smoothstep(0.45, 0.95, ice);
+        ice *= exp(-dt * r * mix(1.0 / 900.0, 1.0 / 18.0, hot));
     }
 
     // ----------------------------------------------------------------- splat

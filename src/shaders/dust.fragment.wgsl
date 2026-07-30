@@ -58,6 +58,16 @@ uniform cascadeMatrices: array<mat4x4f, 3>;
 uniform cascadeSplits: vec4f;
 /// Per cascade: (depth range in metres, ortho width in metres, unused, unused).
 uniform cascadeParams: array<vec4f, 3>;
+/// Frame index, 0-63, for the shadow filter's rotation. The rotation used to be
+/// a *static* hash of the pixel coordinate, on the theory that TAA resolves
+/// noise — but TAA can only average out something that changes, and a static
+/// pattern is signal: the resolve faithfully converged to the hash itself, and
+/// since interleaved gradient noise is constant along near-vertical diagonals,
+/// every penumbra in the frame carried faint crawling diagonal lines. The moon
+/// rework made most of the ground penumbra, which is what promoted a subtlety
+/// into a defect. Advancing the pattern per frame gives the resolve sixty-four
+/// different rotations to integrate, and a penumbra comes out smooth.
+uniform shadowDither: f32;
 uniform shadowTexel: f32;
 uniform shadowSoftness: f32;
 uniform shadowBias: f32;
@@ -435,10 +445,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let NdotL = dot(N, L);
     let NdotV = clamp(dot(N, V), 1e-4, 1.0);
 
-    // Stable per-pixel rotation for the shadow filter. IGN over pixel coords is
-    // exactly the noise TAA is built to resolve.
+    // Per-pixel, per-frame rotation for the shadow filter — see `shadowDither`.
     let pix = input.position.xy;
-    let noiseRot = ign(pix) * 6.28318530718;
+    let noiseRot = ign(pix + 5.588238 * uniforms.shadowDither) * 6.28318530718;
 
     var shadow = 1.0;
     if (NdotL > -0.35) {
@@ -605,7 +614,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         let drift = noise2(world.xz * 0.035) * 0.5 + 0.5;
         let welling = mix(0.55, 1.0, 1.0 - cavity) * mix(0.7, 1.0, 1.0 - ao);
         emissive += uniforms.dustCoolColor * (0.30 + 0.70 * drift) * welling;
-        emissive += uniforms.dustGlowColor * iceAmount * 0.45;
+        // Quadratic in the charge, where it used to be linear. The glow of a
+        // cooling site should die faster than the glass itself does: at full
+        // charge the two agree, at half charge the quadratic is half the glow
+        // the linear gave, and the long tail of a crater is a dark vitrified
+        // scar rather than a patch of ground that will not stop shining.
+        emissive += uniforms.dustGlowColor * iceAmount * iceAmount * 0.55;
 
         // Molten rock: the top of the charge range, which only an impact
         // reaches — an asteroid floor is written at 1.0 and nothing else goes

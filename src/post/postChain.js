@@ -242,7 +242,8 @@ export class PostChain {
         this.composite = this._pass("starTonemap", 1.0,
             ["exposure", "contrast", "mode", "grainAmount", "time", "vignette",
              "speedStreak", "bloomAmount", "shaftAmount"],
-            ["bloomNear", "bloomFar", "shaftsTex"], Constants.TEXTURETYPE_HALF_FLOAT);
+            ["bloomNear", "bloomFar", "shaftsTex", "depthTex"],
+            Constants.TEXTURETYPE_HALF_FLOAT);
         this.sharpen = this._pass("starSharpen", 1.0, ["invRes", "amount"], [],
             // The last stage before the swapchain, and the only one working on
             // display-encoded values — eight bits is exactly what it needs.
@@ -412,6 +413,8 @@ export class PostChain {
             );
             e.setFloat("bloomAmount", S.bloom ? S.bloomStrength : 0);
             e.setFloat("shaftAmount", S.showLightShafts ? 1 : 0);
+            // For the streak gate only: a background pixel keeps its stars.
+            e.setTexture("depthTex", depthTex);
             e.setTextureFromPostProcessOutput("bloomNear", this.bloomA);
             e.setTextureFromPostProcessOutput("bloomFar", this.bloomC);
             e.setTextureFromPostProcessOutput("shaftsTex", this.shafts);

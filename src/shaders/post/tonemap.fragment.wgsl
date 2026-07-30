@@ -29,8 +29,15 @@
 
 varying vUV: vec2f;
 
+#include<starPostCommon>
+
 var textureSampler: texture_2d<f32>;
 var textureSamplerSampler: sampler;
+
+/// The prepass, for one bit: is this pixel sky. The speed streaks read it and
+/// nothing else here does.
+var depthTex: texture_2d<f32>;
+var depthTexSampler: sampler;
 /// Quarter-resolution bright pass — the tight halo around a grain or the star.
 var bloomNear: texture_2d<f32>;
 var bloomNearSampler: sampler;
@@ -172,10 +179,19 @@ fn streakStrands(d: vec2f, r: f32, t: f32) -> f32 {
 fn main(input: FragmentInputs) -> FragmentOutputs {
     var c = textureSample(textureSampler, textureSamplerSampler, input.vUV).rgb;
 
-    // Radial smear, on the scene radiance before exposure.
+    // Radial smear, on the scene radiance before exposure — and on the *world*
+    // only. The streaks are motion: dust and ground rushing past a rider doing
+    // twenty metres a second. The stars are not moving — they are light-years
+    // away, and a star field smeared into radial lines is a warp-jump effect on
+    // a scene whose whole premise is standing still under a fixed sky. So a
+    // pixel the prepass calls background keeps its exact radiance: the ground
+    // blurs with speed, the sky holds.
+    let sceneZ = textureSampleLevel(depthTex, depthTexSampler, input.vUV, 0.0).r;
+    let onSky = isBackground(sceneZ);
     let dFocus = input.vUV - vec2f(0.5, 0.5);
     let radius = length(dFocus) * 2.0;
-    let streak = uniforms.speedStreak * smoothstep(0.34, 1.05, radius);
+    let streak = uniforms.speedStreak * smoothstep(0.34, 1.05, radius)
+               * select(1.0, 0.0, onSky);
     if (streak > 0.002) {
         var acc = c;
         for (var i = 1; i <= 6; i++) {

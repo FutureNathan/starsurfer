@@ -240,8 +240,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // floor on the first sample, which shades as a fully hazed distant plain —
     // the same colour the clipmap's own far edge converges to, so the two meet
     // instead of leaving a seam.
+    // The floor tracks the eye: the band that has to be covered reaches down to
+    // the clipmap's far edge, which from a summit is much lower than from the
+    // deck. Computing it from the camera height rather than fixing it at the
+    // worst case keeps the ordinary surfing frame from paying for pixels the
+    // terrain is about to draw over anyway.
+    let ridgeFloor = clamp(-(uniforms.cameraPosition.y + 140.0) / 870.0, -0.35, -0.06);
     var ridgeHit = false;
-    if (uniforms.ridgeAmp > 1.0 && dir.y < 0.32 && dir.y > -0.35) {
+    if (uniforms.ridgeAmp > 1.0 && dir.y < 0.32 && dir.y > ridgeFloor) {
         let hit = ridgeMarch(uniforms.cameraPosition, dir, uniforms.ridgeAmp);
         if (hit.hit) {
             col = shadeRidge(hit, dir);

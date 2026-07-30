@@ -140,7 +140,7 @@ export class SprayField {
                     "viewProjection", "cameraPos", "camRight", "camUp",
                     "sunDir", "sunRadiance", "shR",
                     "cascadeMatrices", "cascadeSplits", "cascadeParams",
-                    "shadowTexel", "shadowSoftness", "shadowBias",
+                    "shadowTexel", "shadowSoftness", "shadowBias", "shadowDither",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity",
                     "grainGlowColor", "grainCoolColor", "grainGlow",
@@ -305,6 +305,8 @@ export class SprayField {
         m.setFloat("shadowTexel", sh.texelSize);
         m.setFloat("shadowSoftness", 1.6);
         m.setFloat("shadowBias", 0.05);
+        this._dither = ((this._dither || 0) + 1) & 63;
+        m.setFloat("shadowDither", this._dither);
 
         m.setFloat("fogDensity", S.fogDensity);
         m.setFloat("fogHeightFalloff", S.fogHeightFalloff);

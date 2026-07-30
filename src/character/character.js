@@ -227,7 +227,7 @@ export class Character {
             "viewProjection", "cameraPos",
             "sunDir", "sunRadiance", "shR",
             "cascadeMatrices", "cascadeSplits", "cascadeParams",
-            "shadowTexel", "shadowSoftness", "shadowBias",
+            "shadowTexel", "shadowSoftness", "shadowBias", "shadowDither",
             "matAlbedo", "matParams", "matExtra",
             "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
             "ambientIntensity", "sssStrength", "weaveDensity",
@@ -266,7 +266,7 @@ export class Character {
                     "viewProjection", "cameraPos", "furDroop",
                     "sunDir", "sunRadiance", "shR",
                     "cascadeMatrices", "cascadeSplits", "cascadeParams",
-                    "shadowTexel", "shadowSoftness", "shadowBias",
+                    "shadowTexel", "shadowSoftness", "shadowBias", "shadowDither",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity", "furDensity", "furColor",
                 ],
@@ -391,6 +391,9 @@ export class Character {
         const sky = this.sky;
         const sh = this.shadows;
         const ch = this.controller;
+        // See the note in dust.fragment.wgsl: the shadow filter's rotation has
+        // to change per frame or TAA converges to the pattern itself.
+        this._dither = ((this._dither || 0) + 1) & 63;
 
         // Nap droop: gravity, plus the apparent drift, plus the character's own
         // acceleration thrown the other way. Scaled to metres of fibre-tip
@@ -426,6 +429,7 @@ export class Character {
             // you the astronaut is riding the surface rather than floating over
             // it.
             m.setFloat("shadowBias", 0.012);
+            m.setFloat("shadowDither", this._dither);
 
             m.setFloat("fogDensity", S.fogDensity);
             m.setFloat("fogHeightFalloff", S.fogHeightFalloff);

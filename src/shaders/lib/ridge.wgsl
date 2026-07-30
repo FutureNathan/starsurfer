@@ -210,9 +210,15 @@ fn ridgeMarch(camPos: vec3f, dir: vec3f, amp: f32) -> RidgeHit {
     var d = D_NEAR * growth;
 
     for (var i = 1; i < STEPS; i++) {
+        let rayY = camPos.y + slope * d;
+        // A climbing ray that has passed the ceiling can never come back down
+        // to the field. Without this, every sky pixel between the tallest peak
+        // and the top of the march window paid all eighteen field evaluations
+        // to find nothing — which, once the window grew for the taller range,
+        // was a real slice of the frame doing pure waste.
+        if (rayY > ceiling && slope >= 0.0) { break; }
         let p = camPos.xz + step * d;
         let h = ridgeField(p, amp).x - ridgeDrop(d);
-        let rayY = camPos.y + slope * d;
         let gap = rayY - h;
 
         if (gap < 0.0) {

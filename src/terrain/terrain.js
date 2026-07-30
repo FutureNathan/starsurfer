@@ -135,7 +135,7 @@ export class Terrain {
                     "sunDir", "sunRadiance",
                     "shR",
                     "cascadeMatrices", "cascadeSplits", "cascadeParams",
-                    "shadowTexel", "shadowSoftness", "shadowBias",
+                    "shadowTexel", "shadowSoftness", "shadowBias", "shadowDither",
                     "detailStrength", "glintIntensity", "glintGrazing",
                     "sssStrength", "sssRadius",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
@@ -342,6 +342,10 @@ export class Terrain {
         // Metres. The field has no thin geometry to peter-pan, so this can stay
         // small and keep contact shadows attached.
         m.setFloat("shadowBias", 0.022);
+        // Advances the shadow filter's rotation each frame so TAA integrates it
+        // — see the uniform's note in dust.fragment.wgsl.
+        this._dither = ((this._dither || 0) + 1) & 63;
+        m.setFloat("shadowDither", this._dither);
 
         m.setFloat("detailStrength", S.detailNormalStrength);
         m.setFloat("glintIntensity", S.glintIntensity);

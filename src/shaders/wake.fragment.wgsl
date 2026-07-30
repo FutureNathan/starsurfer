@@ -59,6 +59,16 @@ uniform shR: array<vec4f, 9>;
 uniform cascadeMatrices: array<mat4x4f, 3>;
 uniform cascadeSplits: vec4f;
 uniform cascadeParams: array<vec4f, 3>;
+/// Frame index, 0-63, for the shadow filter's rotation. The rotation used to be
+/// a *static* hash of the pixel coordinate, on the theory that TAA resolves
+/// noise — but TAA can only average out something that changes, and a static
+/// pattern is signal: the resolve faithfully converged to the hash itself, and
+/// since interleaved gradient noise is constant along near-vertical diagonals,
+/// every penumbra in the frame carried faint crawling diagonal lines. The moon
+/// rework made most of the ground penumbra, which is what promoted a subtlety
+/// into a defect. Advancing the pattern per frame gives the resolve sixty-four
+/// different rotations to integrate, and a penumbra comes out smooth.
+uniform shadowDither: f32;
 uniform shadowTexel: f32;
 uniform shadowSoftness: f32;
 uniform shadowBias: f32;
@@ -189,7 +199,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // ------------------------------------------------------------- lighting
     let NdotL = dot(N, L);
     let NdotV = clamp(dot(N, V), 1e-4, 1.0);
-    let noiseRot = ign(input.position.xy) * 6.28318530718;
+    let noiseRot = ign(input.position.xy + 5.588238 * uniforms.shadowDither) * 6.28318530718;
     let shadow = sunShadow(world, geoN, input.vViewDist, noiseRot);
 
     let sun = uniforms.sunRadiance;

@@ -205,7 +205,7 @@ export class SurfWake {
                     "wakeCount", "wakeCols", "wakeRows",
                     "sunDir", "sunRadiance", "shR",
                     "cascadeMatrices", "cascadeSplits", "cascadeParams",
-                    "shadowTexel", "shadowSoftness", "shadowBias",
+                    "shadowTexel", "shadowSoftness", "shadowBias", "shadowDither",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                     "ambientIntensity", "sssStrength",
                     "glintIntensity", "glintGrazing", "wakeTime", "wakeDebug",
@@ -678,6 +678,8 @@ export class SurfWake {
         m.setFloat("shadowTexel", sh.texelSize);
         m.setFloat("shadowSoftness", 1.5);
         m.setFloat("shadowBias", 0.018);
+        this._dither = ((this._dither || 0) + 1) & 63;
+        m.setFloat("shadowDither", this._dither);
 
         m.setFloat("fogDensity", S.fogDensity);
         m.setFloat("fogHeightFalloff", S.fogHeightFalloff);
