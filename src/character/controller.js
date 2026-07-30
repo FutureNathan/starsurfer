@@ -22,7 +22,6 @@ const _wish = new Vector3();
 const _fwd = new Vector3();
 const _right = new Vector3();
 const _tmp = new Vector3();
-const _n = new Vector3();
 
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 5.4;
@@ -232,8 +231,40 @@ export class CharacterController {
         const fz = Math.cos(this.facing);
 
         // Slope: heading downhill adds speed, uphill scrubs it.
-        this.terrain.normalAt(this.position.x, this.position.z, _n);
-        const slopeAssist = -(_n.x * fx + _n.z * fz) * 26;
+        //
+        // Three things about this term, each of them a stall that got reported
+        // as "he gets caught sometimes".
+        //
+        // First, the sign. The old expression read the surface normal and
+        // negated its dot with the facing — and the normal *leans away from*
+        // the rise, so the negation put the boost on the uphill face and the
+        // brake on the downhill one. Gravity, backwards: the board died
+        // descending into every crater bowl (thrust clamps to zero past a
+        // ~25 degree downgrade... which is exactly where a surfer expects to
+        // *gain*) and rocketed up the far wall. The regression test asserted
+        // no-reverse and printed top speed without judging it, so "19.4 m/s
+        // straight up a 45-degree wall" sat in the output as a pass.
+        //
+        // Second, the sample. A point normal reads the 3.6 m bowls' rims at
+        // full strength; the board is 2.2 m long and bridges them. The grade
+        // is now the height difference across a board-length-and-a-bit along
+        // the direction of travel, which is what the hull actually experiences.
+        //
+        // Third, momentum. A crest costs full price from a standstill but a
+        // third of it at speed — a moving board *carries* through a short
+        // rise rather than being priced per-frame as if it were parked on it.
+        const hAhead = this.terrain.heightAt(
+            this.position.x + fx * 2.6, this.position.z + fz * 2.6
+        );
+        const hBehind = this.terrain.heightAt(
+            this.position.x - fx * 2.6, this.position.z - fz * 2.6
+        );
+        const grade = (hAhead - hBehind) / 5.2;
+        const vs0 = Math.hypot(this.velocity.x, this.velocity.z);
+        let slopeAssist = -grade * 26;
+        if (slopeAssist < 0) {
+            slopeAssist *= 0.35 + 0.65 * Math.exp(-vs0 / 7);
+        }
 
         // Carving away from where you are already going scrubs speed — the harder
         // the board is turned across its own momentum, the more of it goes into
@@ -255,14 +286,22 @@ export class CharacterController {
         if (vs > 1.0) {
             const align = (this.velocity.x * fx + this.velocity.z * fz) / vs;
             const scrub = 16 * Scalar.Clamp(1.0 - align, 0, 1);
-            const k = Math.max(0, vs - scrub * h) / vs;
+            // The scrub brakes, it does not park: speed is floored at
+            // steerage-way, so the hardest come-about leaves the board
+            // creeping through the turn instead of pinned at zero waiting
+            // for thrust to win an argument with drag.
+            const k = Math.max(Math.min(vs, 1.2), vs - scrub * h) / vs;
             this.velocity.x *= k;
             this.velocity.z *= k;
         }
 
-        // Thrust, which can only ever push forward. A board with no speed on a
-        // steep uphill simply gets nothing rather than being driven backwards.
-        const thrust = Math.max(0, SURF_THRUST + slopeAssist);
+        // Thrust, which can only ever push forward — and never quite dies.
+        // The floor is what removes the parked-facing-uphill stall: with the
+        // surf held the board always inches ahead, the momentum carry above
+        // then cheapens the grade, and the two together walk it out of any
+        // hollow. It cannot drive the board backwards — the floor is along
+        // the facing, and the reverse guard below strips anything that is not.
+        const thrust = Math.max(1.5, SURF_THRUST + slopeAssist);
         this.velocity.x += fx * thrust * h;
         this.velocity.z += fz * thrust * h;
 

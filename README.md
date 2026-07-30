@@ -29,14 +29,18 @@ are no textures, no meshes, no HDRIs and no animation data in this repository.
 | `Esc` | pause menu — frees the mouse, shows the controls |
 | `F1` or `` ` `` | settings and performance overlay |
 
-`Esc` is the player's menu and `F1` is the instrument panel, and they are
-deliberately two different things. Escape drops pointer lock (the browser does
-that part and no page may veto it), the lock loss opens the menu, and the
-menu's presence pauses the simulation — so alt-tab and focus loss pause the
-game through the identical path, which is what anyone would want anyway. The
-menu itself is eleven keycaps, the world's seed, and a resume button; the F1
-overlay is every art parameter and timing graph in the project. Normal people
-need the first one and never the second.
+`Esc` is the player's menu, and it now *hosts* the instrument panel too.
+Escape drops pointer lock (the browser does that part and no page may veto
+it), the lock loss opens the menu, and the menu's presence pauses the
+simulation — so alt-tab and focus loss pause the game through the identical
+path, which is what anyone would want anyway. The menu is two tabs on one
+opaque panel: **controls** — keycaps, the world's seed, a resume button, and
+a made-by credit — and **settings & stats**, which adopts the F1 overlay's
+element wholesale by reparenting it into the panel. F1 in-game still opens
+the same overlay docked to the right edge for anyone tuning while riding;
+the two routes share one DOM node, so they can never show different values.
+A quiet `esc — pause · menu` label sits in the bottom corner while riding,
+because a menu nobody knows about is a menu that does not exist.
 
 The controls are also on the loading screen, which is the one moment anybody is
 going to read them — there is a captive audience there for as long as the
@@ -320,6 +324,24 @@ freshest mass — reaches gold at 13, which clears both sunlit ground at 5.5 and
 bloom threshold at 6.5, so the crest is the brightest and by a long way the warmest
 point on the whole structure. On a straight run the crest sits at 3, well under
 the bloom pass's reach, and does not glow at all.
+
+The slope term had gravity backwards for a while, and the fix is worth
+recording because the regression test *printed* the bug as a pass. The assist
+read the surface normal and negated its dot with the facing — and the normal
+leans away from the rise, so the negation put the boost on the uphill face and
+the brake on the downhill one. The board died descending into every crater
+bowl and rocketed up the far wall, which reached the bug tracker as "he gets
+caught sometimes"; the test asserted no-reverse and printed top speed without
+judging it, so `19.4 m/s straight up a 45-degree wall` sat in the output as a
+pass for days. The grade is now sampled as a height difference across a board
+length along the travel direction (a point normal reads 3.6 m bowls' rims at
+full strength; the hull bridges them), a crest costs a third at speed what it
+costs from a standstill (momentum carries through short rises), and thrust
+is floored just above zero with the surf held — so the board brakes, carves
+and grinds but never parks. The test now asserts all of it in both
+directions: downhill must reach full speed, crater bowls must be crossed
+without the speed ever dipping, and a board pointed up a wall must creep, not
+climb.
 
 The board will not travel tail-first. That reads as a styling rule and is really a
 physics one, and it was a bug for a while: the carve scrub used to be subtracted
@@ -892,7 +914,9 @@ geometry in the running demo is generated at load time on the GPU: the sky is a
 handful of noise calls, the grain map and the landform are noise, the crater field
 is three grids of hashes, the astronaut is lofted from a table of numbers, and the
 suit's weave and the insulation fibres are evaluated in the fragment shader. The
-favicon is a hand-written SVG in `public/`.
+favicon — a white star on black, nothing else — is a hand-written SVG in
+`public/`, served with a `?v=` bump because browsers hold favicons far longer
+than any other asset.
 
 Runtime dependencies are `@babylonjs/core` and `@babylonjs/materials`
 (Apache-2.0). The only build dependency is Vite (MIT), which does not ship in the

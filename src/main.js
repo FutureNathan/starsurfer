@@ -170,14 +170,18 @@ async function boot() {
     const post = new PostChain(scene, rig.camera, depthPass, sky);
 
     const overlay = new Overlay({ rig, character });
-    const toggleOverlay = () => overlay.toggle();
+    // F1 keeps its direct route to the overlay while riding, but yields when
+    // the pause menu is up — the menu's settings tab has adopted the same
+    // element, and a second toggle would tug it out from under the panel.
+    const toggleOverlay = () => { if (!pauseMenu?.paused) overlay.toggle(); };
     initInput(canvas, { onToggleOverlay: toggleOverlay });
     // The on-screen controls, when the primary pointer is a finger. They mount
     // after the overlay because the settings button on them toggles it.
     if (wantsTouchControls()) initTouch(canvas, { input, onToggleOverlay: toggleOverlay });
-    // Escape: frees the mouse, pauses the loop below, shows the controls.
-    // Keyboard-shaped by nature, so it mounts alongside the desktop input.
-    const pauseMenu = wantsTouchControls() ? null : initPauseMenu(canvas);
+    // Escape: frees the mouse, pauses the loop below, shows the controls —
+    // and hosts the overlay on its settings tab. Keyboard-shaped by nature,
+    // so it mounts alongside the desktop input.
+    const pauseMenu = wantsTouchControls() ? null : initPauseMenu(canvas, overlay);
 
     // ------------------------------------------------------------- warm-up
     // Everything that can compile, compiles here — behind the loading screen.

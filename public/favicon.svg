@@ -1,58 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="STARSURFER">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="STARSURFER">
   <title>STARSURFER</title>
 
   <!--
-    A board on the diagonal with a star on its nose.
+    A white star on black. Nothing else.
 
-    Drawn for 16 pixels first and then allowed to look good at 512. At a favicon's
-    real size there is room for exactly two shapes and one accent colour, so this
-    is two shapes and one accent colour: a pale pin-tail lozenge running corner to
-    corner, and a gold four-point star sitting on the tip of it. Everything else —
-    a rider, a wake, a horizon — turns into three grey pixels at that scale and
-    costs the silhouette its read.
+    The previous icon was a surfboard on the diagonal with a star on its nose,
+    and at 16 pixels the board read as a grey smudge — two shapes was one too
+    many. A favicon's whole job is to be found in a tab strip at a glance, and
+    the highest-contrast, fastest-read version of this brand is its first
+    syllable alone: one white star, emoji-plain, on pure black.
 
-    Colours are brand.js: void #05060f, suit #c4bfd2, accent #ffc46b.
+    The star is drawn with a round-joined stroke on top of its own fill, which
+    is what fattens and softens the points the way the emoji glyph's do —
+    a razor-tipped star loses its tips to antialiasing at tab size.
 
-    public/apple-touch-icon.png is the same geometry drawn a second time, in
-    Python, because iOS will not take an SVG for a home-screen icon. Its control
-    points are copied from this file — if one moves, both move.
+    public/apple-touch-icon.png is the same geometry rendered to PNG, because
+    iOS will not take an SVG for a home-screen icon. Its control points are
+    copied from this file — if one moves, both move.
   -->
 
-  <rect width="64" height="64" rx="14" fill="#05060f"/>
-
-  <!--
-    The board. Authored nose-up in its own space and rotated into place, so the
-    outline is symmetric by construction rather than by eye: a point at the nose,
-    the widest section a little behind centre, and a pin tail rounded just enough
-    not to alias into a spike.
-  -->
-  <g transform="translate(29.5 37) rotate(41)">
-    <path fill="#c4bfd2" d="
-      M 0 -19
-      C 4.9 -11.9  9.2 -4.2  9.2 1.7
-      C 9.2 8.6    4.9 15.5  1.8 19.0
-      C 0.6 19.8  -0.6 19.8  -1.8 19.0
-      C -4.9 15.5 -9.2 8.6  -9.2 1.7
-      C -9.2 -4.2 -4.9 -11.9 0 -19
-      Z"/>
-    <!-- The stringer. Gone by 24 pixels, and worth having above that. -->
-    <path stroke="#05060f" stroke-width="1.3" stroke-linecap="round" opacity="0.55"
-          d="M 0 -14 L 0 16"/>
-  </g>
-
-  <!--
-    The star, upright in screen space rather than rotated with the board — a star
-    that leans reads as a sparkle effect, and this one is meant to read as the
-    mark. Centred exactly on the nose the rotation above puts at (42.0, 22.7).
-  -->
-  <g transform="translate(42 22.7)">
-    <circle r="12" fill="#ffc46b" opacity="0.14"/>
-    <circle r="6" fill="#ffc46b" opacity="0.20"/>
-    <path fill="#ffc46b" d="
-      M 0 -12.5  C 2.2 -3.9  3.9 -2.2  12.5 0
-      C 3.9 2.2  2.2 3.9  0 12.5
-      C -2.2 3.9  -3.9 2.2  -12.5 0
-      C -3.9 -2.2  -2.2 -3.9  0 -12.5
-      Z"/>
-  </g>
+  <rect width="100" height="100" rx="18" fill="#000000" />
+  <path
+    d="M 50 16
+       L 61.17 38.63 L 86.14 42.26 L 68.07 59.87 L 72.34 84.74
+       L 50 73 L 27.66 84.74 L 31.93 59.87 L 13.86 42.26
+       L 38.83 38.63 Z"
+    fill="#ffffff" stroke="#ffffff" stroke-width="7"
+    stroke-linejoin="round" />
 </svg>

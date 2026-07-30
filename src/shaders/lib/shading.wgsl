@@ -86,15 +86,18 @@ fn dustSubsurface(
     strength: f32,
     radius: f32
 ) -> vec3f {
-    // A longer path through the grains comes back more violet, because the dust
-    // absorbs red first over any appreciable path length — the same mechanism
-    // that makes a deep snow cave blue, running on a medium whose own colour is
-    // violet rather than white. It is the entire reason a hollow in this field
-    // reads as coloured rather than merely dark, and the deep tint here is held
-    // to the same hue as the cavity tint in the dust material so the two cannot
-    // disagree about what a shadowed pocket looks like.
-    let shallowTint = vec3f(0.97, 0.93, 1.0);
-    let deepTint = vec3f(0.58, 0.42, 1.0);
+    // A longer path through the grains comes back *warmer*, because mineral
+    // dust absorbs the blue end first over any appreciable path — the opposite
+    // of snow, whose ice eats red and turns its caves blue. The old deep tint
+    // here was that snow-cave violet, kept when the ground was a violet dust
+    // sea, and it outlived its premise: multiplied by the star on every
+    // backlit slope it was the "ground goes purple sometimes" screenshot —
+    // strongest exactly when the camera faced the sun, because that is where
+    // the transmission lobe lives. Regolith transmits like regolith now: a
+    // dusty tan, still clearly coloured rather than merely dark, in the same
+    // family as the rock it shines through.
+    let shallowTint = vec3f(1.0, 0.97, 0.92);
+    let deepTint = vec3f(0.94, 0.77, 0.58);
     let tint = mix(shallowTint, deepTint, clamp(thickness * radius, 0.0, 1.0));
 
     // Lobe width and amplitude both key off thickness, and both run the
