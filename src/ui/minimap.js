@@ -130,37 +130,48 @@ export function initMinimap(terrain, sky, character) {
         const k = size / (RANGE * 2); // px per metre
         const s = size / 168;
 
-        // Twin crater rims.
-        ctx.setLineDash([3 * s, 3.5 * s]);
-        ctx.strokeStyle = INK(0.26);
-        ctx.lineWidth = s;
-        for (const [c, r] of [[lm.c1, lm.r1], [lm.c2, lm.r2]]) {
+        // Every symbol strokes twice: a dark underlay a shade wider, then
+        // the ink. On a relief that swings from lit crest to black shadow, a
+        // single stroke always vanishes against one of them.
+        const twice = (path, ink, w) => {
             ctx.beginPath();
-            ctx.arc(toMap(c.x), toMap(c.z), r * k, 0, Math.PI * 2);
+            path();
+            ctx.strokeStyle = "rgba(8, 9, 14, 0.60)";
+            ctx.lineWidth = w + 1.7 * s;
             ctx.stroke();
+            ctx.strokeStyle = ink;
+            ctx.lineWidth = w;
+            ctx.stroke();
+        };
+
+        // Twin crater rims.
+        ctx.setLineDash([3.5 * s, 3.5 * s]);
+        for (const [c, r] of [[lm.c1, lm.r1], [lm.c2, lm.r2]]) {
+            twice(() => ctx.arc(toMap(c.x), toMap(c.z), r * k, 0, Math.PI * 2),
+                  INK(0.55), 1.4 * s);
         }
 
         // The rille: a dotted crawl along the tube network's course.
-        ctx.setLineDash([1.5 * s, 3 * s]);
-        ctx.strokeStyle = INK(0.30);
-        ctx.beginPath();
-        for (let i = 0; i < lm.rille.length; i++) {
-            const p = lm.rille[i];
-            if (i === 0) ctx.moveTo(toMap(p.x), toMap(p.z));
-            else ctx.lineTo(toMap(p.x), toMap(p.z));
-        }
-        ctx.stroke();
+        ctx.setLineDash([1.8 * s, 3 * s]);
+        twice(() => {
+            for (let i = 0; i < lm.rille.length; i++) {
+                const p = lm.rille[i];
+                if (i === 0) ctx.moveTo(toMap(p.x), toMap(p.z));
+                else ctx.lineTo(toMap(p.x), toMap(p.z));
+            }
+        }, INK(0.50), 1.2 * s);
         ctx.setLineDash([]);
 
-        // The roofed reaches: short solid strokes over the dots — the spans
-        // of tube still standing, drawn at true length and bearing.
-        ctx.strokeStyle = INK(0.55);
-        ctx.lineWidth = 2.2 * s;
-        for (const r of lm.roofs) {
-            ctx.beginPath();
-            ctx.moveTo(toMap(r.x - r.hx * r.len / 2), toMap(r.z - r.hz * r.len / 2));
-            ctx.lineTo(toMap(r.x + r.hx * r.len / 2), toMap(r.z + r.hz * r.len / 2));
-            ctx.stroke();
+        // The roofed reaches: solid runs over the dots — the spans of tube
+        // still standing, at true length, following the rille's own bend.
+        for (const reach of lm.reaches) {
+            twice(() => {
+                const pts = reach.pts;
+                for (let i = 0; i < pts.length; i++) {
+                    if (i === 0) ctx.moveTo(toMap(pts[i].x), toMap(pts[i].z));
+                    else ctx.lineTo(toMap(pts[i].x), toMap(pts[i].z));
+                }
+            }, INK(0.85), 3 * s);
         }
     }
 

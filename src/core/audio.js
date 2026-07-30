@@ -54,6 +54,14 @@ export function initAudio() {
     let ctx = null;
     let musicGain = null;
     let sfxGain = null;
+    /**
+     * The asteroid impact's own fader, beside the effects bus. The one sound
+     * that must win the whole mix cannot answer to the effects slider — with
+     * music louder than effects by default, no effects-bus level can beat
+     * the music. This bus is set per impact to whichever is greater: the
+     * effects level, or one-and-a-half times the music's.
+     */
+    let impactGain = null;
     let noiseBuf = null;
 
     // ------------------------------------------------------------- music
@@ -79,6 +87,8 @@ export function initAudio() {
     let currentEl = null;
     /** @type {MediaElementAudioSourceNode|null} */
     let currentSrc = null;
+    /** @type {GainNode|null} Per-track fader, for the fade-in and -out. */
+    let currentFade = null;
 
     fetch("/music/manifest.json")
         .then((r) => (r.ok ? r.json() : null))
@@ -104,6 +114,11 @@ export function initAudio() {
     function applyVolumes() {
         if (!ctx) return;
         const t = ctx.currentTime;
+        // Prune any pending duck-restore first, so a volume change during an
+        // asteroid's dip is not overridden by the stale restore behind it.
+        if (musicGain.gain.cancelAndHoldAtTime) {
+            musicGain.gain.cancelAndHoldAtTime(t);
+        }
         musicGain.gain.setTargetAtTime(
             S.musicOn ? S.musicVolume * S.musicVolume : 0, t, 0.1
         );
@@ -144,23 +159,45 @@ export function initAudio() {
         // their connection, so leaving them wired would stack one dead node
         // onto the music bus per track played, forever.
         const srcNode = ctx.createMediaElementSource(el);
+        // Each track rides its own fader: a couple of seconds up at the
+        // start, and down again over the last few — a song walking in and
+        // bowing out instead of starting mid-shout and stopping mid-note.
+        const fade = ctx.createGain();
+        fade.gain.value = 0.0001;
+        srcNode.connect(fade);
+        fade.connect(musicGain);
+        let fadingOut = false;
+        el.addEventListener("timeupdate", () => {
+            if (fadingOut || !Number.isFinite(el.duration)) return;
+            if (el.duration - el.currentTime < 3.5) {
+                fadingOut = true;
+                const t2 = ctx.currentTime;
+                if (fade.gain.cancelAndHoldAtTime) fade.gain.cancelAndHoldAtTime(t2);
+                fade.gain.setTargetAtTime(0.0001, t2, 1.0);
+            }
+        });
         el.addEventListener("error", () => {
             // Missing or unreadable: drop it from the rotation and move on.
             dead.add(pick.file);
             srcNode.disconnect();
+            fade.disconnect();
             nowPlaying = null;
             scheduleNext(2);
         });
         el.addEventListener("ended", () => {
             srcNode.disconnect();
+            fade.disconnect();
             nowPlaying = null;
             currentEl = null;
             currentSrc = null;
+            currentFade = null;
             scheduleNext(GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN));
         });
-        srcNode.connect(musicGain);
-        el.play().then(() => { nowPlaying = pick; currentEl = el; currentSrc = srcNode; })
-            .catch(() => scheduleNext(8));
+        el.play().then(() => {
+            nowPlaying = pick; currentEl = el;
+            currentSrc = srcNode; currentFade = fade;
+            fade.gain.setTargetAtTime(1, ctx.currentTime, 0.9);
+        }).catch(() => scheduleNext(8));
     }
 
     // Changing playlist changes the sound *now* — stopping mid-track is what
@@ -169,6 +206,7 @@ export function initAudio() {
         if (!ctx) return;
         if (currentEl) { currentEl.pause(); currentEl = null; }
         if (currentSrc) { currentSrc.disconnect(); currentSrc = null; }
+        if (currentFade) { currentFade.disconnect(); currentFade = null; }
         nowPlaying = null;
         scheduleNext(1.5);
     });
@@ -182,13 +220,13 @@ export function initAudio() {
         return src;
     }
 
-    /** gain → sfx bus, with a one-shot envelope baked in. */
-    function env(t, peak, attack, decay) {
+    /** gain → sfx bus (or the given bus), with a one-shot envelope baked in. */
+    function env(t, peak, attack, decay, bus) {
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
         g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0001), t + attack);
         g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-        g.connect(sfxGain);
+        g.connect(bus || sfxGain);
         return g;
     }
 
@@ -363,6 +401,14 @@ export function initAudio() {
     }
 
     function sfxAsteroid(t) {
+        // The whole event rides its own bus, levelled per impact to beat the
+        // music however loud the music is set. Direct assignment, not a
+        // scheduled event — a timeline write per cast would be the same slow
+        // leak the surf bed once had.
+        const sfxV = S.sfxVolume * S.sfxVolume;
+        const musV = S.musicOn ? S.musicVolume * S.musicVolume : 0;
+        impactGain.gain.value = S.sfxOn ? Math.max(sfxV, musV * 1.5) : 0;
+
         // The rumble rides the whole fall and cuts out at contact; the impact
         // lands exactly when the rock does, because both read the same
         // exported constant the dispatcher leads the rider by.
@@ -375,7 +421,7 @@ export function initAudio() {
         g.gain.exponentialRampToValueAtTime(0.5, t + 0.25);
         g.gain.exponentialRampToValueAtTime(1.15, t + FALL);
         g.gain.exponentialRampToValueAtTime(0.0001, t + FALL + 0.12);
-        rum.connect(lp); lp.connect(g); g.connect(sfxGain);
+        rum.connect(lp); lp.connect(g); g.connect(impactGain);
         rum.stop(t + FALL + 0.3);
         reap(rum, lp, g);
 
@@ -394,11 +440,24 @@ export function initAudio() {
         // longer, so the impact dominates in both hit and hang. The bus
         // compressor is what keeps this pile clean instead of clipped.
         const ti = t + FALL;
+
+        // Duck the music under the strike — the classic sidechain dip. Cut
+        // hard just before contact, hold through the sub, ease back over a
+        // second and a half. Hearing the music *step aside* is half of what
+        // makes the impact read as bigger than the music.
+        if (S.musicOn) {
+            const base = S.musicVolume * S.musicVolume;
+            const mg = musicGain.gain;
+            if (mg.cancelAndHoldAtTime) mg.cancelAndHoldAtTime(ti - 0.06);
+            mg.setTargetAtTime(base * 0.18, ti - 0.06, 0.05);
+            mg.setTargetAtTime(base, ti + 1.2, 0.5);
+        }
+
         const thud = ctx.createOscillator();
         thud.type = "sine";
         thud.frequency.setValueAtTime(90, ti);
         thud.frequency.exponentialRampToValueAtTime(32, ti + 0.7);
-        const tg = env(ti, 3.2, 0.010, 1.1);
+        const tg = env(ti, 3.2, 0.010, 1.1, impactGain);
         thud.connect(tg);
         thud.start(ti); thud.stop(ti + 1.2);
         reap(thud, tg);
@@ -407,21 +466,21 @@ export function initAudio() {
         sub.type = "sine";
         sub.frequency.setValueAtTime(52, ti);
         sub.frequency.exponentialRampToValueAtTime(24, ti + 1.6);
-        const sg = env(ti, 2.9, 0.03, 2.2);
+        const sg = env(ti, 2.9, 0.03, 2.2, impactGain);
         sub.connect(sg);
         sub.start(ti); sub.stop(ti + 2.3);
         reap(sub, sg);
 
         const crack = noise(ti);
         const clp = filter("lowpass", 520);
-        const cg = env(ti, 1.8, 0.008, 0.45);
+        const cg = env(ti, 1.8, 0.008, 0.45, impactGain);
         crack.connect(clp); clp.connect(cg);
         crack.stop(ti + 0.5);
         reap(crack, clp, cg);
 
         const shock = noise(ti + 0.12);
         const slp = filter("lowpass", 85);
-        const shg = env(ti + 0.12, 1.5, 0.10, 2.6);
+        const shg = env(ti + 0.12, 1.5, 0.10, 2.6, impactGain);
         shock.connect(slp); slp.connect(shg);
         shock.stop(ti + 2.9);
         reap(shock, slp, shg);
@@ -472,6 +531,9 @@ export function initAudio() {
         comp.attack.value = 0.004;
         comp.release.value = 0.22;
         sfxGain.connect(comp);
+        impactGain = ctx.createGain();
+        impactGain.gain.value = 0;
+        impactGain.connect(comp);
         comp.connect(ctx.destination);
 
         noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);

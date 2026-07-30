@@ -520,7 +520,7 @@ export class Asteroid {
         // is right, without the frame coming apart.
         const pos = ctx.controller.position;
         const d = Math.hypot(r.x - pos.x, r.z - pos.z);
-        const near = 0.155 + 0.465 * clamp01(1 - (d - 24) / 74);
+        const near = 0.24 + 0.62 * clamp01(1 - (d - 24) / 74);
         ctx.rig.addTrauma(near * r.share);
     }
 

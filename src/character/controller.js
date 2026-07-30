@@ -182,8 +182,15 @@ export class CharacterController {
         this.position.x += this.velocity.x * h;
         this.position.z += this.velocity.z * h;
 
-        this.groundY = this.terrain.heightAt(this.position.x, this.position.z);
-        this.terrain.normalAt(this.position.x, this.position.z, this.groundNormal);
+        this.groundY = this._ground(this.position.x, this.position.z);
+        if (this.terrain.surfaceNormalAt) {
+            this.terrain.surfaceNormalAt(
+                this.position.x, this.position.z, this.position.y,
+                this.groundNormal
+            );
+        } else {
+            this.terrain.normalAt(this.position.x, this.position.z, this.groundNormal);
+        }
 
         this.landed = false;
         const sprintEdge = input.sprint && !this._prevSprint;
@@ -264,6 +271,18 @@ export class CharacterController {
         this.streak01 = this.surf * Scalar.Clamp((this.speed - 7) / 11, 0, 1);
 
         this._gait(h);
+    }
+
+    /**
+     * The surface under (x, z): the bake, or a tube roof when riding one.
+     * Falls back to the plain heightfield when the terrain has no overhead
+     * surfaces registered (tests, and the moment before the arches build).
+     */
+    _ground(x, z) {
+        const t = this.terrain;
+        return t.surfaceAt
+            ? t.surfaceAt(x, z, this.position.y)
+            : t.heightAt(x, z);
     }
 
     _walkStep(h) {
@@ -365,17 +384,26 @@ export class CharacterController {
         // Third, momentum. A crest costs full price from a standstill but a
         // third of it at speed — a moving board *carries* through a short
         // rise rather than being priced per-frame as if it were parked on it.
-        const hAhead = this.terrain.heightAt(
+        const hAhead = this._ground(
             this.position.x + fx * 2.6, this.position.z + fz * 2.6
         );
-        const hBehind = this.terrain.heightAt(
+        const hBehind = this._ground(
             this.position.x - fx * 2.6, this.position.z - fz * 2.6
         );
         const grade = (hAhead - hBehind) / 5.2;
         const vs0 = Math.hypot(this.velocity.x, this.velocity.z);
         let slopeAssist = -grade * 26;
+        let wall = 0;
         if (slopeAssist < 0) {
-            slopeAssist *= 0.35 + 0.65 * Math.exp(-vs0 / 7);
+            // Momentum carries the board through a rise — but not up a wall.
+            // Past roughly twenty-eight degrees of upgrade the carry fades
+            // back to full price, and the thrust floor below lets go with it:
+            // a steep canyon wall can be dropped into but not ridden up. The
+            // board stalls a few metres in, and the way out is the way a
+            // board actually takes — come about and go back down.
+            wall = Scalar.Clamp((grade - 0.52) / 0.22, 0, 1);
+            const carry = 0.35 + 0.65 * Math.exp(-vs0 / 7);
+            slopeAssist *= carry + (1 - carry) * wall;
         }
 
         // Carving away from where you are already going scrubs speed — the harder
@@ -413,7 +441,7 @@ export class CharacterController {
         // then cheapens the grade, and the two together walk it out of any
         // hollow. It cannot drive the board backwards — the floor is along
         // the facing, and the reverse guard below strips anything that is not.
-        const thrust = Math.max(1.5, SURF_THRUST + slopeAssist);
+        const thrust = Math.max(1.5 * (1 - wall), SURF_THRUST + slopeAssist);
         this.velocity.x += fx * thrust * h;
         this.velocity.z += fz * thrust * h;
 

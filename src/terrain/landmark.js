@@ -24,7 +24,7 @@ function fract(x) {
  * @returns {{
  *   c1: {x:number,z:number}, r1: number,
  *   c2: {x:number,z:number}, r2: number,
- *   roofs: {x:number,z:number,hx:number,hz:number,len:number}[],
+ *   reaches: {pts: {x:number,z:number}[]}[],
  *   rille: {x:number,z:number}[],
  * }}
  */
@@ -57,23 +57,21 @@ export function landmarkPoses(seed) {
             z: c1.z + d3.z * along + p3.z * sway,
         };
     };
-    const roofs = [];
-    for (const [t, len] of [[0.32, 24], [0.50, 20], [0.68, 26]]) {
-        const p = at(t);
-        const a = at(t - 0.02);
-        const b = at(t + 0.02);
-        const hl = Math.hypot(b.x - a.x, b.z - a.z) || 1;
-        roofs.push({
-            x: p.x, z: p.z,
-            hx: (b.x - a.x) / hl, hz: (b.z - a.z) / hl,
-            len,
-        });
-    }
+    // The roofed reaches: two long runs of intact tube, each sampled as a
+    // short polyline so the vault chain and the collision mirror can follow
+    // the rille's bend through them. Open channel before, between and after:
+    // the entrance, one mid-run skylight, and the exit.
+    const REACHES = [[0.16, 0.48], [0.55, 0.88]];
+    const reaches = REACHES.map(([t0, t1]) => {
+        const pts = [];
+        for (let i = 0; i <= 6; i++) pts.push(at(t0 + (i / 6) * (t1 - t0)));
+        return { pts };
+    });
 
     // The rille's own course, sampled along the same polyline — for anything
     // that wants to draw it, which today is the mini-map's tube trace.
     const rille = [];
     for (let i = 0; i <= 12; i++) rille.push(at(i / 12));
 
-    return { c1, r1, c2, r2, roofs, rille };
+    return { c1, r1, c2, r2, reaches, rille };
 }

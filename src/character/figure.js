@@ -370,6 +370,9 @@ export class Figure {
     update(dt, ch) {
         const h = Math.min(dt, 1 / 30);
         this._t += h;
+        // The storey the body is on this frame — see `Terrain.surfaceAt`.
+        // Feet planted from here ground on the tube roofs when riding one.
+        this._refY = ch.position.y;
 
         const surf = ch.surf;
         const speed = ch.speed;
@@ -614,7 +617,7 @@ export class Figure {
                     // Touchdown. This is the only line in the file that writes a
                     // plant position.
                     this.plant[f * 3] = nx;
-                    this.plant[f * 3 + 1] = this.terrain.heightAt(nx, nz) - this.sink * 0.7;
+                    this.plant[f * 3 + 1] = this._ground(nx, nz) - this.sink * 0.7;
                     this.plant[f * 3 + 2] = nz;
                     this.touchdown[f] = true;
                 } else {
@@ -629,7 +632,7 @@ export class Figure {
                     this.plant[f * 3 + 2] = damp(this.plant[f * 3 + 2], sz, 7, h);
                     this.plant[f * 3 + 1] = damp(
                         this.plant[f * 3 + 1],
-                        this.terrain.heightAt(this.plant[f * 3], this.plant[f * 3 + 2]) - this.sink * 0.7,
+                        this._ground(this.plant[f * 3], this.plant[f * 3 + 2]) - this.sink * 0.7,
                         7, h
                     );
                 }
@@ -644,7 +647,7 @@ export class Figure {
                 // the foot is always aimed at where the body will actually be.
                 const s = (ph - duty) / (1 - duty);
                 const e = s * s * (3 - 2 * s);
-                const ny = this.terrain.heightAt(nx, nz) - this.sink * 0.7;
+                const ny = this._ground(nx, nz) - this.sink * 0.7;
                 const px = this.plant[f * 3], py = this.plant[f * 3 + 1], pz = this.plant[f * 3 + 2];
                 this.footPos[f * 3] = px + (nx - px) * e;
                 this.footPos[f * 3 + 2] = pz + (nz - pz) * e;
@@ -672,7 +675,7 @@ export class Figure {
                 // Standing on the deck, which is itself planing on the dust the
                 // board has already compressed — hence the `sink` and then the
                 // board's own thickness back up again.
-                const sy = this.terrain.heightAt(sx, sz) - this.sink + BOARD_STAND
+                const sy = this._ground(sx, sz) - this.sink + BOARD_STAND
                     + Math.max(0, ch.position.y - (ch.groundY ?? ch.position.y));
                 const o = f * 3;
                 this.footPos[o] += (sx - this.footPos[o]) * surf;
@@ -681,6 +684,16 @@ export class Figure {
                 this.footWeight[f] = Math.max(this.footWeight[f], surf);
             }
         }
+    }
+
+    /**
+     * Ground under a foot: the bake, or a tube roof when standing on one.
+     * Falls back to the plain heightfield for terrains without overhead
+     * surfaces — which includes every test harness.
+     */
+    _ground(x, z) {
+        const t = this.terrain;
+        return t.surfaceAt ? t.surfaceAt(x, z, this._refY ?? 0) : t.heightAt(x, z);
     }
 
     /**
@@ -708,9 +721,28 @@ export class Figure {
         _hip[1] = rootY + rY * side - uY * 0.05;
         _hip[2] = rootZ + rZ * side - uZ * 0.05;
 
-        const ax = this.footPos[f * 3];
-        const ay = this.footPos[f * 3 + 1] + 0.09; // ankle sits above the sole
-        const az = this.footPos[f * 3 + 2];
+        let ax = this.footPos[f * 3];
+        let ay = this.footPos[f * 3 + 1] + 0.09; // ankle sits above the sole
+        let az = this.footPos[f * 3 + 2];
+
+        // Never hand the solver an ankle past the leg — the same contract the
+        // arms hold. A body stopped mid-air over its plants, or hips high on
+        // a canyon wall above a foot still glued to its plant, used to
+        // stretch the shin to span the gap; clamped onto the reach sphere,
+        // the boot floats toward its target at the leg's true length. The
+        // foot bone reads these same coordinates, so boot and ankle move
+        // together.
+        {
+            const dx = ax - _hip[0], dy = ay - _hip[1], dz = az - _hip[2];
+            const dl = Math.hypot(dx, dy, dz);
+            const rMax = THIGH_LEN + SHIN_LEN;
+            if (dl > rMax) {
+                const k = rMax / dl;
+                ax = _hip[0] + dx * k;
+                ay = _hip[1] + dy * k;
+                az = _hip[2] + dz * k;
+            }
+        }
 
         // This boot's own heading: the travel frame turned about the up axis by
         // `open`, the same rotation `composeBasis` applies to the body.
@@ -776,7 +808,9 @@ export class Figure {
         const w = ch.surf;
 
         // ---- riding ------------------------------------------------------
-        const n = this.terrain.normalAt(gx, gz, _gnd);
+        const n = this.terrain.surfaceNormalAt
+            ? this.terrain.surfaceNormalAt(gx, gz, this._refY ?? 0, _gnd)
+            : this.terrain.normalAt(gx, gz, _gnd);
 
         // Nose: the direction of travel, flattened into the surface plane.
         const noseYaw = ch.facing + (ch.trickSpin || 0);

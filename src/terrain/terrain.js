@@ -425,6 +425,71 @@ export class Terrain {
         return this.heightfield.heightAt(x, z);
     }
 
+    /**
+     * Overhead surfaces — the tube roofs — registered by `Arches` once their
+     * geometry is planted. Each entry is one straight vault segment with its
+     * own foot height, plus one shared radial profile of the mound: the same
+     * numbers the mesh was lofted from, so what a rider stands on is what
+     * they see.
+     * @param {{segs: {x:number,z:number,hx:number,hz:number,len:number,footY:number}[],
+     *          wFoot: number, gate: number,
+     *          profD: Float32Array, profH: Float32Array}} data
+     */
+    setOverhead(data) {
+        this._overhead = data;
+    }
+
+    /**
+     * The surface under (x, z) for something whose feet are near `y`.
+     *
+     * A heightfield is single-valued, and the tube roofs put a second
+     * surface over the channel — so height queries need to know which storey
+     * they are asking about. `y` disambiguates: above a roof's gate line the
+     * query grounds on the roof's top, below it the roof does not exist and
+     * the query falls through to the bake. A rider in the tunnel and a rider
+     * on the roof stand on different ground at the same (x, z), which is the
+     * whole trick of surfing over someone surfing under.
+     */
+    surfaceAt(x, z, y) {
+        let h = this.heightfield.heightAt(x, z);
+        const ov = this._overhead;
+        if (!ov) return h;
+        const segs = ov.segs;
+        for (let i = 0; i < segs.length; i++) {
+            const s = segs[i];
+            if (y < s.footY + ov.gate) continue;
+            const dx = x - s.x, dz = z - s.z;
+            let along = dx * s.hx + dz * s.hz;
+            const half = s.len / 2;
+            if (along > half) along = half;
+            else if (along < -half) along = -half;
+            const ox = dx - s.hx * along, oz = dz - s.hz * along;
+            const d = Math.hypot(ox, oz);
+            if (d >= ov.wFoot) continue;
+            // The mound's height at this off-axis distance, from the shared
+            // profile table (profD descends foot→crown, profH ascends).
+            const pd = ov.profD, ph = ov.profH;
+            let j = 1;
+            while (j < pd.length - 1 && pd[j] > d) j++;
+            const span = pd[j - 1] - pd[j];
+            const k = span > 1e-6 ? (pd[j - 1] - d) / span : 0;
+            const top = s.footY + ph[j - 1] + (ph[j] - ph[j - 1]) * k;
+            if (top > h) h = top;
+        }
+        return h;
+    }
+
+    /** Central-difference normal over `surfaceAt`, for riding the roofs. */
+    surfaceNormalAt(x, z, y, out) {
+        if (!this._overhead) return this.normalAt(x, z, out);
+        const e = 0.9;
+        const hx = this.surfaceAt(x + e, z, y) - this.surfaceAt(x - e, z, y);
+        const hz = this.surfaceAt(x, z + e, y) - this.surfaceAt(x, z - e, y);
+        out.set(-hx / (2 * e), 1, -hz / (2 * e));
+        out.normalize();
+        return out;
+    }
+
     /** @param {number} x @param {number} z @param {Vector3} out */
     normalAt(x, z, out) {
         return this.heightfield.normalAt(x, z, out);

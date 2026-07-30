@@ -194,11 +194,54 @@ export class Arches {
             return hi - 3;
         };
 
-        // The tube roofs, feet on the levees either side of the rille.
-        for (let i = 0; i < poses.roofs.length; i++) {
-            const r = poses.roofs[i];
-            addVault(P, N, U, I, r, r.len, 17, 5.6, 2.2,
-                     foot(r), 11.7 + i * 7.3);
+        // The tube roofs: two long reaches following the rille's own bend,
+        // each a chain of straight vaults with a few metres of overlap. A
+        // vault's pinched ends are thin open rims, so each rim tucks inside
+        // the next vault's body — the joints read as the rib-lines of a
+        // collapsed tube rather than seams, and no sky shows between them.
+        // You are underground for the length of a reach, out at the skylight,
+        // and under again.
+        const ROOF = { span: 17, crown: 5.6, thick: 2.2 };
+        const segs = [];
+        let vaultSeed = 11.7;
+        for (const reach of poses.reaches) {
+            const pts = reach.pts;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const pa = pts[i], pb = pts[i + 1];
+                const dx = pb.x - pa.x, dz = pb.z - pa.z;
+                const dl = Math.hypot(dx, dz) || 1;
+                const pose = {
+                    x: (pa.x + pb.x) / 2, z: (pa.z + pb.z) / 2,
+                    hx: dx / dl, hz: dz / dl,
+                };
+                const fy = foot(pose);
+                addVault(P, N, U, I, pose, dl + 6, ROOF.span, ROOF.crown,
+                         ROOF.thick, fy, (vaultSeed += 7.3));
+                segs.push({
+                    x: pose.x, z: pose.z, hx: pose.hx, hz: pose.hz,
+                    len: dl + 6, footY: fy,
+                });
+            }
+        }
+
+        // The collision mirror: the outer-mound formula the vaults were
+        // lofted from — breathe and lumps at their means — sampled into one
+        // radial table and handed to the terrain, so the roofs are ground
+        // you can ride. A third of a metre under the visual rock: boots sink
+        // slightly into the rubble rather than hovering over it.
+        {
+            const innerHalf = ROOF.span / 2 - ROOF.thick;
+            const K = 24;
+            const profD = new Float32Array(K + 1);
+            const profH = new Float32Array(K + 1);
+            for (let i = 0; i <= K; i++) {
+                const th = (i / K) * (Math.PI / 2);
+                const flare = 1 + 1.9 * Math.cos(th) * Math.cos(th);
+                profD[i] = Math.cos(th) * (innerHalf + ROOF.thick * flare);
+                profH[i] = Math.max(0,
+                    Math.pow(Math.sin(th), 0.74) * (ROOF.crown + ROOF.thick) - 0.35);
+            }
+            terrain.setOverhead({ segs, wFoot: profD[0], gate: 4.2, profD, profH });
         }
 
         const mesh = new Mesh("arches", scene);

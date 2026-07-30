@@ -188,13 +188,16 @@ lunar crater shares — with a second, smaller crater driven into its flank at
 an angle, the two floors joined by a canyon cut through the shared wall, so
 the way from one crater into the next is a run through the gap. Off the far
 rim runs a **rille**: a collapsed lava tube, sunk channel and raised levees,
-diving under a dome mountain where three reaches of the original roof still
-stand — you drop in through one skylight and come out another, the way lunar
-tubes actually present themselves to the surface. The heightfield carves
-everything open (a heightfield cannot hold a tunnel); the tube roofs are the
-only built meshes in the world, closing what should be closed, with the
-physics riding the carved ground beneath them — which is why surfing through
-just works.
+diving under a dome mountain where two long reaches of the original roof
+still stand — eighty-odd metres underground at a time, out at the mid-run
+skylight, and under again, the way lunar tubes actually present themselves
+to the surface. The heightfield carves everything open (a heightfield cannot
+hold a tunnel); the tube roofs are the only built meshes in the world,
+closing what should be closed. The physics rides the carved ground beneath
+them — which is why surfing through just works — and the roofs register
+themselves as a second storey of ground, so the tops are surfable too: a
+rider on the roof and a rider in the tunnel stand on different ground at the
+same coordinates.
 Every other feature repeats statistically; the complex is singular per world,
 and that is its whole job. A map with a landmark is a place you can be lost
 in; a map without one is a texture.

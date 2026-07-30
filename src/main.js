@@ -174,8 +174,11 @@ async function boot() {
     );
     spells.registerPrepass(depthPass);
 
-    // The rig needs ground heights to keep the spring arm above the dust.
-    rig.groundAt = (x, z) => terrain.heightAt(x, z);
+    // The rig needs ground heights to keep the spring arm above the dust —
+    // including the tube roofs, judged from the camera's own storey, so the
+    // camera rides over a roof the rider is on instead of clipping into it.
+    rig.groundAt = (x, z) =>
+        terrain.surfaceAt(x, z, rig.camera.globalPosition.y);
 
     const post = new PostChain(scene, rig.camera, depthPass, sky);
 

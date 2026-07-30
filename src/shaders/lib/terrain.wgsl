@@ -179,8 +179,11 @@ fn landmark(p: vec2f, seed: f32) -> f32 {
     let ca = c1 + dir2 * (bigR * 0.55);
     let cb = c2 - dir2 * (r2 * 0.40);
     let dCan = distSeg(p, ca, cb);
-    let canyon = smoothstep(9.0, 3.5, dCan);
-    let wallMask = 1.0 - 0.94 * smoothstep(14.0, 5.0, dCan);
+    // Softened from (9,3.5) / 0.94 / (14,5): the first cut made a slot
+    // gorge — near-vertical twenty-metre walls — where a breach should read
+    // as a pass. Wider aprons, a fifth of the wall kept, a shallower floor.
+    let canyon = smoothstep(14.0, 4.0, dCan);
+    let wallMask = 1.0 - 0.78 * smoothstep(22.0, 6.0, dCan);
 
     // ---- the rille ---------------------------------------------------------
     // A sinuous path out the ring's far side, sampled as a polyline. Ten
@@ -245,7 +248,7 @@ fn landmark(p: vec2f, seed: f32) -> f32 {
 
     // Canyon: on top of the wall suppression, a real cut down toward the
     // floors, so the pass reads carved rather than merely unbuilt.
-    h -= canyon * 7.0;
+    h -= canyon * 4.5;
 
     // Dome and rille: the dome rises, the channel refuses it, the levees
     // ride its flanks, and the trench itself steps down nine metres.
