@@ -225,7 +225,22 @@ export class Sky {
         const g = 1.0 - 0.18 * warm;
         const b = 1.0 - 0.40 * warm;
 
-        this.sunRadiance.set(r * this.sunScale, g * this.sunScale, b * this.sunScale);
+        // Luminance-invariant warmth. The warm channels *subtract* energy, so
+        // the slider used to change the scene's overall brightness as a side
+        // effect: the whole radiometric chain — ground near 5.5 linear, bloom
+        // knee at 6.5 — was calibrated at warm=1, and moving to 0.35 for the
+        // grey moon quietly raised the star's luminance thirteen per cent.
+        // Compounded with the crest brightening it pushed sunlit ground OVER
+        // the knee, and the entire daylit frame fed the bloom pass: the
+        // washed-out snowfield report, and a real slice of GPU besides. The
+        // hue is the slider's job; the energy is not. Held to the luminance
+        // the chain was calibrated at.
+        const L1 = 0.842; // Rec.709 luminance of (1, 0.82, 0.60), warm = 1
+        const k = L1 / (0.2126 * r + 0.7152 * g + 0.0722 * b);
+
+        this.sunRadiance.set(
+            r * k * this.sunScale, g * k * this.sunScale, b * k * this.sunScale
+        );
         // Normalised so the max channel is 1. The skybox multiplies this by the
         // intensity itself when it draws the disc, so an unnormalised value here
         // would scale the star twice.

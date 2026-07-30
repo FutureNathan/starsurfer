@@ -388,8 +388,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the ground stops being one continuous tone. A touch of absolute
     // elevation on top, so the high country reads paler at range the way
     // the highlands actually do.
-    albedo *= mix(0.80, 1.12, exposure);
-    albedo *= 0.96 + 0.08 * clamp(world.y / 110.0, 0.0, 1.0);
+    // The split leans almost entirely on *darkening the hollows*: the sunlit
+    // baseline was calibrated a half-stop under the bloom knee, and there is
+    // no headroom above it to spend — the first version of this line gave
+    // crests +12%, which (stacked on the star's own accidental brightening)
+    // pushed the daylit frame over the knee and turned the moon into a
+    // glowing snowfield.
+    albedo *= mix(0.82, 1.03, exposure);
+    albedo *= 0.97 + 0.04 * clamp(world.y / 110.0, 0.0, 1.0);
     // Regolith is one of the most matte surfaces in the solar system — a
     // fairy-castle structure of dust that backscatters and traps light, with
     // almost no coherent forward lobe. 0.78 gave it a satin sheen wherever
