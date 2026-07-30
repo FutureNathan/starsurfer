@@ -383,6 +383,30 @@ export function initAudio() {
         ionNext = t + (Math.random() < 0.2 ? 2.2 : 0.85 + Math.random() * 0.35);
     }
 
+    // The jetpack: one filtered-noise loop while flying, torn down on
+    // release the same way the ion pad is. Brighter than the surf bed —
+    // combustion, not dust.
+    let jetNodes = null;
+    function jetSet(onNow) {
+        if (onNow && !jetNodes) {
+            const t = ctx.currentTime;
+            const src = noise(t);
+            const bp = filter("bandpass", 950, 0.7);
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.15, t + 0.12);
+            src.connect(bp); bp.connect(g); g.connect(sfxGain);
+            jetNodes = { src, bp, g };
+        } else if (!onNow && jetNodes) {
+            const t = ctx.currentTime;
+            const n = jetNodes;
+            jetNodes = null;
+            n.g.gain.setTargetAtTime(0.0001, t, 0.08);
+            n.src.stop(t + 0.5);
+            reap(n.src, n.bp, n.g);
+        }
+    }
+
     function sfxNova(t) {
         const o = ctx.createOscillator();
         o.type = "sine";
@@ -589,6 +613,7 @@ export function initAudio() {
                     send(surfLevel.gain, 0, t, 0.15);
                 }
                 ionSet(false);
+                jetSet(false);
                 return;
             }
 
@@ -649,6 +674,7 @@ export function initAudio() {
             if (input.spellPressed) power(input.spellPressed);
             ionSet(input.spellHeld2);
             ionRide();
+            jetSet(!!ch.jetting);
         },
         get nowPlaying() { return nowPlaying; },
         /** Tracks in the *selected* playlist — 0 means it is empty. */

@@ -35,7 +35,6 @@ import { initMinimap } from "./ui/minimap.js";
 import { Sky } from "./render/sky.js";
 import { ShadowSystem } from "./render/shadows.js";
 import { Terrain } from "./terrain/terrain.js";
-import { Arches } from "./terrain/arches.js";
 import { DepthPass } from "./render/depthPass.js";
 import { PostChain } from "./post/postChain.js";
 import { whenReady } from "./core/gpuUtil.js";
@@ -136,10 +135,6 @@ async function boot() {
     onChange("showTerrain", (v) => (terrain.mesh.isVisible = v));
     depthPass.registerCaster(terrain.mesh, terrain.makePrepassMaterial());
 
-    // The canyon arch and the lava-tube roofs over the landmark complex.
-    // After the bake: their feet are planted through `terrain.heightAt`.
-    const arches = new Arches(scene, terrain, sky, shadows, depthPass);
-
     await loading.phase("suiting up", 0.62);
 
     const character = new CharacterController(terrain);
@@ -216,7 +211,6 @@ async function boot() {
     sky.render(rig, 0);
     await terrain.warmUp();
     terrain.update(rig.camera.position, character.position, 0);
-    await arches.warmUp();
     figure.update(0);
     figure.sync(rig.camera.position);
     await figure.warmUp();
@@ -304,11 +298,29 @@ async function boot() {
         spells.update(dt, rig.camera.position);
         const tSpells = performance.now();
         terrain.update(rig.camera.position, character.position, dt);
-        arches.update();
         const tTerrain = performance.now();
         // After the shadow refit, so the figure's uniforms carry this frame's
         // cascade matrices rather than last frame's.
         figure.sync(rig.camera.position);
+        // Jetpack exhaust: a spit of hot grains out of the pack while flying,
+        // emitted before the spray pool uploads so they render this frame.
+        if (character.jetting) {
+            const jx = Math.sin(character.facing), jz = Math.cos(character.facing);
+            for (let i = 0; i < 3; i++) {
+                spray.emit(
+                    character.position.x - jx * 0.28 + (Math.random() - 0.5) * 0.16,
+                    character.position.y + 1.05,
+                    character.position.z - jz * 0.28 + (Math.random() - 0.5) * 0.16,
+                    (Math.random() - 0.5) * 1.5,
+                    -7.5 - Math.random() * 3,
+                    (Math.random() - 0.5) * 1.5,
+                    0.030 + Math.random() * 0.030,
+                    0.5 + Math.random() * 0.4,
+                    1,
+                    0.8
+                );
+            }
+        }
         // Before the spray: the wake decides where its own lip is, and the
         // grains it sheds have to be in the pool before the pool is uploaded.
         wake.update(dt, rig.camera.position);

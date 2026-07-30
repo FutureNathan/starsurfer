@@ -151,7 +151,7 @@ export function initMinimap(terrain, sky, character) {
                   INK(0.55), 1.4 * s);
         }
 
-        // The rille: a dotted crawl along the tube network's course.
+        // The rille: a dotted crawl along the open channel's course.
         ctx.setLineDash([1.8 * s, 3 * s]);
         twice(() => {
             for (let i = 0; i < lm.rille.length; i++) {
@@ -159,20 +159,8 @@ export function initMinimap(terrain, sky, character) {
                 if (i === 0) ctx.moveTo(toMap(p.x), toMap(p.z));
                 else ctx.lineTo(toMap(p.x), toMap(p.z));
             }
-        }, INK(0.50), 1.2 * s);
+        }, INK(0.62), 1.5 * s);
         ctx.setLineDash([]);
-
-        // The roofed reaches: solid runs over the dots — the spans of tube
-        // still standing, at true length, following the rille's own bend.
-        for (const reach of lm.reaches) {
-            twice(() => {
-                const pts = reach.pts;
-                for (let i = 0; i < pts.length; i++) {
-                    if (i === 0) ctx.moveTo(toMap(pts[i].x), toMap(pts[i].z));
-                    else ctx.lineTo(toMap(pts[i].x), toMap(pts[i].z));
-                }
-            }, INK(0.85), 3 * s);
-        }
     }
 
     return {

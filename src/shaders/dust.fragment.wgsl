@@ -395,6 +395,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // pushed the daylit frame over the knee and turned the moon into a
     // glowing snowfield.
     albedo *= mix(0.82, 1.03, exposure);
+
+    // The fence, painted on the ground. Past the 620 m playable rim (see
+    // PLAY_RADIUS in terrain/heightfield.js) the regolith turns cold and
+    // dark — visibly foreign ground from a long way off — with a thin pale
+    // line right at the boundary, chalk on a court. Reflectance only, no
+    // emission: nothing here can reach the bloom knee.
+    let fenceR = length(world.xz);
+    let beyond = smoothstep(619.0, 648.0, fenceR);
+    albedo *= mix(vec3f(1.0), vec3f(0.50, 0.54, 0.70), beyond);
+    let fenceLine = smoothstep(2.6, 0.9, abs(fenceR - 619.0));
+    albedo = mix(albedo, vec3f(0.185, 0.190, 0.205), fenceLine * 0.6);
     albedo *= 0.97 + 0.04 * clamp(world.y / 110.0, 0.0, 1.0);
     // Regolith is one of the most matte surfaces in the solar system — a
     // fairy-castle structure of dust that backscatters and traps light, with

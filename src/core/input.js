@@ -174,6 +174,9 @@ export function pollInput() {
     input.moving = Math.hypot(x, z) > 0.001;
 
     input.sprint = !!(keys.ShiftLeft || keys.ShiftRight) || touch.sprint;
+    // The jetpack key. "Delete" on a Mac keyboard is what every other
+    // keyboard calls Backspace, so both codes count.
+    input.jetKey = !!(keys.Delete || keys.Backspace);
     input.surf = mouseSurf || touch.surf;
     input.spellHeld2 = keyHeld2 || touch.held2;
     if (touch.pressed) input.spellPressed = touch.pressed;

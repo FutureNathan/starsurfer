@@ -426,11 +426,14 @@ export class Terrain {
     }
 
     /**
-     * Overhead surfaces — the tube roofs — registered by `Arches` once their
-     * geometry is planted. Each entry is one straight vault segment with its
-     * own foot height, plus one shared radial profile of the mound: the same
-     * numbers the mesh was lofted from, so what a rider stands on is what
-     * they see.
+     * Overhead surfaces: a second storey of ground over the heightfield.
+     * Nothing registers one today — the tube roof meshes that used this were
+     * removed — but the plumbing stays: it costs one property check when
+     * empty, and anything that builds standable geometry over the bake
+     * (a roof, a bridge, a platform) registers here and every grounding
+     * query in the game rides it.
+     * Each entry is one straight segment with its own foot height, plus a
+     * shared radial height profile.
      * @param {{segs: {x:number,z:number,hx:number,hz:number,len:number,footY:number}[],
      *          wFoot: number, gate: number,
      *          profD: Float32Array, profH: Float32Array}} data

@@ -53,10 +53,6 @@ import waterVert from "./water.vertex.wgsl?raw";
 import waterFrag from "./water.fragment.wgsl?raw";
 
 import prepassFrag from "./prepass.fragment.wgsl?raw";
-import archVert from "./arch.vertex.wgsl?raw";
-import archFrag from "./arch.fragment.wgsl?raw";
-import archDepthVert from "./archDepth.vertex.wgsl?raw";
-import archPrepassVert from "./archPrepass.vertex.wgsl?raw";
 import terrainPrepassVert from "./terrainPrepass.vertex.wgsl?raw";
 import charPrepassVert from "./charPrepass.vertex.wgsl?raw";
 import wakePrepassVert from "./wakePrepass.vertex.wgsl?raw";
@@ -113,11 +109,6 @@ const SHADERS = {
     // The camera-space depth prepass. One fragment stage shared by everything
     // that has nothing to discard; the wake carries its own because it does.
     prepassPixelShader: prepassFrag,
-    // The landmark's built rock — the canyon arch and the lava-tube roofs.
-    archVertexShader: archVert,
-    archPixelShader: archFrag,
-    archDepthVertexShader: archDepthVert,
-    archPrepassVertexShader: archPrepassVert,
     terrainPrepassVertexShader: terrainPrepassVert,
     charPrepassVertexShader: charPrepassVert,
     wakePrepassVertexShader: wakePrepassVert,

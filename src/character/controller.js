@@ -58,6 +58,19 @@ const STRIDE_BASE = 1.55;
 const JUMP_V = 4.3;
 const AIR_G = 6.8;
 
+/**
+ * The jetpack: double-tap the Delete key and hold. Thrust settles the climb
+ * at `JET_CLIMB` until `JET_CEIL` metres over the ground, the stick steers a
+ * flat glide at `JET_SPEED`, and letting go hands straight back to the
+ * ordinary ballistic fall and landing. No fuel — the hold is the limit.
+ */
+const JET_CLIMB = 6.8;
+const JET_SPEED = 13.5;
+const JET_ACCEL = 24;
+const JET_CEIL = 36;
+/** Seconds between the two taps that arm it. */
+const JET_TAP = 0.45;
+
 export class CharacterController {
     /**
      * @param {{ heightAt(x:number,z:number):number, normalAt(x:number,z:number,out:Vector3):Vector3 }} terrain
@@ -138,6 +151,12 @@ export class CharacterController {
         this.airborne = false;
         this.vy = 0;
         this.airTime = 0;
+        /** Flying on the pack — see the JET_* constants. */
+        this.jetting = false;
+        this._jetArm = false;
+        this._jetTapAt = -9;
+        this._prevJetKey = false;
+        this._clock = 0;
         /** Visual-only spin the figure adds to its stance during the trick. */
         this.trickSpin = 0;
         /**
@@ -163,6 +182,7 @@ export class CharacterController {
      */
     update(dt, rig) {
         const h = Math.min(dt, 1 / 30);
+        this._clock += h;
 
         this.prevVelocity.copyFrom(this.velocity);
         this.surfActive = input.surf;
@@ -173,10 +193,34 @@ export class CharacterController {
         rig.getFlatForward(_fwd);
         rig.getFlatRight(_right);
 
+        // ---- the jetpack gesture: double-tap Delete, hold to fly ----------
+        const jk = input.jetKey;
+        if (jk && !this._prevJetKey) {
+            if (this._clock - this._jetTapAt < JET_TAP) this._jetArm = true;
+            this._jetTapAt = this._clock;
+        }
+        if (!jk) this._jetArm = false;
+        this._prevJetKey = jk;
+        const wantJet = this._jetArm && jk;
+        if (wantJet && !this.jetting) {
+            this.jetting = true;
+            this.airborne = true;
+            this.trickSpin = 0;
+            this.trickFlip = 0;
+            this._flip = false;
+            if (this.vy < 0) this.vy = 0;
+        } else if (!wantJet && this.jetting) {
+            this.jetting = false;
+            // Hand over to the ballistic branch with the trick timeline
+            // already spent, so letting go does not replay a jump's spin.
+            this.airTime = (2 * JUMP_V) / AIR_G;
+            this.airTuck = 0;
+        }
+
         if (this.surf > 0.5 && !this.airborne) this._surfStep(h, rig);
-        else if (this.surf <= 0.5) this._walkStep(h);
+        else if (this.surf <= 0.5 && !this.jetting) this._walkStep(h);
         // Airborne: ballistic. The velocity it left the lip with is the
-        // velocity it lands with.
+        // velocity it lands with. (Jetting steers itself, below.)
 
         // ---------------------------------------------------- integrate + snap
         this.position.x += this.velocity.x * h;
@@ -207,6 +251,43 @@ export class CharacterController {
                 this._flip = false;
                 this.trickFlip = 0;
             }
+        } else if (this.jetting) {
+            // Boba Fett mode. Thrust settles into a steady climb until the
+            // ceiling, where it hovers; the stick steers a flat glide and
+            // the body turns to face where it is going. The moment the key
+            // lifts, the ordinary ballistic branch takes the same velocity
+            // and flies it down to the same landing everyone else gets.
+            const lift = this.position.y - this.groundY;
+            const targetVy = lift < JET_CEIL ? JET_CLIMB : 0;
+            this.vy += (targetVy - this.vy) * Math.min(1, 3.2 * h);
+            this.position.y += this.vy * h;
+            this.airTuck = 0;
+
+            _wish.set(
+                _fwd.x * input.moveZ + _right.x * input.moveX,
+                0,
+                _fwd.z * input.moveZ + _right.z * input.moveX
+            );
+            const wl = Math.hypot(_wish.x, _wish.z);
+            if (wl > 0.001) {
+                const a = JET_ACCEL * h;
+                this.velocity.x += Scalar.Clamp(
+                    (_wish.x / wl) * JET_SPEED - this.velocity.x, -a, a);
+                this.velocity.z += Scalar.Clamp(
+                    (_wish.z / wl) * JET_SPEED - this.velocity.z, -a, a);
+                this.facing = angleDamp(
+                    this.facing, Math.atan2(_wish.x, _wish.z), 6, h);
+            } else {
+                const d = 6 * h;
+                const sp = Math.hypot(this.velocity.x, this.velocity.z);
+                if (sp > 0.0001) {
+                    const k = Math.max(0, sp - d) / sp;
+                    this.velocity.x *= k;
+                    this.velocity.z *= k;
+                }
+            }
+            // Flying into a rising slope: ride up its face, stay flying.
+            if (this.position.y < this.groundY) this.position.y = this.groundY;
         } else {
             this.airTime += h;
             this.vy -= AIR_G * h;
