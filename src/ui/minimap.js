@@ -20,6 +20,8 @@
  */
 
 import { PLAY_RADIUS } from "../terrain/heightfield.js";
+import { landmarkPoses } from "../terrain/landmark.js";
+import { S } from "../core/settings.js";
 
 /** Map half-extent in metres. A margin past the boundary shows the fence. */
 const RANGE = PLAY_RADIUS + 40;
@@ -114,6 +116,71 @@ export function initMinimap(terrain, sky, character) {
 
     const toMap = (w) => ((w + RANGE) / (RANGE * 2)) * size;
 
+    // ------------------------------------------------------- chart symbols
+    // The landmark complex, marked the way a chart marks it rather than left
+    // to be inferred from relief: rim circles on the twin craters, a dotted
+    // trace along the rille, solid ticks where the tube roofs stand (the
+    // places you can duck in and out), and a tiny arch glyph over the
+    // canyon. Positions come from the same closed-form mirror that places
+    // the meshes, so the symbols cannot drift off the things they mark.
+    const lm = landmarkPoses(Number(S.worldSeed));
+    const INK = (a) => `rgba(255, 246, 224, ${a})`;
+
+    function marks() {
+        const k = size / (RANGE * 2); // px per metre
+        const s = size / 168;
+
+        // Twin crater rims.
+        ctx.setLineDash([3 * s, 3.5 * s]);
+        ctx.strokeStyle = INK(0.26);
+        ctx.lineWidth = s;
+        for (const [c, r] of [[lm.c1, lm.r1], [lm.c2, lm.r2]]) {
+            ctx.beginPath();
+            ctx.arc(toMap(c.x), toMap(c.z), r * k, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // The rille: a dotted crawl along the tube network's course.
+        ctx.setLineDash([1.5 * s, 3 * s]);
+        ctx.strokeStyle = INK(0.30);
+        ctx.beginPath();
+        for (let i = 0; i < lm.rille.length; i++) {
+            const p = lm.rille[i];
+            if (i === 0) ctx.moveTo(toMap(p.x), toMap(p.z));
+            else ctx.lineTo(toMap(p.x), toMap(p.z));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // The roofed reaches: short solid strokes over the dots — the spans
+        // of tube still standing, drawn at true length and bearing.
+        ctx.strokeStyle = INK(0.55);
+        ctx.lineWidth = 2.2 * s;
+        for (const r of lm.roofs) {
+            ctx.beginPath();
+            ctx.moveTo(toMap(r.x - r.hx * r.len / 2), toMap(r.z - r.hz * r.len / 2));
+            ctx.lineTo(toMap(r.x + r.hx * r.len / 2), toMap(r.z + r.hz * r.len / 2));
+            ctx.stroke();
+        }
+
+        // The arch: a small ∩ astride the canyon, its opening aligned with
+        // the passage so the glyph says "go through this way".
+        const a = lm.arch;
+        ctx.save();
+        ctx.translate(toMap(a.x), toMap(a.z));
+        ctx.rotate(Math.atan2(-a.hx, a.hz));
+        ctx.strokeStyle = INK(0.60);
+        ctx.lineWidth = 1.4 * s;
+        const g = 3.4 * s;
+        ctx.beginPath();
+        ctx.moveTo(-g, g * 0.9);
+        ctx.lineTo(-g, 0);
+        ctx.arc(0, 0, g, Math.PI, Math.PI * 2);
+        ctx.lineTo(g, g * 0.9);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     return {
         /** Once per frame: blit the portrait, draw the rider. */
         frame() {
@@ -140,6 +207,8 @@ export function initMinimap(terrain, sky, character) {
             ctx.strokeStyle = "rgba(255, 246, 224, 0.28)";
             ctx.lineWidth = 1;
             ctx.stroke();
+
+            marks();
 
             // The rider: an arrow at their position, nose to their facing.
             // Forward is (sin f, cos f) in world x/z, which maps to

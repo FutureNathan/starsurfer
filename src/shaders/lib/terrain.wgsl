@@ -156,9 +156,12 @@ fn distSeg(p: vec2f, a: vec2f, b: vec2f) -> f32 {
 /// complex is singular per world, and that is its whole job.
 fn landmark(p: vec2f, seed: f32) -> f32 {
     let ang = seed * 2.399963;
-    let dist = 380.0 + fract(seed * 0.3170) * 220.0;
-    let c1 = vec2f(sin(ang), cos(ang)) * dist;
     let bigR = 120.0 + fract(seed * 0.7710) * 80.0;
+    // Distance capped by the crater's own size so the far rim never pokes
+    // past the 620 m play fence: dist + bigR <= 595, levee tail included.
+    // The whole complex has to be *surfable*, not scenery past the wall.
+    let dist = 340.0 + fract(seed * 0.3170) * (255.0 - bigR);
+    let c1 = vec2f(sin(ang), cos(ang)) * dist;
 
     // Everything below lives within this reach of the main ring; the rille
     // runs the furthest, so the early-out is generous.
@@ -183,7 +186,13 @@ fn landmark(p: vec2f, seed: f32) -> f32 {
     // A sinuous path out the ring's far side, sampled as a polyline. Ten
     // segments approximates the sine bend to well under a metre, and this
     // whole function runs in the height bake only — never per frame.
-    let phi3 = phi2 + 3.14159 + 0.5;
+    // Aimed *inward* — toward spawn, offset to the side the companion crater
+    // does not occupy. The first cut of this bearing hung off the small
+    // crater's back and ran outward, which put the dome and every tube reach
+    // beyond the play fence on essentially every seed: verified unreachable
+    // on the CPU mirror, then re-aimed here. Inward, the rille ends 350+ m
+    // from spawn at its closest and the tubes are always in bounds.
+    let phi3 = ang + 3.14159 + 0.95 + fract(seed * 0.2130) * 0.35;
     let dir3 = vec2f(sin(phi3), cos(phi3));
     let perp3 = vec2f(dir3.y, -dir3.x);
     var dRil = 1e9;

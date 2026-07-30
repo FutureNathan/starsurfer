@@ -25,13 +25,15 @@ function fract(x) {
  *   c2: {x:number,z:number}, r2: number,
  *   arch: {x:number,z:number,hx:number,hz:number},
  *   roofs: {x:number,z:number,hx:number,hz:number,len:number}[],
+ *   rille: {x:number,z:number}[],
  * }}
  */
 export function landmarkPoses(seed) {
     const ang = seed * 2.399963;
-    const dist = 380 + fract(seed * 0.317) * 220;
-    const c1 = { x: Math.sin(ang) * dist, z: Math.cos(ang) * dist };
     const r1 = 120 + fract(seed * 0.771) * 80;
+    // Capped so the far rim stays inside the 620 m play fence.
+    const dist = 340 + fract(seed * 0.317) * (255 - r1);
+    const c1 = { x: Math.sin(ang) * dist, z: Math.cos(ang) * dist };
 
     const phi2 = ang + 2.1 + fract(seed * 0.531) * 1.1;
     const d2 = { x: Math.sin(phi2), z: Math.cos(phi2) };
@@ -54,7 +56,8 @@ export function landmarkPoses(seed) {
 
     // The rille path, and the three roofed reaches along it. Midpoints and
     // tangents come from the same ten-segment polyline the bake marches.
-    const phi3 = phi2 + Math.PI + 0.5;
+    // Inward, clear of the companion crater — see the bake's note.
+    const phi3 = ang + Math.PI + 0.95 + fract(seed * 0.213) * 0.35;
     const d3 = { x: Math.sin(phi3), z: Math.cos(phi3) };
     const p3 = { x: d3.z, z: -d3.x };
     const at = (t) => {
@@ -78,5 +81,10 @@ export function landmarkPoses(seed) {
         });
     }
 
-    return { c1, r1, c2, r2, arch, roofs };
+    // The rille's own course, sampled along the same polyline — for anything
+    // that wants to draw it, which today is the mini-map's tube trace.
+    const rille = [];
+    for (let i = 0; i <= 12; i++) rille.push(at(i / 12));
+
+    return { c1, r1, c2, r2, arch, roofs, rille };
 }

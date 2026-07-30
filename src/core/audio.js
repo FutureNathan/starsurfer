@@ -65,6 +65,14 @@ export function initAudio() {
     const playlists = new Map();
     /** Files dropped for failing to load, so a bad file cannot loop forever. */
     const dead = new Set();
+    /**
+     * The last track heard, remembered across visits, so opening the link
+     * never starts on the same song twice running — random alone repeats
+     * its opener one visit in four with a four-track playlist, and that is
+     * exactly often enough to feel like "always the same one".
+     */
+    let lastTrack = null;
+    try { lastTrack = localStorage.getItem("ss-last-track"); } catch { /* private mode */ }
     let nowPlaying = null;
     let musicTimer = 0;
     /** @type {HTMLAudioElement|null} */
@@ -122,7 +130,14 @@ export function initAudio() {
             scheduleNext(10);
             return;
         }
-        const pick = pool[(Math.random() * pool.length) | 0];
+        // Skip whatever played last — across visits and within one — when
+        // there is anything else to play.
+        const fresh = pool.length > 1
+            ? pool.filter((tr) => tr.file !== lastTrack)
+            : pool;
+        const pick = fresh[(Math.random() * fresh.length) | 0];
+        lastTrack = pick.file;
+        try { localStorage.setItem("ss-last-track", pick.file); } catch { /* private mode */ }
         const el = new Audio("/music/" + pick.file);
         el.crossOrigin = "anonymous";
         // Disconnected when the track ends. Source nodes live as long as
