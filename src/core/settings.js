@@ -25,7 +25,10 @@ export const S = {
     // rather than colour.
     sunElevation: 13.0,
     sunIntensity: 4.2,
-    sunTempWarm: 1.0, // 0 = neutral white, 1 = full warm reddening
+    // Down from 1.0 in the grey-moon pass: at full warmth the star browned
+    // every sunlit surface into tan. A third keeps the light from going
+    // clinical while letting the regolith read as the grey it is.
+    sunTempWarm: 0.35,
     ambientIntensity: 1.0,
     ambientBlue: 1.0, // strength of the cool shadow shift
 

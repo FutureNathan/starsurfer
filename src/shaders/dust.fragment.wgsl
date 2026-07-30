@@ -379,7 +379,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let rayA = noise2(world.xz * vec2f(0.011, 0.0032) + vec2f(7.3, 2.1)) * 0.5 + 0.5;
     let rayB = noise2(world.xz * vec2f(0.0028, 0.010) + vec2f(1.9, 5.4)) * 0.5 + 0.5;
     let rays = smoothstep(0.56, 0.92, max(rayA, rayB));
-    albedo = mix(albedo, vec3f(0.150, 0.140, 0.128), rays * 0.16);
+    albedo = mix(albedo, vec3f(0.150, 0.152, 0.155), rays * 0.16);
+
+    // Crests pale, hollows dark — the tonal split every photograph of the
+    // moon carries. The aux bake's exposure channel already knows which is
+    // which (it is a wide Laplacian of the landform), so the crater floors
+    // and the swell hollows darken while rims and ridgelines lighten, and
+    // the ground stops being one continuous tone. A touch of absolute
+    // elevation on top, so the high country reads paler at range the way
+    // the highlands actually do.
+    albedo *= mix(0.80, 1.12, exposure);
+    albedo *= 0.96 + 0.08 * clamp(world.y / 110.0, 0.0, 1.0);
     // Regolith is one of the most matte surfaces in the solar system — a
     // fairy-castle structure of dust that backscatters and traps light, with
     // almost no coherent forward lobe. 0.78 gave it a satin sheen wherever
@@ -394,7 +404,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // the fluffy surface layer is exactly what destroys the structure that makes
     // it bright — this is why rover tracks are visible from orbit. It does not
     // become glossy; there is nothing here to melt.
-    albedo = mix(albedo, vec3f(0.062, 0.058, 0.055), compression * 0.85);
+    albedo = mix(albedo, vec3f(0.056, 0.057, 0.059), compression * 0.85);
     roughness = mix(roughness, 0.52, compression);
     thickness = mix(thickness, 0.35, compression);
 
@@ -416,7 +426,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let rockExposed = rockMask * smoothstep(0.32, 0.66, 1.0 - N.y);
     if (rockExposed > 0.001) {
         let rn = noise2(world.xz * 2.3) * 0.5 + 0.5;
-        let rockCol = mix(vec3f(0.078, 0.074, 0.069), vec3f(0.155, 0.148, 0.137), rn);
+        let rockCol = mix(vec3f(0.070, 0.072, 0.075), vec3f(0.146, 0.149, 0.154), rn);
         albedo = mix(albedo, rockCol, rockExposed);
         roughness = mix(roughness, 0.85, rockExposed);
         thickness = mix(thickness, 0.0, rockExposed);
@@ -439,7 +449,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // and no air, broken ground stays broken.
     if (deformBerm > 0.002) {
         let loose = clamp(deformBerm * 5.0, 0.0, 1.0);
-        albedo = mix(albedo, vec3f(0.170, 0.158, 0.146), loose * 0.55);
+        albedo = mix(albedo, vec3f(0.158, 0.160, 0.163), loose * 0.55);
         roughness = mix(roughness, 0.86, loose * 0.7);
         thickness = mix(thickness, 1.0, loose * 0.6);
         // Broken ground has facets pointing everywhere, which is where the chunky

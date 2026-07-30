@@ -140,6 +140,15 @@ export class CharacterController {
         this.airTime = 0;
         /** Visual-only spin the figure adds to its stance during the trick. */
         this.trickSpin = 0;
+        /**
+         * Visual-only front-flip angle, radians. A second Shift inside the
+         * first half of the arc converts the spin into a flip — double-tap
+         * is the bigger trick, and it buys a little extra pop to fit the
+         * rotation in.
+         */
+        this.trickFlip = 0;
+        this._flip = false;
+        this._flipT0 = 0;
         /** 0..1 through the arc — drives the crouch-and-grab tuck. */
         this.airTuck = 0;
         /** One-frame flag on touchdown, with the impact speed for feedback. */
@@ -188,19 +197,40 @@ export class CharacterController {
                 this.airborne = true;
                 this.vy = JUMP_V;
                 this.airTime = 0;
+                this._flip = false;
+                this.trickFlip = 0;
             }
         } else {
             this.airTime += h;
             this.vy -= AIR_G * h;
             this.position.y += this.vy * h;
 
+            // The second tap, early in the arc: convert to a front flip.
+            if (sprintEdge && !this._flip && this.airTime < 0.5) {
+                this._flip = true;
+                this._flipT0 = this.airTime;
+                this.vy += 0.7;
+            }
+
             // The trick: one full eased rotation across the expected hang,
             // and a tuck that peaks at the apex. Both are *visual* — the
-            // figure spins its stance and pulls its knees, the velocity
-            // never hears about it, so the landing carries straight on.
+            // figure spins or flips its stance and pulls its knees, the
+            // velocity never hears about it, so the landing carries on.
             const T = (2 * JUMP_V) / AIR_G;
             const p = Math.min(1, this.airTime / T);
-            this.trickSpin = Math.PI * 2 * (p * p * (3 - 2 * p));
+            if (this._flip) {
+                // The started spin eases back out while the flip takes over —
+                // two full rotations on two axes at once is a crash, not a
+                // trick.
+                this.trickSpin += (0 - this.trickSpin) * Math.min(1, 9 * h);
+                const q = Math.min(
+                    1,
+                    (this.airTime - this._flipT0) / (T + 0.18 - this._flipT0)
+                );
+                this.trickFlip = Math.PI * 2 * (q * q * (3 - 2 * q));
+            } else {
+                this.trickSpin = Math.PI * 2 * (p * p * (3 - 2 * p));
+            }
             this.airTuck = Math.sin(Math.PI * p);
 
             if (this.vy < 0 && this.position.y <= this.groundY) {
@@ -209,6 +239,8 @@ export class CharacterController {
                 this.landed = true;
                 this.landVy = -this.vy;
                 this.trickSpin = 0;
+                this.trickFlip = 0;
+                this._flip = false;
                 this.airTuck = 0;
                 rig.addTrauma(0.05 + Math.min(0.12, this.landVy * 0.02));
             }

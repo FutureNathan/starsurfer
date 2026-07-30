@@ -201,6 +201,7 @@ const _knee = new Float32Array(3);
 const _hip = new Float32Array(3);
 const _sh = new Float32Array(3);
 const _gnd = new Vector3(0, 1, 0);   // terrain normal under the board
+const _flipV = [0, 0, 0];            // scratch for the trick-flip rotation
 
 /**
  * Compose an orthonormal basis from yaw, then pitch about its own right axis,
@@ -379,6 +380,7 @@ export class Figure {
         // one; the lift raises everything rigidly; the tuck deepens the
         // crouch so the rotation reads as a grabbed trick, not a pirouette.
         const spinYaw = ch.facing + (ch.trickSpin || 0);
+        const flip = ch.trickFlip || 0;
         // `?? position.y` so a driver without ground bookkeeping reads as
         // grounded — NaN here would ride the root into every bone.
         const lift = Math.max(0, ch.position.y - (ch.groundY ?? ch.position.y));
@@ -443,7 +445,7 @@ export class Figure {
         // The travel-aligned frame. The legs and the feet are solved in this one
         // — a planted foot points where the figure is going, and while surfing
         // each boot is turned off it by its own angle in `_poseLeg`.
-        composeBasis(spinYaw, this.pitch, this.roll);
+        composeBasis(spinYaw, this.pitch + flip, this.roll);
         const rX = _axes[0], rY = _axes[1], rZ = _axes[2];
         const uX = _axes[3], uY = _axes[4], uZ = _axes[5];
         const fX = _axes[6], fY = _axes[7], fZ = _axes[8];
@@ -451,11 +453,35 @@ export class Figure {
         // Pelvis. Its yaw counter-rotates against the shoulders during a stride,
         // which is most of what stops a procedural walk reading as a shop dummy.
         const twist = (1 - surf) * 0.13 * run * Math.sin(2 * Math.PI * ch.gaitPhase);
-        composeBasis(spinYaw + twist, this.pitch, this.roll, open);
+        composeBasis(spinYaw + twist, this.pitch + flip, this.roll, open);
         const pRx = _axes[0], pRy = _axes[1], pRz = _axes[2];
         const pUx = _axes[3], pUy = _axes[4], pUz = _axes[5];
         const pFx = _axes[6], pFy = _axes[7], pFz = _axes[8];
         this._setBone(B_ROOT, gx, rootY, gz, pUx, pUy, pUz, pFx, pFy, pFz);
+
+        // The front flip: the feet (and with them the legs and the board,
+        // which follows the feet) orbit the hip about the stance's right
+        // axis, while every torso frame above picked up the same angle as
+        // extra pitch. One Rodrigues rotation per foot, once per frame,
+        // only while the trick is actually running.
+        if (flip > 0.0005) {
+            const ca = Math.cos(flip), sa = Math.sin(flip);
+            const ax = Math.cos(spinYaw), az = -Math.sin(spinYaw);
+            for (let f = 0; f < 2; f++) {
+                const o = f * 3;
+                const dx = this.footPos[o] - gx;
+                const dy = this.footPos[o + 1] - rootY;
+                const dz = this.footPos[o + 2] - gz;
+                const ad = ax * dx + az * dz;
+                // r x d with r = (ax, 0, az)
+                const cx = -az * dy;
+                const cy = az * dx - ax * dz;
+                const cz = ax * dy;
+                this.footPos[o] = gx + dx * ca + cx * sa + ax * ad * (1 - ca);
+                this.footPos[o + 1] = rootY + dy * ca + cy * sa;
+                this.footPos[o + 2] = gz + dz * ca + cz * sa + az * ad * (1 - ca);
+            }
+        }
 
         // Spine and chest lift along the pelvis up-axis, with the chest twisting
         // the opposite way and leaning a little further forward.
@@ -466,7 +492,7 @@ export class Figure {
         );
 
         const chestTwist = -twist * 1.5;
-        const chestPitch = this.pitch + 0.05 * run + surf * 0.10;
+        const chestPitch = this.pitch + flip + 0.05 * run + surf * 0.10;
         // The shoulders open a little further than the hips — about eight degrees
         // at a full stance. A surfer's chest leads the pelvis round, and the small
         // difference is what stops the torso reading as one rigid block.
@@ -484,7 +510,9 @@ export class Figure {
         // ------------------------------------------------------------- head
         // Head stabilisation: the head stays much closer to level than the chest
         // it sits on. Real necks do this and it is very obvious when missing.
-        this.headPitch = damp(this.headPitch, -chestPitch * 0.62 + surf * 0.10, 9, h);
+        this.headPitch = damp(
+            this.headPitch, -(chestPitch - flip) * 0.62 + surf * 0.10, 9, h
+        );
         this.headYaw = damp(this.headYaw, ch.lean * -0.22, 6, h);
         // The neck takes most of the stance back, so what is left is a head
         // turned about fifteen degrees off the direction of travel — looking down
@@ -770,7 +798,35 @@ export class Figure {
         // The underside rides on the dust the board has just compressed, which
         // is `sink` below the undisturbed surface — the same depth the contact
         // system is carving the groove to.
-        const rideY = groundY - this.sink + BOARD_HALF_T;
+        let rideY = groundY - this.sink + BOARD_HALF_T;
+        let ridePX = gx, ridePZ = gz;
+
+        // The front flip carries the board with the feet: the same hip pivot
+        // and right axis the feet orbit in `update`, applied to the riding
+        // position and both riding axes. See the flip note there.
+        const flip = ch.trickFlip || 0;
+        if (flip > 0.0005) {
+            const ca = Math.cos(flip), sa = Math.sin(flip);
+            const spinYaw = ch.facing + (ch.trickSpin || 0);
+            const ax = Math.cos(spinYaw), az = -Math.sin(spinYaw);
+            const pivotY = groundY - this.sink + this.hipY + this.bob;
+            const dy = rideY - pivotY;
+            ridePX = gx - az * dy * sa;
+            rideY = pivotY + dy * ca;
+            ridePZ = gz + ax * dy * sa;
+            const rot = (vx, vy, vz, out) => {
+                const ad = ax * vx + az * vz;
+                out[0] = vx * ca + (-az * vy) * sa + ax * ad * (1 - ca);
+                out[1] = vy * ca + (az * vx - ax * vz) * sa;
+                out[2] = vz * ca + (ax * vy) * sa + az * ad * (1 - ca);
+            };
+            rot(nx, ny, nz, _flipV);
+            nx = _flipV[0]; ny = _flipV[1]; nz = _flipV[2];
+            rot(bx, by, bz, _flipV);
+        }
+        const fbx = flip > 0.0005 ? _flipV[0] : bx;
+        const fby = flip > 0.0005 ? _flipV[1] : by;
+        const fbz = flip > 0.0005 ? _flipV[2] : bz;
 
         // ---- slung on the pack -------------------------------------------
         // Nose up and tilted twenty degrees back, deck facing outward. Both
@@ -798,11 +854,11 @@ export class Figure {
         // stowed attitude is ever retuned toward the direction of travel.
         this._setBone(
             B_BOARD,
-            sPx + (gx - sPx) * w,
+            sPx + (ridePX - sPx) * w,
             sPy + (rideY - sPy) * w,
-            sPz + (gz - sPz) * w,
+            sPz + (ridePZ - sPz) * w,
             sNx + (nx - sNx) * w, sNy + (ny - sNy) * w, sNz + (nz - sNz) * w,
-            sUx + (bx - sUx) * w, sUy + (by - sUy) * w, sUz + (bz - sUz) * w
+            sUx + (fbx - sUx) * w, sUy + (fby - sUy) * w, sUz + (fbz - sUz) * w
         );
     }
 

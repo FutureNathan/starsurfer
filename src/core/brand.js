@@ -73,14 +73,14 @@ export const HEX = {
      * against; a full moon's disc reflects about as much as worn asphalt.
      * Getting it right is most of the difference between a moon and a snowfield.
      */
-    regolith: "#64605c",
+    regolith: "#606164",
     /**
      * Mare basalt — the dark flood plains, roughly half as reflective and a
      * touch bluer. That contrast is why the moon has visible markings from a
      * quarter of a million miles away, and at ground level it is what stops a
      * crater field reading as one flat plane with holes in it.
      */
-    regolithDark: "#4a494a",
+    regolithDark: "#46484b",
     /**
      * Regolith thrown into the air — the wake's wall, its curtain, and the mass
      * a power lifts.

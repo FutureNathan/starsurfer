@@ -78,8 +78,8 @@ fn shadeRidge(hit: RidgeHit, dir: vec3f) -> vec3f {
     let steep = 1.0 - N.y;
     let dustMask = clamp(1.0 - smoothstep(0.46, 0.80, steep), 0.0, 1.0);
 
-    let rock  = vec3f(0.150, 0.143, 0.134);
-    let fines = vec3f(0.127, 0.117, 0.107);
+    let rock  = vec3f(0.140, 0.143, 0.148);
+    let fines = vec3f(0.117, 0.119, 0.127);
     var albedo = mix(rock, fines, dustMask);
 
     // Albedo texture, two octaves. Without it the range is a smooth field of
