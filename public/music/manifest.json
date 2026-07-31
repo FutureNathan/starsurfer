@@ -1,29 +1,69 @@
 {
-  "default": "Synthwave Chill",
+  "default": "Noor's Mixtape",
   "playlists": [
     {
       "name": "Synthwave Chill",
       "tracks": [
-        { "file": "still-you.mp3", "title": "Still You", "artist": "" },
-        { "file": "dreamy-synthwave.mp3", "title": "Dreamy Synthwave", "artist": "" },
-        { "file": "chill-lofi-study.mp3", "title": "Chill Lofi Study", "artist": "" },
-        { "file": "good-night-lofi.mp3", "title": "Good Night Lofi", "artist": "" }
+        {
+          "file": "still-you.mp3",
+          "title": "Still You",
+          "artist": ""
+        },
+        {
+          "file": "dreamy-synthwave.mp3",
+          "title": "Dreamy Synthwave",
+          "artist": ""
+        },
+        {
+          "file": "chill-lofi-study.mp3",
+          "title": "Chill Lofi Study",
+          "artist": ""
+        },
+        {
+          "file": "good-night-lofi.mp3",
+          "title": "Good Night Lofi",
+          "artist": ""
+        }
       ]
     },
     {
       "name": "Noor's Mixtape",
       "tracks": [
-        { "file": "hindi-love-rap.mp3", "title": "Hindi Love Rap", "artist": "" },
-        { "file": "indian-hip-hop.mp3", "title": "Indian Hip Hop", "artist": "" },
-        { "file": "indian-trap-beat.mp3", "title": "Indian Trap Beat", "artist": "" }
+        {
+          "file": "hindi-love-rap.mp3",
+          "title": "Hindi Love Rap",
+          "artist": ""
+        },
+        {
+          "file": "indian-hip-hop.mp3",
+          "title": "Indian Hip Hop",
+          "artist": ""
+        },
+        {
+          "file": "indian-trap-beat.mp3",
+          "title": "Indian Trap Beat",
+          "artist": ""
+        }
       ]
     },
     {
       "name": "STARSURFER Originals",
       "tracks": [
-        { "file": "drift.mp3", "title": "Drift", "artist": "a STARSURFER original" },
-        { "file": "low-gravity.mp3", "title": "Low Gravity", "artist": "a STARSURFER original" },
-        { "file": "afterglow.mp3", "title": "Afterglow", "artist": "a STARSURFER original" }
+        {
+          "file": "drift.mp3",
+          "title": "Drift",
+          "artist": "a STARSURFER original"
+        },
+        {
+          "file": "low-gravity.mp3",
+          "title": "Low Gravity",
+          "artist": "a STARSURFER original"
+        },
+        {
+          "file": "afterglow.mp3",
+          "title": "Afterglow",
+          "artist": "a STARSURFER original"
+        }
       ]
     }
   ]

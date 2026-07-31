@@ -20,7 +20,7 @@ import { POWERS } from "./powers.js";
 /** Seconds between clicks that makes the second one a rocket. */
 const DOUBLE = 0.33;
 /** Seconds the laser beam stays lit. */
-const BEAM_TIME = 0.7;
+const BEAM_TIME = 1.0;
 /**
  * Rocket cruise speed, m/s. Slow enough to *watch*: the missile pops off
  * the pack upward, then banks onto its locked target — the whole arc is
@@ -103,33 +103,36 @@ export class FlightWeapons {
                 1.2
             );
         }
-        // The beam itself lives as state: the target stays where it was
-        // struck, the origin rides the flyer, and `_beamTick` keeps the
-        // line dense every frame until it dies — a beam you can see, held
-        // long enough to mean it.
-        const beam = { tx: hx, ty: hy, tz: hz, ttl: BEAM_TIME };
+        // The beam itself lives as state: BOTH endpoints lock at the moment
+        // of firing — a dead-straight rod of light standing in the world
+        // for its full second, however the flyer moves — and `_beamTick`
+        // keeps the line dense every frame until it dies.
+        const beam = {
+            sx: ch.position.x, sy: ch.position.y + 1.1, sz: ch.position.z,
+            tx: hx, ty: hy, tz: hz, ttl: BEAM_TIME,
+        };
         this._beams.push(beam);
         this._beamTick(beam);
         ch.firedLaser = true;
     }
 
-    /** One frame of beam: a run of short-lived grains down the current ray. */
+    /** One frame of beam: a dense run of very short-lived grains down the
+     *  locked ray. Short lives are what keep the rod crisp — every frame
+     *  the line is mostly new. */
     _beamTick(b) {
-        const ch = this.ch;
-        const sx = ch.position.x, sy = ch.position.y + 1.1, sz = ch.position.z;
-        const dx = b.tx - sx, dy = b.ty - sy, dz = b.tz - sz;
+        const dx = b.tx - b.sx, dy = b.ty - b.sy, dz = b.tz - b.sz;
         const dist = Math.hypot(dx, dy, dz) || 1;
-        const n = Math.min(26, Math.max(8, (dist / 2.6) | 0));
+        const n = Math.min(42, Math.max(12, (dist / 1.6) | 0));
         const sp = this.spray;
         for (let i = 0; i < n; i++) {
             const u = Math.random();
             sp.emit(
-                sx + dx * u, sy + dy * u, sz + dz * u,
+                b.sx + dx * u, b.sy + dy * u, b.sz + dz * u,
                 0, 0, 0,
-                0.030 + Math.random() * 0.016,
-                0.08 + Math.random() * 0.05,
+                0.036 + Math.random() * 0.016,
+                0.05 + Math.random() * 0.04,
                 1,
-                14
+                16
             );
         }
         // A trickle of sparks at the struck point, all beam long.
@@ -224,8 +227,8 @@ export class FlightWeapons {
             this._beamTick(b);
             const ion0 = POWERS.ion;
             const bk = b.ttl / BEAM_TIME;
-            this.lights.add(b.tx, b.ty + 0.4, b.tz, 5,
-                ion0.hue[0], ion0.hue[1], ion0.hue[2], 10 * bk);
+            this.lights.add(b.tx, b.ty + 0.4, b.tz, 6,
+                ion0.hue[0], ion0.hue[1], ion0.hue[2], 16 * bk);
         }
 
         // Rockets fly: steered onto their locked target, the ground or the
@@ -244,30 +247,32 @@ export class FlightWeapons {
             r.vz += ((gz / gd) * ROCKET_V - r.vz) * gk;
             r.x += r.vx * dt; r.y += r.vy * dt; r.z += r.vz * dt;
 
-            // The missile itself: a fat glowing slug at the head, re-drawn
-            // every frame, with exhaust peeling off behind it.
-            for (let k = 0; k < 5; k++) {
+            // The missile itself: a big solid slug at the head — tight
+            // jitter, large grains — re-drawn every frame, with a modest
+            // wisp of exhaust behind it. The body should read first and the
+            // trail second, not the other way round.
+            for (let k = 0; k < 7; k++) {
                 this.spray.emit(
-                    r.x + (Math.random() - 0.5) * 0.14,
-                    r.y + (Math.random() - 0.5) * 0.14,
-                    r.z + (Math.random() - 0.5) * 0.14,
+                    r.x + (Math.random() - 0.5) * 0.10,
+                    r.y + (Math.random() - 0.5) * 0.10,
+                    r.z + (Math.random() - 0.5) * 0.10,
                     0, 0, 0,
-                    0.05 + Math.random() * 0.03,
-                    0.07 + Math.random() * 0.05,
+                    0.08 + Math.random() * 0.045,
+                    0.06 + Math.random() * 0.05,
                     1,
-                    14
+                    16
                 );
             }
-            for (let k = 0; k < 3; k++) {
+            for (let k = 0; k < 2; k++) {
                 this.spray.emit(
-                    r.x - r.vx * 0.03, r.y - r.vy * 0.03, r.z - r.vz * 0.03,
-                    (Math.random() - 0.5) * 1.4,
-                    (Math.random() - 0.5) * 1.4,
-                    (Math.random() - 0.5) * 1.4,
-                    0.022 + Math.random() * 0.022,
-                    0.25 + Math.random() * 0.20,
+                    r.x - r.vx * 0.035, r.y - r.vy * 0.035, r.z - r.vz * 0.035,
+                    (Math.random() - 0.5) * 1.0,
+                    (Math.random() - 0.5) * 1.0,
+                    (Math.random() - 0.5) * 1.0,
+                    0.014 + Math.random() * 0.012,
+                    0.12 + Math.random() * 0.10,
                     1,
-                    5
+                    6
                 );
             }
             const ion = POWERS.ion;

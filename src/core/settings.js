@@ -139,7 +139,7 @@ export const S = {
      */
     musicOn: true,
     musicVolume: 0.7,
-    musicPlaylist: "Synthwave Chill",
+    musicPlaylist: "Noor's Mixtape",
     sfxOn: true,
     sfxVolume: 0.7,
 
