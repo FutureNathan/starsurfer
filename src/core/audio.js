@@ -786,6 +786,13 @@ export function initAudio() {
                 reap(e2, e2g);
             }
             if (ch.martianDown) {
+                // The pop of the kill under the arcade confirm.
+                const px2 = noise(t);
+                const plp = filter("lowpass", 900);
+                const pg = env(t, 0.45, 0.008, 0.28);
+                px2.connect(plp); plp.connect(pg);
+                px2.stop(t + 0.35);
+                reap(px2, plp, pg);
                 for (let i = 0; i < 2; i++) {
                     const o = ctx.createOscillator();
                     o.type = "triangle";
@@ -795,6 +802,18 @@ export function initAudio() {
                     o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.14);
                     reap(o, og2);
                 }
+            }
+            // A hit that did not kill: a short metallic tick, so the count
+            // to three is audible.
+            if (ch.martianHit) {
+                const o = ctx.createOscillator();
+                o.type = "triangle";
+                o.frequency.setValueAtTime(1250, t);
+                o.frequency.exponentialRampToValueAtTime(700, t + 0.07);
+                const og3 = env(t, 0.16, 0.004, 0.08);
+                o.connect(og3);
+                o.start(t); o.stop(t + 0.1);
+                reap(o, og3);
             }
 
             // The superhero landing: a real thump — a pitch-dropping thud

@@ -28,12 +28,27 @@ import { S } from "../core/settings.js";
 const COUNT = 8;
 /** Martians keep inside this radius of the world centre, metres. */
 const WANDER_R = 560;
+/** Hit points. Both sides carry three — an even match, by request. */
+const HP = 3;
+const PLAYER_HP = 3;
 /** Metres inside which a martian turns hunter. */
-const HUNT_R = 14;
-/** Metres inside which the bolt charges. */
-const ATTACK_R = 9;
-/** Seconds of crackle before the bolt lands. */
-const BOLT_WINDUP = 0.75;
+const HUNT_R = 34;
+/** Metres inside which it plants and charges a bolt. */
+const FIRE_R = 28;
+/** Seconds of visible charge — the crackle and the swelling glow — before
+ *  the bolt leaves. This is the dodge window's opening bell. */
+const BOLT_WINDUP = 0.85;
+/** Bolt flight speed, m/s. Slow enough to sidestep, fast enough to demand
+ *  the sidestep. */
+const BOLT_SPEED = 12;
+const BOLT_HIT_R = 1.7;
+const BOLT_LIFE = 3.5;
+/** Seconds between shots, per martian. */
+const COOLDOWN = 2.2;
+/** Seconds of grace after taking a hit. */
+const HIT_INVULN = 1.2;
+/** Seconds a hit martian staggers. */
+const STAGGER = 0.45;
 /** Metres of weapon auto-lock, from the player. */
 const LOCK_R = 45;
 /** Seconds a dead martian stays gone. */
@@ -152,16 +167,24 @@ export class MartianMode {
         this.active = false;
         this.dead = false;
         this.score = 0;
+        this.hp = PLAYER_HP;
         this._invuln = 0;
         this._t = 0;
 
+        /** Live bolt projectiles — the dodgeable part of the fight.
+         * @type {{x:number,y:number,z:number,vx:number,vy:number,vz:number,
+         *         life:number}[]} */
+        this._bolts = [];
+
         /** @type {{x:number,z:number,heading:number,bob:number,alive:boolean,
-         *          respawn:number,windup:number,mesh:any}[]} */
+         *          hp:number,respawn:number,windup:number,cooldown:number,
+         *          stagger:number,mesh:any}[]} */
         this.martians = [];
         for (let i = 0; i < COUNT; i++) {
             this.martians.push({
                 x: 0, z: 0, heading: 0, bob: Math.random() * 7,
-                alive: false, respawn: 0, windup: 0, mesh: null,
+                alive: false, hp: HP, respawn: 0, windup: 0,
+                cooldown: 0, stagger: 0, mesh: null,
             });
         }
 
@@ -266,7 +289,9 @@ export class MartianMode {
     }
 
     _chipText() {
-        if (this._chip) this._chip.textContent = `☠ ${this.score}`;
+        if (!this._chip) return;
+        const hearts = "♥".repeat(this.hp) + "♡".repeat(PLAYER_HP - this.hp);
+        this._chip.textContent = `☠ ${this.score}   ${hearts}`;
     }
 
     _showDeath() {
@@ -341,17 +366,21 @@ export class MartianMode {
         this.active = true;
         this.dead = false;
         this.score = 0;
+        this.hp = PLAYER_HP;
+        this._bolts.length = 0;
         this._invuln = INVULN;
         for (const m of this.martians) this._spawn(m);
         if (this._chip) {
             this._chip.style.display = "";
             this._chipText();
         }
-        // The weapons lock on while the hunt is on.
+        // The weapons lock on while the hunt is on. A laser is one point of
+        // damage; a rocket's blast is the full three — the explosion is the
+        // heavy answer.
         const w = this.weapons;
         if (w) {
             w.getLock = () => this._nearestLock();
-            w.onHit = (lock) => { if (lock.ref) this._kill(lock.ref); };
+            w.onHit = (lock) => { if (lock.ref) this._damage(lock.ref, 1); };
             w.onBlast = (x, y, z, r) => this._blast(x, y, z, r);
         }
     }
@@ -360,6 +389,7 @@ export class MartianMode {
         if (!this.active) return;
         this.active = false;
         this.dead = false;
+        this._bolts.length = 0;
         for (const m of this.martians) {
             m.alive = false;
             if (m.mesh) m.mesh.isVisible = false;
@@ -373,6 +403,8 @@ export class MartianMode {
     restart() {
         this.dead = false;
         this.score = 0;
+        this.hp = PLAYER_HP;
+        this._bolts.length = 0;
         this._invuln = INVULN;
         this._chipText();
         const ch = this.ch;
@@ -399,7 +431,10 @@ export class MartianMode {
         }
         m.heading = Math.random() * Math.PI * 2;
         m.alive = true;
+        m.hp = HP;
         m.windup = 0;
+        m.cooldown = 0;
+        m.stagger = 0;
         m.respawn = 0;
         if (m.mesh) m.mesh.isVisible = true;
     }
@@ -421,8 +456,37 @@ export class MartianMode {
         };
     }
 
-    _kill(m) {
+    /**
+     * A hit on a martian. One point of damage flashes and staggers; the
+     * third is the kill — a real little explosion, a scorch on the ground,
+     * and the score.
+     */
+    _damage(m, amount) {
         if (!m.alive) return;
+        m.hp -= amount;
+        const gy = this.terrain.heightAt(m.x, m.z);
+        if (m.hp > 0) {
+            m.stagger = STAGGER;
+            this.ch.martianHit = true;
+            if (this.spray) {
+                for (let i = 0; i < 12; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    this.spray.emit(
+                        m.x, gy + 0.9 + Math.random() * 0.6, m.z,
+                        Math.cos(a) * (1 + Math.random() * 2.5),
+                        0.8 + Math.random() * 2,
+                        Math.sin(a) * (1 + Math.random() * 2.5),
+                        0.018 + Math.random() * 0.02,
+                        0.25 + Math.random() * 0.3,
+                        1, 1.6
+                    );
+                }
+            }
+            this._pulse = { x: m.x, y: gy + 1, z: m.z, ttl: 0.22 };
+            return;
+        }
+
+        // The kill: down, exploded, scored, and replaced elsewhere.
         m.alive = false;
         m.respawn = RESPAWN_T;
         m.windup = 0;
@@ -430,63 +494,93 @@ export class MartianMode {
         this.score += 1;
         this._chipText();
         this.ch.martianDown = true;
-        const gy = this.terrain.heightAt(m.x, m.z);
+        this.terrain.deform?.brush?.(
+            m.x, m.z, 0.9, 0.10, 0.08, 0.9, 0.35, m.heading, 1.1, 1.0
+        );
         if (this.spray) {
-            for (let i = 0; i < 40; i++) {
+            for (let i = 0; i < 64; i++) {
                 const a = Math.random() * Math.PI * 2;
+                const clod = Math.random() < 0.35 ? 1 : 0;
                 this.spray.emit(
-                    m.x, gy + 0.6 + Math.random() * 0.8, m.z,
-                    Math.cos(a) * (1.5 + Math.random() * 4),
-                    1 + Math.random() * 4,
-                    Math.sin(a) * (1.5 + Math.random() * 4),
-                    0.025 + Math.random() * 0.03,
-                    0.4 + Math.random() * 0.6,
-                    1, 1.4
+                    m.x, gy + 0.5 + Math.random() * 1.0, m.z,
+                    Math.cos(a) * (2 + Math.random() * 5.5),
+                    1.2 + Math.random() * 5,
+                    Math.sin(a) * (2 + Math.random() * 5.5),
+                    clod ? 0.02 + Math.random() * 0.02 : 0.03 + Math.random() * 0.04,
+                    0.5 + Math.random() * 0.8,
+                    clod, clod ? 0.8 : 1.6
                 );
             }
         }
-        this._pulse = { x: m.x, y: gy + 1, z: m.z, ttl: 0.4 };
+        this._pulse = { x: m.x, y: gy + 1, z: m.z, ttl: 0.5 };
     }
 
     _blast(x, y, z, r) {
         for (const m of this.martians) {
             if (!m.alive) continue;
             const gy = this.terrain.heightAt(m.x, m.z);
-            if (Math.hypot(m.x - x, gy + 1 - y, m.z - z) < r) this._kill(m);
+            if (Math.hypot(m.x - x, gy + 1 - y, m.z - z) < r) {
+                this._damage(m, HP);
+            }
         }
     }
 
-    _bolt(m) {
+    /**
+     * The charged shot leaves: a slow, bright bolt projectile aimed at where
+     * the player is heading, not just where they are — dodging is a change
+     * of direction, which is the shooter contract.
+     */
+    _fireBolt(m) {
         const ch = this.ch;
-        ch.boltShock = true;
-        this.rig?.addTrauma?.(0.6);
         const gy = this.terrain.heightAt(m.x, m.z);
+        const sx = m.x, sy = gy + 1.4, sz = m.z;
+        const tx = ch.position.x + (ch.velocity.x || 0) * 0.35;
+        const ty = ch.position.y + 0.9;
+        const tz = ch.position.z + (ch.velocity.z || 0) * 0.35;
+        let dx = tx - sx, dy = ty - sy, dz = tz - sz;
+        const l = Math.hypot(dx, dy, dz) || 1;
+        this._bolts.push({
+            x: sx, y: sy, z: sz,
+            vx: (dx / l) * BOLT_SPEED,
+            vy: (dy / l) * BOLT_SPEED,
+            vz: (dz / l) * BOLT_SPEED,
+            life: 0,
+        });
+        m.windup = 0;
+        m.cooldown = COOLDOWN;
+    }
+
+    /** A bolt connected. One heart; the third is the death screen. */
+    _playerHit(x, y, z) {
+        const ch = this.ch;
+        if (this._invuln > 0 || this.dead) return;
+        this.hp -= 1;
+        this._invuln = HIT_INVULN;
+        ch.boltShock = true;
+        this.rig?.addTrauma?.(0.45);
+        this._chipText();
         if (this.spray) {
-            // The bolt: a jagged run of hot grains from the martian's helmet
-            // to the suit it just ended.
-            const sx = m.x, sy = gy + 1.4, sz = m.z;
-            const dx = ch.position.x - sx,
-                  dy = ch.position.y + 1.0 - sy,
-                  dz = ch.position.z - sz;
-            for (let i = 0; i < 46; i++) {
-                const u = Math.random();
+            for (let i = 0; i < 26; i++) {
+                const a = Math.random() * Math.PI * 2;
                 this.spray.emit(
-                    sx + dx * u + (Math.random() - 0.5) * 0.5,
-                    sy + dy * u + (Math.random() - 0.5) * 0.5,
-                    sz + dz * u + (Math.random() - 0.5) * 0.5,
-                    0, 0, 0,
-                    0.03 + Math.random() * 0.02,
-                    0.15 + Math.random() * 0.2,
-                    1, 10
+                    ch.position.x, ch.position.y + 0.7 + Math.random() * 0.6,
+                    ch.position.z,
+                    Math.cos(a) * (1.5 + Math.random() * 3),
+                    1 + Math.random() * 3,
+                    Math.sin(a) * (1.5 + Math.random() * 3),
+                    0.02 + Math.random() * 0.02,
+                    0.2 + Math.random() * 0.3,
+                    1, 2
                 );
             }
         }
-        this._pulse = { x: m.x, y: gy + 1.4, z: m.z, ttl: 0.5 };
-        m.windup = 0;
-        this.dead = true;
-        ch.velocity.x = 0;
-        ch.velocity.z = 0;
-        this._showDeath();
+        this._pulse = { x, y, z, ttl: 0.35 };
+        if (this.hp <= 0) {
+            this.dead = true;
+            ch.velocity.x = 0;
+            ch.velocity.z = 0;
+            this._showDeath();
+        }
     }
 
     /** Once per frame from the main loop, before the audio reads the flags. */
@@ -494,6 +588,7 @@ export class MartianMode {
         const ch = this.ch;
         ch.boltShock = false;
         ch.martianDown = false;
+        ch.martianHit = false;
         if (!this.active) return;
 
         this._t += dt;
@@ -522,6 +617,9 @@ export class MartianMode {
             const gy = this.terrain.heightAt(m.x, m.z);
             const d3 = Math.hypot(dx, dz, ch.position.y - gy);
 
+            m.cooldown = Math.max(0, m.cooldown - dt);
+            m.stagger = Math.max(0, m.stagger - dt);
+
             // Wander, or hunt when the prey is close.
             if (!this.dead && d3 < HUNT_R) {
                 const want = Math.atan2(dx, dz);
@@ -533,11 +631,15 @@ export class MartianMode {
                 m.heading += (Math.random() - 0.5) * 1.7 * dt;
             }
 
-            // Attack: stop, crackle, discharge.
-            const attacking = !this.dead && this._invuln <= 0 && d3 < ATTACK_R;
-            if (attacking) {
+            // Attack: plant, charge visibly, loose the bolt. The charge is
+            // the warning — crackle off the helmet and a glow that swells
+            // for most of a second before anything leaves. Break the range
+            // and the charge drains; the shot itself is dodged in flight.
+            const charging = !this.dead && this._invuln <= 0
+                && m.stagger <= 0 && m.cooldown <= 0 && d3 < FIRE_R;
+            if (charging) {
                 m.windup += dt;
-                if (this.spray && Math.random() < 0.6) {
+                if (this.spray && Math.random() < 0.7) {
                     this.spray.emit(
                         m.x + (Math.random() - 0.5) * 0.5,
                         gy + 1.3 + (Math.random() - 0.5) * 0.4,
@@ -547,12 +649,17 @@ export class MartianMode {
                         0.02, 0.12 + Math.random() * 0.1, 1, 8
                     );
                 }
-                if (m.windup >= BOLT_WINDUP) this._bolt(m);
+                this.lights?.add(m.x, gy + 1.4, m.z, 6, 0.35, 1.0, 0.45,
+                    16 * (m.windup / BOLT_WINDUP));
+                if (m.windup >= BOLT_WINDUP) this._fireBolt(m);
             } else {
                 m.windup = Math.max(0, m.windup - dt * 2);
             }
 
-            const speed = attacking ? 0.4 : RUN_SPEED;
+            const speed = m.stagger > 0 ? 0
+                : charging ? 0.35
+                : (!this.dead && d3 < HUNT_R) ? 2.4
+                : RUN_SPEED;
             m.x += Math.sin(m.heading) * speed * dt;
             m.z += Math.cos(m.heading) * speed * dt;
             const r = Math.hypot(m.x, m.z);
@@ -586,6 +693,57 @@ export class MartianMode {
                     0.5 + Math.random() * 0.5,
                     0, 4
                 );
+            }
+        }
+
+        // The bolts in flight: bright, slow, and honest — a crackling head
+        // with its own light, killable by footwork alone. The ground fizzles
+        // them; the player they were promised to costs one heart.
+        const bolts = this._bolts;
+        for (let i = bolts.length - 1; i >= 0; i--) {
+            const b = bolts[i];
+            b.life += dt;
+            b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+            if (this.spray) {
+                for (let k = 0; k < 3; k++) {
+                    this.spray.emit(
+                        b.x + (Math.random() - 0.5) * 0.22,
+                        b.y + (Math.random() - 0.5) * 0.22,
+                        b.z + (Math.random() - 0.5) * 0.22,
+                        0, 0, 0,
+                        0.035 + Math.random() * 0.02,
+                        0.07 + Math.random() * 0.05,
+                        1, 14
+                    );
+                }
+            }
+            this.lights?.add(b.x, b.y, b.z, 6, 0.35, 1.0, 0.45, 9);
+
+            const pd = Math.hypot(
+                b.x - ch.position.x,
+                b.y - (ch.position.y + 0.9),
+                b.z - ch.position.z
+            );
+            const grounded = b.y <= this.terrain.heightAt(b.x, b.z) + 0.1;
+            if (pd < BOLT_HIT_R && !this.dead) {
+                this._playerHit(b.x, b.y, b.z);
+                bolts.splice(i, 1);
+            } else if (grounded || b.life > BOLT_LIFE) {
+                if (grounded && this.spray) {
+                    for (let k = 0; k < 10; k++) {
+                        const a = Math.random() * Math.PI * 2;
+                        this.spray.emit(
+                            b.x, b.y + 0.05, b.z,
+                            Math.cos(a) * (1 + Math.random() * 2),
+                            0.8 + Math.random() * 1.6,
+                            Math.sin(a) * (1 + Math.random() * 2),
+                            0.016 + Math.random() * 0.016,
+                            0.2 + Math.random() * 0.25,
+                            1, 1.6
+                        );
+                    }
+                }
+                bolts.splice(i, 1);
             }
         }
     }

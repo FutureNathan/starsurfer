@@ -464,9 +464,10 @@ export function initPauseMenu(canvas, overlay, audio, touch, modes) {
                     </button>
                     <button class="pm-mode" data-mode="martian">
                         <b>MARTIAN HUNT</b>
-                        <span>green martians on the ground; get close and their
-                        lightning ends the run. Fly, lock, fire — one point a
-                        martian, and they keep coming</span>
+                        <span>green martians hunt you with slow lightning bolts
+                        you can dodge — three hits ends either side. Lasers,
+                        rockets and auto-lock from foot, board or air; one
+                        point a martian, and they keep coming</span>
                     </button>
                     <div class="pm-h">top twenty — martian hunt</div>
                     <ol id="pm-scores"></ol>

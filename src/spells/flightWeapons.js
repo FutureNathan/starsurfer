@@ -1,8 +1,8 @@
 /**
- * The flight weapons. One click: a laser bolt. Two clicks inside a third of
- * a second: the second one is a rocket. Both fire only while the pack is
- * burning, and both aim where the camera aims — marched down to the ground,
- * because on a moon the ground is what there is to hit.
+ * The weapons. One click: a laser bolt. Two clicks inside a third of a
+ * second: the second one is a rocket. They fire from anywhere — walking,
+ * surfing, or on the pack — and aim where the camera aims, marched down to
+ * the ground, because on a moon the ground is what there is to hit.
  *
  * Neither weapon owns a mesh or a shader. The laser is a line of charged
  * grains laid down the ray in one frame and dead a tenth of a second later
@@ -234,7 +234,9 @@ export class FlightWeapons {
         ch.firedRocket = false;
         ch.rocketBoom = false;
 
-        if (input.firePressed && ch.jetting) {
+        // Fire from anywhere — foot, board, or air. The pack was the gate
+        // once, but a shooter arms the astronaut, not the jetpack.
+        if (input.firePressed) {
             if (this._t - this._lastFire < DOUBLE) this._fireRocket();
             else this._fireLaser();
             this._lastFire = this._t;
