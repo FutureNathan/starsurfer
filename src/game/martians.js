@@ -31,20 +31,26 @@ const WANDER_R = 560;
 /** Hit points. Both sides carry three — an even match, by request. */
 const HP = 3;
 const PLAYER_HP = 3;
-/** Metres inside which a martian turns hunter. */
-const HUNT_R = 34;
-/** Metres inside which it plants and charges a bolt. */
-const FIRE_R = 28;
-/** Seconds of visible charge — the crackle and the swelling glow — before
- *  the bolt leaves. This is the dodge window's opening bell. */
-const BOLT_WINDUP = 0.85;
-/** Bolt flight speed, m/s. Slow enough to sidestep, fast enough to demand
- *  the sidestep. */
-const BOLT_SPEED = 12;
+/**
+ * Escalation. Every kill raises the threat level (capped), and each
+ * REPLACEMENT spawns at the current level: hunting from farther, running
+ * harder, charging faster, leading your movement better, and — past level
+ * five — strafing sideways between shots instead of standing to be shot.
+ * Veterans are visibly bigger, so a big martian read means "respect this
+ * one" before it proves it. The numbers below are level-zero baselines and
+ * per-level steps.
+ */
+const LVL_CAP = 20;
+const HUNT_R0 = 34, HUNT_R_STEP = 6;        // up to 154 m at cap
+const FIRE_R0 = 28, FIRE_R_STEP = 2;        // up to 68 m
+const RUN0 = 3.4, RUN_STEP = 0.22;          // up to ~7.8 m/s
+const WINDUP0 = 0.85, WINDUP_STEP = 0.02, WINDUP_MIN = 0.5;
+const COOLDOWN0 = 2.2, COOLDOWN_STEP = 0.06, COOLDOWN_MIN = 1.2;
+const BOLT_V0 = 12, BOLT_V_STEP = 0.45;     // up to ~21 m/s
+const LEAD0 = 0.35, LEAD_STEP = 0.03;       // up to ~0.95 s of your velocity
+const STRAFE_LVL = 5;
 const BOLT_HIT_R = 1.7;
 const BOLT_LIFE = 3.5;
-/** Seconds between shots, per martian. */
-const COOLDOWN = 2.2;
 /** Seconds of grace after taking a hit. */
 const HIT_INVULN = 1.2;
 /** Seconds a hit martian staggers. */
@@ -61,7 +67,6 @@ const AMMO_CAP = 9;
 const PACK_RESPAWN = 18;
 /** Seconds of grace after a restart. */
 const INVULN = 2.5;
-const RUN_SPEED = 3.4;
 
 const STORE_KEY = "ss-martian-scores";
 
@@ -342,7 +347,8 @@ export class MartianMode {
     _chipText() {
         if (!this._chip) return;
         const hearts = "♥".repeat(this.hp) + "♡".repeat(PLAYER_HP - this.hp);
-        this._chip.textContent = `☠ ${this.score}   ${hearts}`;
+        this._chip.textContent =
+            `☠ ${this.score}   ${hearts}   ⚠ threat ${this.level()}`;
     }
 
     _showDeath() {
@@ -353,6 +359,7 @@ export class MartianMode {
                 <h1>⚡ SHOCKED</h1>
                 <div>a martian put lightning through your suit</div>
                 <div class="mz-score">☠ ${this.score}</div>
+                <div>threat level reached: ${this.level()}</div>
                 ${q ? `
                     <div>that places in the top twenty</div>
                     <input id="mz-name" maxlength="16" placeholder="your name" />
@@ -491,6 +498,11 @@ export class MartianMode {
         if (this._panel) this._panel.style.display = "none";
     }
 
+    /** The current threat level: one per kill so far, capped. */
+    level() {
+        return Math.min(LVL_CAP, this.score);
+    }
+
     _spawn(m) {
         const ch = this.ch;
         // An annulus around the player: near enough to matter, never on top.
@@ -510,7 +522,26 @@ export class MartianMode {
         m.cooldown = 0;
         m.stagger = 0;
         m.respawn = 0;
-        if (m.mesh) m.mesh.isVisible = true;
+        m.flash = 0;
+
+        // The replacement is a veteran of everything you have done so far.
+        const lvl = this.level();
+        m.gen = lvl;
+        m.huntR = HUNT_R0 + lvl * HUNT_R_STEP;
+        m.fireR = FIRE_R0 + lvl * FIRE_R_STEP;
+        m.runSpeed = RUN0 + lvl * RUN_STEP;
+        m.windupT = Math.max(WINDUP_MIN, WINDUP0 - lvl * WINDUP_STEP);
+        m.cooldownT = Math.max(COOLDOWN_MIN, COOLDOWN0 - lvl * COOLDOWN_STEP);
+        m.boltV = BOLT_V0 + lvl * BOLT_V_STEP;
+        m.lead = LEAD0 + lvl * LEAD_STEP;
+        m.strafes = lvl >= STRAFE_LVL;
+        m.strafeDir = Math.random() < 0.5 ? -1 : 1;
+
+        if (m.mesh) {
+            m.mesh.isVisible = true;
+            // The veteran's tell: up to thirty percent bigger at the cap.
+            m.mesh.scaling.setAll(1 + Math.min(10, lvl) * 0.03);
+        }
     }
 
     // ------------------------------------------------------------ ammo packs
@@ -705,20 +736,24 @@ export class MartianMode {
         const ch = this.ch;
         const gy = this.terrain.heightAt(m.x, m.z);
         const sx = m.x, sy = gy + 1.4, sz = m.z;
-        const tx = ch.position.x + (ch.velocity.x || 0) * 0.35;
+        // The veterans lead the target harder — dodging them takes a real
+        // change of direction, not a stroll.
+        const lead = m.lead || LEAD0;
+        const v = m.boltV || BOLT_V0;
+        const tx = ch.position.x + (ch.velocity.x || 0) * lead;
         const ty = ch.position.y + 0.9;
-        const tz = ch.position.z + (ch.velocity.z || 0) * 0.35;
+        const tz = ch.position.z + (ch.velocity.z || 0) * lead;
         let dx = tx - sx, dy = ty - sy, dz = tz - sz;
         const l = Math.hypot(dx, dy, dz) || 1;
         this._bolts.push({
             x: sx, y: sy, z: sz,
-            vx: (dx / l) * BOLT_SPEED,
-            vy: (dy / l) * BOLT_SPEED,
-            vz: (dz / l) * BOLT_SPEED,
+            vx: (dx / l) * v,
+            vy: (dy / l) * v,
+            vz: (dz / l) * v,
             life: 0,
         });
         m.windup = 0;
-        m.cooldown = COOLDOWN;
+        m.cooldown = m.cooldownT || COOLDOWN0;
     }
 
     /** A bolt connected. One heart; the third is the death screen. */
@@ -794,8 +829,10 @@ export class MartianMode {
             m.cooldown = Math.max(0, m.cooldown - dt);
             m.stagger = Math.max(0, m.stagger - dt);
 
-            // Wander, or hunt when the prey is close.
-            if (!this.dead && d3 < HUNT_R) {
+            // Wander, or hunt when the prey is inside this one's own range —
+            // which the veterans stretch far past the rookies'.
+            const hunting = !this.dead && d3 < (m.huntR || HUNT_R0);
+            if (hunting) {
                 const want = Math.atan2(dx, dz);
                 let delta = want - m.heading;
                 while (delta > Math.PI) delta -= Math.PI * 2;
@@ -807,10 +844,13 @@ export class MartianMode {
 
             // Attack: plant, charge visibly, loose the bolt. The charge is
             // the warning — crackle off the helmet and a glow that swells
-            // for most of a second before anything leaves. Break the range
-            // and the charge drains; the shot itself is dodged in flight.
+            // before anything leaves (less of it, the older the soldier).
+            // Break the range and the charge drains; the shot itself is
+            // dodged in flight.
+            const windupT = m.windupT || WINDUP0;
             const charging = !this.dead && this._invuln <= 0
-                && m.stagger <= 0 && m.cooldown <= 0 && d3 < FIRE_R;
+                && m.stagger <= 0 && m.cooldown <= 0
+                && d3 < (m.fireR || FIRE_R0);
             if (charging) {
                 m.windup += dt;
                 if (this.spray && Math.random() < 0.7) {
@@ -824,18 +864,29 @@ export class MartianMode {
                     );
                 }
                 this.lights?.add(m.x, gy + 1.4, m.z, 6, 0.35, 1.0, 0.45,
-                    16 * (m.windup / BOLT_WINDUP));
-                if (m.windup >= BOLT_WINDUP) this._fireBolt(m);
+                    16 * (m.windup / windupT));
+                if (m.windup >= windupT) this._fireBolt(m);
             } else {
                 m.windup = Math.max(0, m.windup - dt * 2);
             }
 
-            const speed = m.stagger > 0 ? 0
-                : charging ? 0.35
-                : (!this.dead && d3 < HUNT_R) ? 2.4
-                : RUN_SPEED;
-            m.x += Math.sin(m.heading) * speed * dt;
-            m.z += Math.cos(m.heading) * speed * dt;
+            // Veterans do not stand around between shots: while the bolt
+            // recharges they slide sideways across your aim, flipping
+            // direction now and then — the strafe that makes them harder
+            // to laser and smarter to fight.
+            let speed;
+            let moveHeading = m.heading;
+            const run = m.runSpeed || RUN0;
+            if (m.stagger > 0) speed = 0;
+            else if (charging) speed = 0.35;
+            else if (hunting && m.strafes && m.cooldown > 0) {
+                speed = run * 0.8;
+                if (Math.random() < dt * 0.7) m.strafeDir *= -1;
+                moveHeading = m.heading + m.strafeDir * Math.PI / 2;
+            } else if (hunting) speed = Math.min(run, 2.4 + (m.gen || 0) * 0.25);
+            else speed = run;
+            m.x += Math.sin(moveHeading) * speed * dt;
+            m.z += Math.cos(moveHeading) * speed * dt;
             const r = Math.hypot(m.x, m.z);
             if (r > WANDER_R) {
                 // Turn back toward the middle rather than clipping the fence.

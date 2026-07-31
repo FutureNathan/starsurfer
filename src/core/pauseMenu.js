@@ -465,11 +465,12 @@ export function initPauseMenu(canvas, overlay, audio, touch, modes) {
                     </button>
                     <button class="pm-mode" data-mode="martian">
                         <b>MARTIAN HUNT</b>
-                        <span>green martians hunt you with slow lightning bolts
-                        you can dodge — three hits ends either side. Aim the
-                        laser with the crosshair; missiles auto-lock but eat
-                        ammo from the glowing crates. One point a martian,
-                        and they keep coming</span>
+                        <span>green martians hunt you with lightning bolts you
+                        can dodge — three hits ends either side. Aim the laser
+                        with the crosshair; missiles auto-lock but eat ammo
+                        from the glowing crates. Every kill breeds a meaner
+                        replacement: wider hunting range, faster, sharper aim
+                        — and the veterans are visibly bigger</span>
                     </button>
                     <div class="pm-h">top twenty — martian hunt</div>
                     <ol id="pm-scores"></ol>
