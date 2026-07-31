@@ -16,9 +16,12 @@
 
 import { input } from "../core/input.js";
 import { POWERS } from "./powers.js";
+import { groundRay } from "./bending.js";
 
 /** Seconds between clicks that makes the second one a rocket. */
 const DOUBLE = 0.33;
+/** Metres of aim-ray reach. Past this a shot just flies out along the ray. */
+const RANGE = 360;
 /** Seconds the laser beam stays lit. */
 const BEAM_TIME = 1.0;
 /**
@@ -73,6 +76,12 @@ export class FlightWeapons {
         this.getLock = null;
         this.onHit = null;
         this.onBlast = null;
+
+        /** Where the last aim ray left from — the eye, or the chest when
+         *  headless. The target hit test runs from here, not the muzzle. */
+        this._eyeX = 0;
+        this._eyeY = 0;
+        this._eyeZ = 0;
 
         /**
          * Missile ammo. Lasers are the sidearm — free forever; the guided
@@ -149,37 +158,62 @@ export class FlightWeapons {
     }
 
     /**
-     * March the camera ray onto the terrain. Aimed at the sky, the march
-     * runs out and the far point serves as the target instead — a rocket
-     * fired at the stars simply flies that way until its motor gives out.
+     * Where the reticle actually points.
+     *
+     * The reticle is the camera's own ray, so the aim has to be too. The
+     * spring arm hangs the lens over the shoulder and above the pivot, so a
+     * ray cast from the chest along a parallel forward — the old scheme —
+     * landed beside and below the crosshair by the whole camera offset, and
+     * its 4-metre march could overshoot a grazing crest by metres on top.
+     * This one runs from the eye through the centre of the screen, and it
+     * runs fine: `groundRay` steps 0.6 m and bisects to centimetres. The rig
+     * already keeps the whole arm out of the dust, so the first surface this
+     * ray meets is never between the camera and the rider.
+     *
+     * Aimed at the sky, the ray runs out and the far point serves as the
+     * target instead — a rocket fired at the stars simply flies that way
+     * until its motor gives out. The mode's hit test runs along the same ray
+     * (see `_fireLaser`), so what the cursor covers is what a shot can hit.
      */
     _aim(out) {
-        const p = this.ch.position;
-        // A rig without a full look vector (the test harness) fires at the
-        // ground ahead of the facing.
-        const f = this.rig.forward
-            || { x: Math.sin(this.ch.facing) * 0.8, y: -0.6,
-                 z: Math.cos(this.ch.facing) * 0.8 };
-        let x = p.x, y = p.y + 1.2, z = p.z;
-        for (let i = 0; i < 90; i++) {
-            x += f.x * 4; y += f.y * 4; z += f.z * 4;
-            const g = this.terrain.heightAt(x, z);
-            if (y <= g) {
-                out.x = x; out.y = g; out.z = z;
-                return;
-            }
+        const f = this.rig.forward;
+        const cam = this.rig.camera;
+        if (f && cam) {
+            const eye = cam.globalPosition;
+            this._eyeX = eye.x; this._eyeY = eye.y; this._eyeZ = eye.z;
+            const t = groundRay(
+                this.terrain, eye.x, eye.y, eye.z, f.x, f.y, f.z, RANGE);
+            const d = t > 0 ? t : RANGE;
+            out.x = eye.x + f.x * d;
+            out.y = eye.y + f.y * d;
+            out.z = eye.z + f.z * d;
+            return;
         }
-        out.x = x; out.y = y; out.z = z;
+        // A rig without a camera (the test harness): fire at the ground
+        // ahead of the facing, from the chest.
+        const p = this.ch.position;
+        const fx = Math.sin(this.ch.facing) * 0.8;
+        const fy = -0.6;
+        const fz = Math.cos(this.ch.facing) * 0.8;
+        this._eyeX = p.x; this._eyeY = p.y + 1.2; this._eyeZ = p.z;
+        const t = groundRay(
+            this.terrain, p.x, p.y + 1.2, p.z, fx, fy, fz, RANGE);
+        const d = t > 0 ? t : RANGE;
+        out.x = p.x + fx * d;
+        out.y = p.y + 1.2 + fy * d;
+        out.z = p.z + fz * d;
     }
 
     _fireLaser() {
         const ch = this.ch;
         this._aim(this._hit);
         // The laser is pure aim: no lock, just the ray — tested against
-        // whatever the mode has standing in it. A crossing shortens the
-        // beam to the thing it hit.
+        // whatever the mode has standing in it. The test runs along the
+        // aim ray itself, eye to mark, because that line is what the
+        // reticle is covering; the muzzle only supplies the visual beam.
+        // A crossing shortens the beam to the thing it hit.
         const hit = this.rayTest?.(
-            ch.position.x, ch.position.y + 1.1, ch.position.z,
+            this._eyeX, this._eyeY, this._eyeZ,
             this._hit.x, this._hit.y, this._hit.z
         ) || null;
         if (hit) {
