@@ -61,12 +61,27 @@ export function initMinimap(terrain, sky, character) {
     document.body.appendChild(canvas);
 
     // Device pixels, so the relief stays crisp on a dense screen.
+    //
+    // Read once here and again only when the element actually resizes (the
+    // touch-controls class shrinks it). Reading getBoundingClientRect every
+    // frame forces a synchronous layout inside the render loop whenever
+    // anything else touched the DOM that frame — and during a firefight the
+    // HUD is touching it constantly.
     const cssSize = () => canvas.getBoundingClientRect().width || 168;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     let size = Math.round(cssSize() * dpr);
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d");
+    new ResizeObserver(() => {
+        const now = Math.round(cssSize() * dpr);
+        if (now > 0 && now !== size) {
+            size = now;
+            // Resizing a canvas clears it, so only touch it on a real change.
+            canvas.width = size;
+            canvas.height = size;
+        }
+    }).observe(canvas);
 
     // ---------------------------------------------------------- the relief
     // Hillshade under the scene's sun, greys borrowed from the lit and
@@ -171,12 +186,6 @@ export function initMinimap(terrain, sky, character) {
         setMarkers(fn) { markersFn = fn; },
         /** Once per frame: blit the portrait, draw the rider. */
         frame() {
-            const now = Math.round(cssSize() * dpr);
-            if (now > 0 && now !== size) {
-                size = now;
-                canvas.width = size;
-                canvas.height = size;
-            }
             ctx.clearRect(0, 0, size, size);
 
             // Clip to the disc; the border above draws the rim.

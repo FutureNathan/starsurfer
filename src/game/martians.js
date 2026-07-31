@@ -207,8 +207,35 @@ export class MartianMode {
             });
         }
 
-        if (opts.scene) this._buildSkin(opts.scene);
+        /** Resolves once the meshes and materials exist; `warmUp` awaits it. */
+        this._built = opts.scene ? this._buildSkin(opts.scene) : null;
         if (typeof document !== "undefined" && opts.scene) this._buildUI();
+    }
+
+    /**
+     * Compile the martian pipeline behind the loading screen.
+     *
+     * The suits, the crates and their shared shader otherwise first render on
+     * the frame the hunt is enabled — which is a WGSL compile and a render
+     * pipeline built exactly when a fight is starting. One clone standing
+     * through the warm-up frames covers all of them: every suit and crate
+     * shares the shader and vertex layout, so one draw builds the one
+     * pipeline they all bind.
+     */
+    async warmUp() {
+        if (!this._built) return;
+        await this._built;
+        // The uniforms the shader samples must exist before the draw, or the
+        // material never reports ready and the warm-up frame quietly skips it.
+        this._pushUniforms();
+        const m = this.martians[0];
+        if (m.mesh) m.mesh.isVisible = true;
+    }
+
+    /** Hide the warm-up stand-in. After `main`'s warm-up frames have drawn. */
+    finishWarmUp() {
+        const m = this.martians[0];
+        if (m.mesh && !this.active) m.mesh.isVisible = false;
     }
 
     // ------------------------------------------------------------- the body
@@ -595,7 +622,9 @@ export class MartianMode {
             }
             const gy = this.terrain.heightAt(p.x, p.z);
             // The beacon: a slow fountain of charged grains off the crate.
-            if (this.spray && Math.random() < 0.45) {
+            // Rate is per second, not per frame, so a fast display does not
+            // fountain harder than the 60 Hz look this was tuned at.
+            if (this.spray && Math.random() < Math.min(1, dt * 27)) {
                 this.spray.emit(
                     p.x + (Math.random() - 0.5) * 0.4,
                     gy + 0.5, p.z + (Math.random() - 0.5) * 0.4,
@@ -772,6 +801,8 @@ export class MartianMode {
             vy: (dy / l) * v,
             vz: (dz / l) * v,
             life: 0,
+            /** Banked VFX time, in sixtieths — see the emission budget below. */
+            acc: 0,
         });
         m.windup = 0;
         m.cooldown = m.cooldownT || COOLDOWN0;
@@ -874,7 +905,8 @@ export class MartianMode {
                 && d3 < (m.fireR || FIRE_R0);
             if (charging) {
                 m.windup += dt;
-                if (this.spray && Math.random() < 0.7) {
+                // Per second, not per frame — 42/s is the 60 Hz look.
+                if (this.spray && Math.random() < Math.min(1, dt * 42)) {
                     this.spray.emit(
                         m.x + (Math.random() - 0.5) * 0.5,
                         gy + 1.3 + (Math.random() - 0.5) * 0.4,
@@ -930,8 +962,8 @@ export class MartianMode {
                 m.mat?.setFloat("hitFlash", m.flash);
             }
 
-            // Dust off the boots at the stride rate.
-            if (this.spray && speed > 1 && Math.random() < 0.25) {
+            // Dust off the boots at the stride rate — per second, not frame.
+            if (this.spray && speed > 1 && Math.random() < Math.min(1, dt * 15)) {
                 this.spray.emit(
                     m.x, gy + 0.05, m.z,
                     -Math.sin(m.heading) * 1.2 + (Math.random() - 0.5),
@@ -947,37 +979,54 @@ export class MartianMode {
         // The bolts in flight: bright, slow, and honest — a crackling head
         // with its own light, killable by footwork alone. The ground fizzles
         // them; the player they were promised to costs one heart.
+        //
+        // The head and tail are budgeted by time, not by frame: each bolt
+        // banks sixtieths of a second and spends one 6-grain head plus
+        // 3-grain tail per sixtieth, which is exactly the 60 Hz look — a
+        // 144 Hz display no longer emits 2.4x the grains, and a laggy frame
+        // pays back at most two ticks instead of a burst. The budget is also
+        // shared across the salvo (a ten-bolt sky costs what six do) and
+        // thinned with distance, floored so a far veteran's bolt keeps the
+        // fat readable head — the head IS the bolt; there is no mesh under it.
         const bolts = this._bolts;
+        const salvoK = bolts.length > 6 ? 6 / bolts.length : 1;
         for (let i = bolts.length - 1; i >= 0; i--) {
             const b = bolts[i];
             b.life += dt;
             b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
             if (this.spray) {
-                // A fat crackling head you cannot miss...
-                for (let k = 0; k < 6; k++) {
-                    this.spray.emit(
-                        b.x + (Math.random() - 0.5) * 0.3,
-                        b.y + (Math.random() - 0.5) * 0.3,
-                        b.z + (Math.random() - 0.5) * 0.3,
-                        0, 0, 0,
-                        0.055 + Math.random() * 0.035,
-                        0.08 + Math.random() * 0.06,
-                        1, 14
-                    );
-                }
-                // ...towing a lingering tail that marks the whole flight
-                // path, which is what makes the dodge readable.
-                for (let k = 0; k < 3; k++) {
-                    this.spray.emit(
-                        b.x - b.vx * 0.03 * k, b.y - b.vy * 0.03 * k,
-                        b.z - b.vz * 0.03 * k,
-                        (Math.random() - 0.5) * 0.6,
-                        (Math.random() - 0.5) * 0.6,
-                        (Math.random() - 0.5) * 0.6,
-                        0.028 + Math.random() * 0.016,
-                        0.35 + Math.random() * 0.25,
-                        1, 3
-                    );
+                const cd = Math.hypot(b.x - ch.position.x, b.z - ch.position.z);
+                const distK = cd < 25 ? 1 : Math.max(0.3, 1 - (cd - 25) / 90);
+                b.acc = Math.min(b.acc + dt * 60 * salvoK * distK, 3);
+                let ticks = Math.min(2, b.acc | 0);
+                b.acc -= ticks;
+                for (; ticks > 0; ticks--) {
+                    // A fat crackling head you cannot miss...
+                    for (let k = 0; k < 6; k++) {
+                        this.spray.emit(
+                            b.x + (Math.random() - 0.5) * 0.3,
+                            b.y + (Math.random() - 0.5) * 0.3,
+                            b.z + (Math.random() - 0.5) * 0.3,
+                            0, 0, 0,
+                            0.055 + Math.random() * 0.035,
+                            0.08 + Math.random() * 0.06,
+                            1, 14
+                        );
+                    }
+                    // ...towing a lingering tail that marks the whole flight
+                    // path, which is what makes the dodge readable.
+                    for (let k = 0; k < 3; k++) {
+                        this.spray.emit(
+                            b.x - b.vx * 0.03 * k, b.y - b.vy * 0.03 * k,
+                            b.z - b.vz * 0.03 * k,
+                            (Math.random() - 0.5) * 0.6,
+                            (Math.random() - 0.5) * 0.6,
+                            (Math.random() - 0.5) * 0.6,
+                            0.028 + Math.random() * 0.016,
+                            0.35 + Math.random() * 0.25,
+                            1, 3
+                        );
+                    }
                 }
             }
             this.lights?.add(b.x, b.y, b.z, 8, 0.35, 1.0, 0.45, 15);

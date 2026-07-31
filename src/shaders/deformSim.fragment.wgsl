@@ -195,9 +195,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     // ----------------------------------------------------------------- splat
     let n = i32(uniforms.brushCount);
     for (var i = 0; i < n; i++) {
+        // Row 0 alone decides the rejects, so rows 1 and 2 wait behind them:
+        // on a busy frame most texels reject most brushes, and two loads per
+        // rejected brush per texel is the bulk of this loop's work.
         let a = textureLoad(brushTex, vec2i(i, 0), 0);
-        let b = textureLoad(brushTex, vec2i(i, 1), 0);
-        let c = textureLoad(brushTex, vec2i(i, 2), 0);
 
         let radius = a.z;
         if (radius <= 0.0) { continue; }
@@ -212,6 +213,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         let reach = radius * max(a.w, 1.0) * 1.6;
         if (abs(p.x) > reach || abs(p.y) > reach) { continue; }
 
+        let b = textureLoad(brushTex, vec2i(i, 1), 0);
+
         // Into brush space: rotate by the brush yaw, then squash the long axis.
         let q = vec2f(
             (p.x * b.x + p.y * b.y) / (radius * a.w),
@@ -219,6 +222,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         );
         let d = length(q);
         if (d > 1.55) { continue; }
+
+        let c = textureLoad(brushTex, vec2i(i, 2), 0);
 
         // Contact detail. A clean analytic bevel at the trail edge is the tell
         // that reads as "decal"; breaking the rim radius with angular noise and

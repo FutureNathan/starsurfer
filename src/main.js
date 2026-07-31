@@ -242,6 +242,11 @@ async function boot() {
     await spells.warmUp(
         character.position.x + 3, character.position.y, character.position.z + 3
     );
+    // The hunt's suits and the beam otherwise compile their pipelines on the
+    // frame the mode turns on or the first shot fires — a freeze exactly when
+    // a fight is starting. One of each stands through the warm-up frames.
+    await martians.warmUp();
+    await weapons.warmUp();
     await whenReady(sky.material, "sky material", [sky.mesh, false]);
     await depthPass.warmUp();
     post.update(0, 0, rig.distance);
@@ -260,6 +265,8 @@ async function boot() {
     // Only now: the spell meshes had to be standing *through* those frames for
     // their render pipelines to exist. See `WaterBody.warmUp`.
     spells.finishWarmUp();
+    martians.finishWarmUp();
+    weapons.finishWarmUp();
 
     // After warm-up, so the sun the relief is shaded under is the one the
     // scene settled on. Renders its whole chart here, once — see the module.
@@ -275,6 +282,9 @@ async function boot() {
     // ------------------------------------------------------------- run loop
     let prev = performance.now();
     let time = 0;
+    // Jetpack flame emission bank, in sixtieths of a second — the flame is
+    // four grains per tick at the 60 Hz look, whatever the display refresh.
+    let jetAcc = 0;
 
     engine.runRenderLoop(() => {
         const now = performance.now();
@@ -350,7 +360,10 @@ async function boot() {
             const px = character.position.x + ux * 0.78 - bx * 0.30;
             const py = character.position.y + uy * 0.78 - by * 0.30;
             const pz = character.position.z + uz * 0.78 - bz * 0.30;
-            for (let i = 0; i < 4; i++) {
+            jetAcc = Math.min(jetAcc + dt * 240, 12);
+            const jn = Math.min(8, jetAcc | 0);
+            jetAcc -= jn;
+            for (let i = 0; i < jn; i++) {
                 const sp = 2.5 + Math.random() * 2;
                 spray.emit(
                     px + (Math.random() - 0.5) * 0.10,

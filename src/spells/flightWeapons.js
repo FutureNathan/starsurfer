@@ -53,7 +53,8 @@ export class FlightWeapons {
 
         /** The solid beam meshes, three shots deep. @type {any[]} */
         this._beamPool = [];
-        if (scene) this._buildBeams(scene);
+        /** Resolves once the beams exist; `warmUp` awaits it. */
+        this._built = scene ? this._buildBeams(scene) : null;
         /** @type {{x:number,y:number,z:number,ttl:number,max:number,big:number}[]} */
         this._pulses = [];
         /** @type {{x:number,y:number,z:number,vx:number,vy:number,vz:number,
@@ -127,6 +128,24 @@ export class FlightWeapons {
             this._beamPool.push({ mesh, mat, ttl: 0, tx: 0, ty: 0, tz: 0 });
         }
         this._beamNext = 0;
+    }
+
+    /**
+     * Compile the beam pipeline behind the loading screen instead of on the
+     * first shot. One beam stands through the warm-up frames at intensity 0 —
+     * additive blending of nothing, so nothing shows — which is what actually
+     * builds the pipeline; compiling against no draw covers nothing.
+     */
+    async warmUp() {
+        if (!this._built) return;
+        await this._built;
+        if (this._beamPool.length) this._beamPool[0].mesh.isVisible = true;
+    }
+
+    /** Hide the warm-up stand-in. After `main`'s warm-up frames have drawn. */
+    finishWarmUp() {
+        const b = this._beamPool[0];
+        if (b && b.ttl <= 0) b.mesh.isVisible = false;
     }
 
     /**
@@ -239,6 +258,8 @@ export class FlightWeapons {
             vz: (lz / ll) * ROCKET_V,
             tx: this._hit.x, ty: this._hit.y, tz: this._hit.z,
             life: 0,
+            /** Banked VFX time, in sixtieths — see the body budget below. */
+            acc: 0,
         });
         ch.firedRocket = true;
     }
@@ -307,7 +328,8 @@ export class FlightWeapons {
             b.mat.setFloat("intensity", 3 + 27 * bk * bk);
             this.lights.add(b.tx, b.ty + 0.4, b.tz, 6,
                 ion0.hue[0], ion0.hue[1], ion0.hue[2], 16 * bk);
-            if (this.spray && Math.random() < 0.7) {
+            // Per second, not per frame — 42/s is the 60 Hz look.
+            if (this.spray && Math.random() < Math.min(1, dt * 42)) {
                 const a = Math.random() * Math.PI * 2;
                 this.spray.emit(
                     b.tx, b.ty + 0.05, b.tz,
@@ -338,32 +360,39 @@ export class FlightWeapons {
             r.x += r.vx * dt; r.y += r.vy * dt; r.z += r.vz * dt;
 
             // The missile itself: a big solid slug at the head — tight
-            // jitter, large grains — re-drawn every frame, with a modest
-            // wisp of exhaust behind it. The body should read first and the
-            // trail second, not the other way round.
-            for (let k = 0; k < 7; k++) {
-                this.spray.emit(
-                    r.x + (Math.random() - 0.5) * 0.10,
-                    r.y + (Math.random() - 0.5) * 0.10,
-                    r.z + (Math.random() - 0.5) * 0.10,
-                    0, 0, 0,
-                    0.08 + Math.random() * 0.045,
-                    0.06 + Math.random() * 0.05,
-                    1,
-                    16
-                );
-            }
-            for (let k = 0; k < 2; k++) {
-                this.spray.emit(
-                    r.x - r.vx * 0.035, r.y - r.vy * 0.035, r.z - r.vz * 0.035,
-                    (Math.random() - 0.5) * 1.0,
-                    (Math.random() - 0.5) * 1.0,
-                    (Math.random() - 0.5) * 1.0,
-                    0.014 + Math.random() * 0.012,
-                    0.12 + Math.random() * 0.10,
-                    1,
-                    6
-                );
+            // jitter, large grains — with a modest wisp of exhaust behind it.
+            // The body should read first and the trail second, not the other
+            // way round. Budgeted by time, one tick per sixtieth of a second
+            // — the 60 Hz look exactly, whatever the display refresh — and
+            // never starved: the slug is the missile's only visible body.
+            r.acc = Math.min(r.acc + dt * 60, 3);
+            let ticks = Math.min(2, r.acc | 0);
+            r.acc -= ticks;
+            for (; ticks > 0; ticks--) {
+                for (let k = 0; k < 7; k++) {
+                    this.spray.emit(
+                        r.x + (Math.random() - 0.5) * 0.10,
+                        r.y + (Math.random() - 0.5) * 0.10,
+                        r.z + (Math.random() - 0.5) * 0.10,
+                        0, 0, 0,
+                        0.08 + Math.random() * 0.045,
+                        0.06 + Math.random() * 0.05,
+                        1,
+                        16
+                    );
+                }
+                for (let k = 0; k < 2; k++) {
+                    this.spray.emit(
+                        r.x - r.vx * 0.035, r.y - r.vy * 0.035, r.z - r.vz * 0.035,
+                        (Math.random() - 0.5) * 1.0,
+                        (Math.random() - 0.5) * 1.0,
+                        (Math.random() - 0.5) * 1.0,
+                        0.014 + Math.random() * 0.012,
+                        0.12 + Math.random() * 0.10,
+                        1,
+                        6
+                    );
+                }
             }
             const ion = POWERS.ion;
             this.lights.add(r.x, r.y, r.z, 7, ion.hue[0], ion.hue[1], ion.hue[2], 9);

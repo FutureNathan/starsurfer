@@ -16,7 +16,10 @@
  * eight floats per live particle per frame and nothing else crosses the bus.
  *
  * Allocation: none per frame. Everything is a typed array sized at construction,
- * and dead particles are recycled through a free ring rather than compacted.
+ * and dead particles are recycled through a free stack rather than compacted —
+ * so an emission costs the same whether the pool is empty, nearly full, or
+ * full, which is what keeps a combat burst from turning every dropped grain
+ * into a full-pool hunt for a slot that is not there.
  */
 
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
@@ -50,6 +53,17 @@ import { SPELL_LIGHT_UNIFORMS } from "../spells/spellLights.js";
  * of a dozen flops, which does not register — plus 160 KB of data texture.
  */
 const CAPACITY = 5120;
+
+/**
+ * When fewer free slots than this remain, loose veil grains (kind 0) start
+ * being shed probabilistically before they are even written. The veil is
+ * mass — plume, curtain, drift — and the shards (kind 1) are the legible
+ * reads: bolt heads, missile slugs, sparks. Under a burst that would pin the
+ * pool, the mass yields first and the last slots stay available for the
+ * grains a player is actually steering by. Below the threshold nothing
+ * changes at all, so the surf plume's designed ~3500-grain body is untouched.
+ */
+const PRESSURE_SLOTS = CAPACITY >> 3;
 
 /** Terminal fall speed of a dust grain, m/s. Drag is tuned to land here. */
 const TERMINAL = 1.9;
@@ -106,9 +120,29 @@ export class SprayField {
          * stops the grain dead in 120 ms and inside the wave that threw it.
          */
         this.drag = new Float32Array(CAPACITY);
-        /** Index of the next slot to try. Wraps; a live slot is skipped. */
-        this._next = 0;
+        /** 1 while the slot holds a live grain. The free stack below is only
+         *  pushed on the live-to-dead transition, so no index can sit on it
+         *  twice — a duplicate would hand one slot to two grains. */
+        this._alive = new Uint8Array(CAPACITY);
+        /** Free slot indices, popped in O(1) by `emit`. Starts holding all. */
+        this._free = new Uint16Array(CAPACITY);
+        for (let i = 0; i < CAPACITY; i++) this._free[i] = CAPACITY - 1 - i;
+        this._freeTop = CAPACITY;
         this.liveCount = 0;
+
+        /**
+         * Per-grain cached ground height, and where it was sampled. The
+         * bicubic `heightAt` is 16 taps and used to run for every live grain
+         * every frame; a grain only needs a fresh answer once it has drifted
+         * a CPU-mirror texel from where it last asked — within that the cache
+         * is exact to the local slope over at most one texel, which for dust
+         * that is about to fade is invisible.
+         */
+        this._gH = new Float32Array(CAPACITY);
+        this._gX = new Float32Array(CAPACITY);
+        this._gZ = new Float32Array(CAPACITY);
+        const gt = terrain.heightfield?.cpuTexel || 1;
+        this._gTex2 = gt * gt;
 
         // Texture rows: 0 = (x, y, z, size), 1 = (age01, seed, kind, alpha).
         this._texData = new Float32Array(CAPACITY * 2 * 4);
@@ -179,17 +213,18 @@ export class SprayField {
      *   settling grain; pass something near 1 for anything thrown.
      */
     emit(x, y, z, vx, vy, vz, size, life, kind, drag) {
-        // Find a free slot. Bounded scan: after CAPACITY tries the pool is full
-        // and the emission is simply dropped, which at these counts never
-        // happens and is the right failure anyway — a hitch is worse than a
-        // missing grain.
-        let i = this._next;
-        for (let n = 0; n < CAPACITY; n++) {
-            if (this.age[i] >= this.life[i]) break;
-            i = (i + 1) % CAPACITY;
-            if (n === CAPACITY - 1) return;
-        }
-        this._next = (i + 1) % CAPACITY;
+        // O(1), full or not. A full pool drops the emission — a hitch is
+        // worse than a missing grain — and near-full, the loose veil sheds
+        // first so the legible shards keep landing. See PRESSURE_SLOTS.
+        const free = this._freeTop;
+        if (free === 0) return;
+        if (kind < 0.5 && free < PRESSURE_SLOTS
+            && Math.random() * PRESSURE_SLOTS > free) return;
+        const i = this._free[--this._freeTop];
+        this._alive[i] = 1;
+        // Force a ground query on the first update; there is no height cached
+        // for this grain yet.
+        this._gX[i] = 1e30;
 
         const o = i * 3;
         this.pos[o] = x; this.pos[o + 1] = y; this.pos[o + 2] = z;
@@ -217,22 +252,25 @@ export class SprayField {
         const wz = Math.cos(wa) * 2.4 * S.windStrength;
 
         const d = this._texData;
-        let live = 0;
 
         for (let i = 0; i < CAPACITY; i++) {
+            if (!this._alive[i]) continue;
+
             const o = i * 3;
             const to = i * 4;
             const t1 = (CAPACITY + i) * 4;
 
+            this.age[i] += h;
             if (this.age[i] >= this.life[i]) {
-                // A dead slot still has to be written, or the last frame's
-                // corpse keeps rendering. Zero size collapses the quad.
+                // Died this frame: collapse the quad (zero size, zero alpha)
+                // once, and hand the slot back. The zeros persist in the
+                // upload buffer, so a dead slot costs nothing after this.
                 d[to + 3] = 0;
                 d[t1 + 3] = 0;
+                this._alive[i] = 0;
+                this._free[this._freeTop++] = i;
                 continue;
             }
-
-            this.age[i] += h;
             const a01 = this.age[i] / this.life[i];
 
             // Drag toward the wind horizontally and toward terminal vertically.
@@ -250,7 +288,17 @@ export class SprayField {
 
             // Settle on the field instead of falling through it. The grain does
             // not bounce — it is dust landing on dust — it just stops and fades.
-            const g = this.terrain.heightAt(this.pos[o], this.pos[o + 2]);
+            // The ground is the cached height until the grain drifts a texel
+            // from where it was sampled; see the cache note in the constructor.
+            const px = this.pos[o], pz = this.pos[o + 2];
+            const dgx = px - this._gX[i], dgz = pz - this._gZ[i];
+            let g;
+            if (dgx * dgx + dgz * dgz > this._gTex2) {
+                g = this.terrain.heightAt(px, pz);
+                this._gX[i] = px; this._gZ[i] = pz; this._gH[i] = g;
+            } else {
+                g = this._gH[i];
+            }
             if (this.pos[o + 1] < g) {
                 this.pos[o + 1] = g;
                 this.vel[o] *= 0.2; this.vel[o + 1] = 0; this.vel[o + 2] *= 0.2;
@@ -272,10 +320,9 @@ export class SprayField {
             d[t1 + 1] = this.seed[i];
             d[t1 + 2] = this.kind[i];
             d[t1 + 3] = alpha;
-            live++;
         }
 
-        this.liveCount = live;
+        this.liveCount = CAPACITY - this._freeTop;
         this.dataTex.update(d);
         this._pushUniforms();
     }
