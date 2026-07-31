@@ -217,6 +217,11 @@ export class DustContact {
      */
     _walk(dt, moved) {
         const ch = this.character;
+        // Nothing on the ground scuffs from the air. Without this, a flyer
+        // with the trigger up had surf near zero — full walking weight — and
+        // seventeen metres a second of "walking", which dragged a continuous
+        // furrow across the ground directly underneath the flight path.
+        if (ch.airborne) return;
         if (ch.speed < 0.25) return;
 
         const w = 1 - ch.surf;

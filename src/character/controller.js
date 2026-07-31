@@ -659,7 +659,11 @@ export class CharacterController {
         // travelling at nineteen metres a second. The gait is distance-driven, so
         // it answered that with a twelve-hertz cadence and the legs blurred. A
         // sprint is the fastest thing anyone walks at; above it, glide.
-        this.stepping = this.surf <= 0.5 && this.speed <= RUN_SPEED * 1.2;
+        // Airborne is not a gait: without the gate, a slow hover under the
+        // pack still advanced the walk cycle — phantom footfalls, boot
+        // prints and step sounds on ground the boots never touched.
+        this.stepping = !this.airborne
+            && this.surf <= 0.5 && this.speed <= RUN_SPEED * 1.2;
         if (!this.stepping) {
             this.gaitPhase = 0;
             return;
