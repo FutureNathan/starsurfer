@@ -213,6 +213,7 @@ export class CharacterController {
             this.trickSpin = 0;
             this.trickFlip = 0;
             this._flip = false;
+            this._jetT = 0;
             if (this.vy < 0) this.vy = 0;
         } else if (!wantJet && this.jetting) {
             this.jetting = false;
@@ -222,7 +223,7 @@ export class CharacterController {
             this.airTime = (2 * JUMP_V) / AIR_G;
             this.airTuck = 0;
         }
-        this.heroLand = Math.max(0, this.heroLand - h / 0.8);
+        this.heroLand = Math.max(0, this.heroLand - h / 1.0);
 
         if (this.surf > 0.5 && !this.airborne) this._surfStep(h, rig);
         else if (this.surf <= 0.5 && !this.jetting) this._walkStep(h);
@@ -270,7 +271,17 @@ export class CharacterController {
             // decoration on it.
             const f = rig.forward;
             const theta = f ? Math.asin(Scalar.Clamp(f.y, -1, 1)) : 0;
-            const phi = Math.PI / 2 + Math.min(0, theta) * 2;
+            // The camera-pitch → flight-elevation map, in three bands tuned
+            // for what the *rider* can see. Level cruise used to demand 45
+            // degrees of look-down — a screen full of ground. Now: near
+            // level or up climbs; a comfortable ~14 degrees of look-down —
+            // horizon and rider both in frame — is full level cruise; and
+            // everything steeper leans smoothly into the dive.
+            const t2 = theta + 0.05;
+            let phi;
+            if (t2 >= 0) phi = Math.PI / 2;
+            else if (t2 >= -0.20) phi = (Math.PI / 2) * (1 + t2 / 0.20);
+            else phi = -(Math.PI / 2) * Math.min(1, (-t2 - 0.20) / 1.15);
             const yaw = f ? Math.atan2(f.x, f.z) : this.facing;
             const cph = Math.cos(phi);
             let dy = Math.sin(phi);
@@ -289,15 +300,27 @@ export class CharacterController {
             // Published for the figure: the body axis's forward pitch off
             // vertical this frame — 0 upright, pi/2 prone, past it diving.
             this.jetPitch = Math.PI / 2 - phi;
-            // Flying into the ground: a dive that meets it plants the
-            // three-point landing; a shallow skim just rides the face.
-            if (this.position.y < this.groundY) {
+            this._jetT += h;
+            // Touching the ground ends the flight, full stop: the landing
+            // plants the three-point pose and the pack wants a fresh
+            // double-tap before it lights again. The alternative — staying
+            // "in flight" while pinned to the surface — read as a man being
+            // dragged along the ground, which is the opposite of flying.
+            // The first third of a second is exempt so takeoff can leave.
+            if (this.position.y <= this.groundY && this._jetT > 0.35) {
                 this.position.y = this.groundY;
-                if (this.vy < -4) {
-                    this.heroLand = 1;
-                    rig.addTrauma(0.10 + Math.min(0.10, -this.vy * 0.012));
-                }
-                if (this.vy < 0) this.vy = 0;
+                this.jetting = false;
+                this.jetFall = false;
+                this._jetArm = false;
+                this.airborne = false;
+                this.landed = true;
+                this.landVy = Math.max(2, -this.vy);
+                this.vy = 0;
+                this.heroLand = 1;
+                this.airTime = 0;
+                rig.addTrauma(0.12);
+            } else if (this.position.y < this.groundY) {
+                this.position.y = this.groundY;
             }
         } else {
             this.airTime += h;

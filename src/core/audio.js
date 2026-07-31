@@ -409,20 +409,48 @@ export function initAudio() {
             wh.start(t); wh.stop(t + 0.65);
             reap(wh, whg);
 
-            const src = noise(t);
-            const bp = filter("bandpass", 950, 0.7);
+            // The cruise: a real engine, in three layers — combustion rumble
+            // underneath, turbine body in the middle, and a thin whine on
+            // top with a slow flutter, which is the part the ear reads as
+            // "jet" rather than "wind".
             const g = ctx.createGain();
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.15, t + 0.12);
-            src.connect(bp); bp.connect(g); g.connect(sfxGain);
-            jetNodes = { src, bp, g };
+            g.gain.exponentialRampToValueAtTime(1.0, t + 0.15);
+            g.connect(sfxGain);
+
+            const rum = noise(t);
+            const rlp = filter("lowpass", 150);
+            const rg = ctx.createGain(); rg.gain.value = 0.17;
+            rum.connect(rlp); rlp.connect(rg); rg.connect(g);
+
+            const src = noise(t);
+            const bp = filter("bandpass", 620, 0.8);
+            const bg = ctx.createGain(); bg.gain.value = 0.11;
+            src.connect(bp); bp.connect(bg); bg.connect(g);
+
+            const whine = ctx.createOscillator();
+            whine.type = "triangle";
+            whine.frequency.value = 960;
+            const flut = ctx.createOscillator();
+            flut.frequency.value = 5.5;
+            const flutAmt = ctx.createGain(); flutAmt.gain.value = 34;
+            flut.connect(flutAmt); flutAmt.connect(whine.frequency);
+            const wg = ctx.createGain(); wg.gain.value = 0.026;
+            whine.connect(wg); wg.connect(g);
+            whine.start(t); flut.start(t);
+
+            jetNodes = { src, bp, bg, rum, rlp, rg, whine, wg, flut, flutAmt, g };
         } else if (!onNow && jetNodes) {
             const t = ctx.currentTime;
             const n = jetNodes;
             jetNodes = null;
             n.g.gain.setTargetAtTime(0.0001, t, 0.08);
             n.src.stop(t + 0.5);
-            reap(n.src, n.bp, n.g);
+            n.rum.stop(t + 0.5);
+            n.whine.stop(t + 0.5);
+            n.flut.stop(t + 0.5);
+            reap(n.src, n.rum, n.whine, n.flut,
+                 n.bp, n.bg, n.rlp, n.rg, n.wg, n.flutAmt, n.g);
         }
     }
 

@@ -302,30 +302,35 @@ async function boot() {
         // After the shadow refit, so the figure's uniforms carry this frame's
         // cascade matrices rather than last frame's.
         figure.sync(rig.camera.position);
-        // Jetpack exhaust: hot grains streaming opposite the travel — out of
-        // the boots, since the thrust axis is the body axis — emitted before
-        // the spray pool uploads so they render this frame. Hovering vents
-        // straight down.
+        // Jetpack exhaust: a short blue-hot flame right off the pack, not a
+        // contrail. The pack rides the back of a body whose attitude the
+        // flight pitch sets, so the nozzle point and the thrust axis are
+        // rebuilt from it here; the grains are charged shards — they glow —
+        // fired a couple of metres a second down the thrust line and killed
+        // in a fraction of a second by drag, which is what keeps the flame
+        // a flame instead of a queue.
         if (character.jetting) {
-            const jvx = character.velocity.x, jvy = character.vy,
-                  jvz = character.velocity.z;
-            const jvl = Math.hypot(jvx, jvy, jvz);
-            const ex = jvl > 1 ? -jvx / jvl : 0;
-            const ey = jvl > 1 ? -jvy / jvl : -1;
-            const ez = jvl > 1 ? -jvz / jvl : 0;
-            for (let i = 0; i < 3; i++) {
-                const sp = 7 + Math.random() * 3;
+            const jp = character.jetPitch || 0;
+            const sj = Math.sin(jp), cj = Math.cos(jp);
+            const jfx = Math.sin(character.facing), jfz = Math.cos(character.facing);
+            const ux = jfx * sj, uy = cj, uz = jfz * sj;     // body up
+            const bx = jfx * cj, by = -sj, bz = jfz * cj;    // body forward
+            const px = character.position.x + ux * 0.78 - bx * 0.30;
+            const py = character.position.y + uy * 0.78 - by * 0.30;
+            const pz = character.position.z + uz * 0.78 - bz * 0.30;
+            for (let i = 0; i < 4; i++) {
+                const sp = 2.5 + Math.random() * 2;
                 spray.emit(
-                    character.position.x + ex * 0.5 + (Math.random() - 0.5) * 0.2,
-                    character.position.y + 0.55 + ey * 0.5,
-                    character.position.z + ez * 0.5 + (Math.random() - 0.5) * 0.2,
-                    ex * sp + (Math.random() - 0.5) * 1.5,
-                    ey * sp - 1.5,
-                    ez * sp + (Math.random() - 0.5) * 1.5,
-                    0.030 + Math.random() * 0.030,
-                    0.5 + Math.random() * 0.4,
+                    px + (Math.random() - 0.5) * 0.10,
+                    py + (Math.random() - 0.5) * 0.10,
+                    pz + (Math.random() - 0.5) * 0.10,
+                    -ux * sp + (Math.random() - 0.5) * 0.8,
+                    -uy * sp,
+                    -uz * sp + (Math.random() - 0.5) * 0.8,
+                    0.020 + Math.random() * 0.022,
+                    0.10 + Math.random() * 0.14,
                     1,
-                    0.8
+                    6.0
                 );
             }
         }

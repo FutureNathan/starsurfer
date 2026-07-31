@@ -413,7 +413,13 @@ export class Figure {
         // a right angle at speed — and the hero blend is the controller's
         // decaying touchdown flourish, worn as extra forward pitch and (in
         // the crouch and the arms below) the three-point stance.
-        this.jetLean = damp(this.jetLean, ch.jetting ? 1 : 0, 5.5, h);
+        // Fast recovery on the ground: the prone lean must be gone within a
+        // couple of tenths of touching down, or it sits on top of the hero
+        // landing and buries the pose the landing exists to strike.
+        this.jetLean = damp(
+            this.jetLean, ch.jetting ? 1 : 0,
+            ch.jetting || ch.airborne ? 5.5 : 14, h
+        );
         this._boardK = damp(
             this._boardK, (ch.jetting || ch.jetFall) ? 0 : 1, 9, h
         );

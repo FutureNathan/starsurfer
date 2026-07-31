@@ -141,7 +141,7 @@ export const S = {
     musicVolume: 0.7,
     musicPlaylist: "Synthwave Chill",
     sfxOn: true,
-    sfxVolume: 0.55,
+    sfxVolume: 0.7,
 
     // -------------------------------------------------------------- the moon
     /**
