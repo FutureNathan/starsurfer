@@ -792,6 +792,10 @@ export class MartianMode {
      * nothing, and a wave that has collapsed to a swell no longer hits.
      */
     _sweepDamage() {
+        // The fight ends with the player: a wave still running when the
+        // death panel comes up must not keep scoring kills behind it —
+        // the board has already been offered the score it shows.
+        if (this.dead) return;
         const fr = this.spells?.sweep?.front;
         if (!fr) return;
         if (fr.id !== this._sweepCast) {

@@ -120,7 +120,9 @@ export class Sweep {
         const terrain = ctx.terrain;
         const s = this.strand;
         if (s < 0) {
-            this.active = false;
+            // Through _end, not a bare flag: the published front has to die
+            // with the wave, or a frozen ring would keep striking.
+            this._end();
             return;
         }
 
