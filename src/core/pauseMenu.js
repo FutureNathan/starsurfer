@@ -40,6 +40,7 @@ const SECTIONS = [
         ["sprint · trick jump", "shift"],
         ["star-surf · hold", "right·mouse"],
         ["jetpack · double-tap, hold", "delete"],
+        ["laser / rocket · in flight", "click double·click"],
     ]],
     ["the five powers", [
         ["solar flare", "1"],

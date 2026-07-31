@@ -719,6 +719,52 @@ export function initAudio() {
                 reap(src, lp, g);
             }
 
+            // The flight weapons. Laser: a fast falling zap with a sizzle
+            // on top. Rocket: a punchy launch whoosh, then — on its own
+            // flag, when the projectile actually arrives — a mid-size boom,
+            // deliberately under the asteroid's.
+            if (ch.firedLaser) {
+                const z = ctx.createOscillator();
+                z.type = "sawtooth";
+                z.frequency.setValueAtTime(1500, t);
+                z.frequency.exponentialRampToValueAtTime(240, t + 0.16);
+                const zg = env(t, 0.22, 0.005, 0.18);
+                z.connect(zg);
+                z.start(t); z.stop(t + 0.22);
+                reap(z, zg);
+                const sz = noise(t);
+                const sbp = filter("bandpass", 3200, 1.2);
+                const sg2 = env(t, 0.10, 0.004, 0.12);
+                sz.connect(sbp); sbp.connect(sg2);
+                sz.stop(t + 0.16);
+                reap(sz, sbp, sg2);
+            }
+            if (ch.firedRocket) {
+                const lw = noise(t);
+                const lbp = filter("bandpass", 520, 0.9);
+                lbp.frequency.exponentialRampToValueAtTime(170, t + 0.32);
+                const lg = env(t, 0.5, 0.015, 0.4);
+                lw.connect(lbp); lbp.connect(lg);
+                lw.stop(t + 0.5);
+                reap(lw, lbp, lg);
+            }
+            if (ch.rocketBoom) {
+                const bo = ctx.createOscillator();
+                bo.type = "sine";
+                bo.frequency.setValueAtTime(95, t);
+                bo.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+                const bg2 = env(t, 0.9, 0.012, 0.7);
+                bo.connect(bg2);
+                bo.start(t); bo.stop(t + 0.8);
+                reap(bo, bg2);
+                const bn = noise(t);
+                const bl = filter("lowpass", 620);
+                const bng = env(t, 0.5, 0.008, 0.32);
+                bn.connect(bl); bl.connect(bng);
+                bn.stop(t + 0.4);
+                reap(bn, bl, bng);
+            }
+
             // The superhero landing: a real thump — a pitch-dropping thud
             // with a dust whump over it, well under the asteroid but well
             // over a footstep. Edge-triggered off the flourish the

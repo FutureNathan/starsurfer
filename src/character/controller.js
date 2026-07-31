@@ -214,6 +214,8 @@ export class CharacterController {
             this.trickFlip = 0;
             this._flip = false;
             this._jetT = 0;
+            // Takeoff is always straight up; the glide takes it from there.
+            this._jetPhi = Math.PI / 2;
             if (this.vy < 0) this.vy = 0;
         } else if (!wantJet && this.jetting) {
             this.jetting = false;
@@ -277,16 +279,25 @@ export class CharacterController {
             const f = rig.forward;
             const theta = f ? Math.asin(Scalar.Clamp(f.y, -1, 1)) : 0;
             // The camera-pitch → flight-elevation map, in three bands tuned
-            // for what the *rider* can see. Level cruise used to demand 45
-            // degrees of look-down — a screen full of ground. Now: near
-            // level or up climbs; a comfortable ~14 degrees of look-down —
-            // horizon and rider both in frame — is full level cruise; and
-            // everything steeper leans smoothly into the dive.
+            // for what the *rider* can see. Near level or up climbs; a
+            // comfortable ~14 degrees of look-down — horizon and rider both
+            // in frame — is full level cruise; steeper is the dive. Each
+            // band rides a hermite ease, so the response flattens out at
+            // the edges instead of cornering — and the result is *glided*
+            // in time below, so climb-to-cruise is a bank, not a switch.
             const t2 = theta + 0.05;
-            let phi;
-            if (t2 >= 0) phi = Math.PI / 2;
-            else if (t2 >= -0.20) phi = (Math.PI / 2) * (1 + t2 / 0.20);
-            else phi = -(Math.PI / 2) * Math.min(1, (-t2 - 0.20) / 1.15);
+            let phiT;
+            if (t2 >= 0) {
+                phiT = Math.PI / 2;
+            } else if (t2 >= -0.20) {
+                const s = -t2 / 0.20;
+                phiT = (Math.PI / 2) * (1 - s * s * (3 - 2 * s));
+            } else {
+                const s = Math.min(1, (-t2 - 0.20) / 1.15);
+                phiT = -(Math.PI / 2) * (s * s * (3 - 2 * s));
+            }
+            this._jetPhi += (phiT - this._jetPhi) * Math.min(1, 5 * h);
+            const phi = this._jetPhi;
             const yaw = f ? Math.atan2(f.x, f.z) : this.facing;
             const cph = Math.cos(phi);
             let dy = Math.sin(phi);

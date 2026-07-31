@@ -30,6 +30,7 @@ import { DustContact } from "./character/dustContact.js";
 import { SprayField } from "./vfx/particles.js";
 import { SurfWake } from "./vfx/surfWake.js";
 import { SpellSystem } from "./spells/spellSystem.js";
+import { FlightWeapons } from "./spells/flightWeapons.js";
 import { Overlay } from "./ui/overlay.js";
 import { initMinimap } from "./ui/minimap.js";
 import { Sky } from "./render/sky.js";
@@ -169,6 +170,10 @@ async function boot() {
     );
     spells.registerPrepass(depthPass);
 
+    // The flight weapons: laser and rocket, live only while the pack burns.
+    // Built entirely from the pools above — no pipelines of their own.
+    const weapons = new FlightWeapons(terrain, spray, spells.lights, character, rig);
+
     // The rig needs ground heights to keep the spring arm above the dust —
     // including the tube roofs, judged from the camera's own storey, so the
     // camera rides over a roof the rider is on instead of clipping into it.
@@ -269,6 +274,8 @@ async function boot() {
         const tFrame = performance.now();
 
         character.update(dt, rig);
+        // Before the audio, which reads the fired/boom flags this sets.
+        weapons.update(dt);
         audio.frame(character, false);
         terrain.heightfield.clampToPlayArea(character.position);
         // Pose and simulate before the contact pass: the footprints are stamped

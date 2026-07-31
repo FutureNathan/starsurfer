@@ -94,6 +94,10 @@ export function initInput(canvas, hooks) {
     document.addEventListener("mousedown", (e) => {
         if (!input.locked) return;
         if (e.button === 2) mouseSurf = true;
+        // The left button is the flight trigger — a one-frame event flag,
+        // like `spellPressed`, consumed by whatever cares (the weapons only
+        // listen while flying).
+        if (e.button === 0) input.firePressed = true;
     });
 
     document.addEventListener("mouseup", (e) => {
@@ -188,6 +192,7 @@ export function endFrame() {
     input.lookY = 0;
     input.zoomDelta = 0;
     input.spellPressed = 0;
+    input.firePressed = false;
     // A button press is one frame long whichever device sent it.
     touch.pressed = 0;
 }
