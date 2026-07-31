@@ -223,12 +223,17 @@ export class CharacterController {
             this.airTime = (2 * JUMP_V) / AIR_G;
             this.airTuck = 0;
         }
-        this.heroLand = Math.max(0, this.heroLand - h / 1.0);
+        this.heroLand = Math.max(0, this.heroLand - h / 1.6);
 
+        // Neither step runs in the air. The walk step used to run through a
+        // jet-release fall, and its idle deceleration scrubbed the flight's
+        // momentum mid-air — an invisible air brake, in a vacuum. Ballistic
+        // means ballistic: the velocity you cut thrust with is the velocity
+        // you arrive with.
         if (this.surf > 0.5 && !this.airborne) this._surfStep(h, rig);
-        else if (this.surf <= 0.5 && !this.jetting) this._walkStep(h);
-        // Airborne: ballistic. The velocity it left the lip with is the
-        // velocity it lands with. (Jetting steers itself, below.)
+        else if (this.surf <= 0.5 && !this.jetting && !this.airborne) {
+            this._walkStep(h);
+        }
 
         // ---------------------------------------------------- integrate + snap
         this.position.x += this.velocity.x * h;
@@ -294,6 +299,12 @@ export class CharacterController {
             this.velocity.x += (dx * JET_FLY - this.velocity.x) * k;
             this.velocity.z += (dz * JET_FLY - this.velocity.z) * k;
             this.vy += (dy * JET_FLY - this.vy) * k;
+            // At the ceiling the climb bleeds off hard, not on the cruise
+            // ease — seventeen up-metres a second of momentum would coast
+            // sixteen metres past the lid on the gentle ramp alone.
+            if (lift >= JET_CEIL && this.vy > 0) {
+                this.vy += (0 - this.vy) * Math.min(1, 9 * h);
+            }
             this.position.y += this.vy * h;
             this.airTuck = 0;
             this.facing = angleDamp(this.facing, yaw, 8, h);
@@ -316,9 +327,17 @@ export class CharacterController {
                 this.landed = true;
                 this.landVy = Math.max(2, -this.vy);
                 this.vy = 0;
-                this.heroLand = 1;
                 this.airTime = 0;
-                rig.addTrauma(0.12);
+                // The trigger decides the arrival. Held: the board is
+                // already out under the feet and the cruise momentum rides
+                // straight into a surf run — flying-to-surfing in one
+                // motion. Not held: the three-point landing.
+                if (this.surf > 0.5) {
+                    rig.addTrauma(0.07);
+                } else {
+                    this.heroLand = 1;
+                    rig.addTrauma(0.12);
+                }
             } else if (this.position.y < this.groundY) {
                 this.position.y = this.groundY;
             }
@@ -365,9 +384,10 @@ export class CharacterController {
                 this.landed = true;
                 this.landVy = -this.vy;
                 if (this.jetFall) {
-                    // The superhero arrival: down on one knee, fist to the
-                    // regolith, up and walk away.
-                    this.heroLand = 1;
+                    // The superhero arrival — unless the trigger is held,
+                    // in which case the board is out and the touchdown is
+                    // just the start of the next run.
+                    if (this.surf <= 0.5) this.heroLand = 1;
                     this.jetFall = false;
                 }
                 this.trickSpin = 0;
@@ -418,7 +438,11 @@ export class CharacterController {
         // in this scene is to turn round and line up a run, and that needs a low
         // gear.
         const throttle = Math.min(1, Math.hypot(input.moveX, input.moveZ));
-        const maxSpeed = (input.sprint ? RUN_SPEED : WALK_SPEED) * throttle;
+        // The landing pose is planted: while it holds, walking is nearly
+        // pinned, releasing as the figure rises. A hero landing you can
+        // stroll straight out of reads as a stumble, not an arrival.
+        const heroK = 1 - 0.85 * Math.min(1, this.heroLand);
+        const maxSpeed = (input.sprint ? RUN_SPEED : WALK_SPEED) * throttle * heroK;
 
         _wish.set(
             _fwd.x * input.moveZ + _right.x * input.moveX,

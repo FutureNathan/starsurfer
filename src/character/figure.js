@@ -420,8 +420,12 @@ export class Figure {
             this.jetLean, ch.jetting ? 1 : 0,
             ch.jetting || ch.airborne ? 5.5 : 14, h
         );
+        // The trigger overrides the stow: held in flight, the board comes
+        // back out under the feet mid-air, ready to take the touchdown.
         this._boardK = damp(
-            this._boardK, (ch.jetting || ch.jetFall) ? 0 : 1, 9, h
+            this._boardK,
+            (ch.jetting || ch.jetFall) && ch.surf < 0.5 ? 0 : 1,
+            9, h
         );
         const hero = ch.heroLand || 0;
 
@@ -433,9 +437,11 @@ export class Figure {
             // when climbing straight up, prone when cruising, past prone in
             // a dive. The controller derives it from the aim; the figure
             // just puts the body on it — a straight figure on a straight
-            // vector, no bend at the waist.
-            + this.jetLean * clamp(ch.jetPitch ?? 0, 0, 1.9)
-            + hero * 0.20;
+            // vector, no bend at the waist. The surf trigger fades it out:
+            // held mid-flight, the body comes off the missile line and into
+            // the stance before the board takes the ground.
+            + this.jetLean * (1 - surf) * clamp(ch.jetPitch ?? 0, 0, 1.9)
+            + hero * 0.30;
         this.pitch = damp(this.pitch, pitchWant, 7, h);
 
         const rollWant = ch.lean * (0.16 + 0.34 * surf);
@@ -452,8 +458,9 @@ export class Figure {
         // of all at the apex of a trick.
         const crouch = 0.035 * run + surf * (0.13 + 0.05 * ch.speed01)
             + (ch.airTuck || 0) * 0.17
-            // The superhero landing is mostly a very deep crouch.
-            + hero * 0.34;
+            // The superhero landing is mostly a very deep crouch — hips
+            // near the trailing knee, which the feet fold under below.
+            + hero * 0.42;
         this.hipY = damp(this.hipY, HIP_HEIGHT - crouch, 9, h);
 
         // The figure settles into the dust it is standing on. Reading the real
@@ -526,7 +533,11 @@ export class Figure {
         );
 
         const chestTwist = -twist * 1.5;
-        const chestPitch = this.pitch + flip + 0.05 * run + surf * 0.10;
+        // The hero landing hunches the chest over the planted fist — the
+        // shoulders curl well past what the hips take, which is most of
+        // what makes the pose read as an impact braced rather than a squat.
+        const chestPitch = this.pitch + flip + 0.05 * run + surf * 0.10
+            + hero * 0.38;
         // The shoulders open a little further than the hips — about eight degrees
         // at a full stance. A surfer's chest leads the pelvis round, and the small
         // difference is what stops the torso reading as one rigid block.
@@ -719,7 +730,7 @@ export class Figure {
         // body-up direction is rebuilt here from the flight pitch (the
         // composed basis does not exist yet at this point in the frame),
         // and the reach clamp keeps the legs at true length along it.
-        const jl = this.jetLean;
+        const jl = this.jetLean * (1 - surf);
         if (jl > 0.01 && (ch.airborne || ch.jetFall)) {
             const jp = Math.max(0, Math.min(ch.jetPitch ?? 0, 1.9));
             const sj = Math.sin(jp), cj = Math.cos(jp);
@@ -736,6 +747,30 @@ export class Figure {
                 this.footPos[o + 1] += (tyf - this.footPos[o + 1]) * jl;
                 this.footPos[o + 2] += (tzf - this.footPos[o + 2]) * jl;
                 this.footWeight[f] = Math.min(this.footWeight[f], 1 - jl);
+            }
+        }
+
+        // The superhero landing's legs: support boot planted ahead-left,
+        // trailing boot folded back under the hips with the heel lifted —
+        // hip low plus foot behind-and-raised is what drives that knee down
+        // to the ground, which is the half of the three-point the crouch
+        // alone cannot say.
+        const heroF = (ch.heroLand || 0) * (1 - surf);
+        if (heroF > 0.01 && !ch.airborne) {
+            const lx2 = ch.position.x + fwdX * 0.24 - rgtX * 0.16;
+            const lz2 = ch.position.z + fwdZ * 0.24 - rgtZ * 0.16;
+            const rx2 = ch.position.x - fwdX * 0.36 + rgtX * 0.14;
+            const rz2 = ch.position.z - fwdZ * 0.36 + rgtZ * 0.14;
+            const tgt = [
+                [lx2, this._ground(lx2, lz2), lz2],
+                [rx2, this._ground(rx2, rz2) + 0.18, rz2],
+            ];
+            for (let f = 0; f < 2; f++) {
+                const o = f * 3;
+                this.footPos[o] += (tgt[f][0] - this.footPos[o]) * heroF;
+                this.footPos[o + 1] += (tgt[f][1] - this.footPos[o + 1]) * heroF;
+                this.footPos[o + 2] += (tgt[f][2] - this.footPos[o + 2]) * heroF;
+                this.footWeight[f] = Math.max(this.footWeight[f], heroF);
             }
         }
     }
@@ -1050,7 +1085,7 @@ export class Figure {
             // arms streamline along the flanks — the cruise silhouette, not
             // a crooked dangle. In the body frame, so upright flight sweeps
             // them down the sides and prone flight sweeps them aft.
-            const jl = this.jetLean;
+            const jl = this.jetLean * (1 - surf);
             if (jl > 0.001) {
                 const jx = _sh[0] - uX * 0.46 - fX * 0.12 + rX * (sgn * 0.16);
                 const jy = _sh[1] - uY * 0.46 - fY * 0.12 + rY * (sgn * 0.16);
@@ -1060,22 +1095,24 @@ export class Figure {
                 tz += (jz - tz) * jl;
             }
 
-            // ---- the superhero landing: right fist to the regolith ----------
-            // The reach clamp keeps the arm honest when the crouch has not
-            // caught up yet; the other arm sweeps back and up for balance.
+            // ---- the superhero landing ---------------------------------------
+            // The comic-cover three-point: right fist planted on the ground
+            // *ahead* of the body under the hunched chest, off arm swept
+            // back and high behind for balance. The reach clamp keeps the
+            // planted arm honest while the crouch is still arriving.
             const hero = ch.heroLand || 0;
             if (hero > 0.001) {
                 if (a === 1) {
-                    const gx2 = ch.position.x + rX * 0.28 + fX * 0.14;
-                    const gy2 = (ch.groundY ?? ch.position.y) + 0.10;
-                    const gz2 = ch.position.z + rZ * 0.28 + fZ * 0.14;
+                    const gx2 = ch.position.x + fX * 0.32 + rX * 0.12;
+                    const gy2 = (ch.groundY ?? ch.position.y) + 0.08;
+                    const gz2 = ch.position.z + fZ * 0.32 + rZ * 0.12;
                     tx += (gx2 - tx) * hero;
                     ty += (gy2 - ty) * hero;
                     tz += (gz2 - tz) * hero;
                 } else {
-                    const bx2 = _sh[0] - fX * 0.24 + uX * 0.16 + rX * (sgn * 0.28);
-                    const by2 = _sh[1] - fY * 0.24 + uY * 0.16 + rY * (sgn * 0.28);
-                    const bz2 = _sh[2] - fZ * 0.24 + uZ * 0.16 + rZ * (sgn * 0.28);
+                    const bx2 = _sh[0] - fX * 0.30 + uX * 0.30 + rX * (sgn * 0.30);
+                    const by2 = _sh[1] - fY * 0.30 + uY * 0.30 + rY * (sgn * 0.30);
+                    const bz2 = _sh[2] - fZ * 0.30 + uZ * 0.30 + rZ * (sgn * 0.30);
                     tx += (bx2 - tx) * hero;
                     ty += (by2 - ty) * hero;
                     tz += (bz2 - tz) * hero;
