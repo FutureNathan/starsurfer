@@ -183,6 +183,9 @@ async function boot() {
         lights: spells.lights, character, rig, canvas,
     });
     martians.weapons = weapons;
+    // The Solar Flare's crescent strikes the hunt's martians — see
+    // `MartianMode._sweepDamage`.
+    martians.spells = spells;
 
     // The rig needs ground heights to keep the spring arm above the dust —
     // including the tube roofs, judged from the camera's own storey, so the

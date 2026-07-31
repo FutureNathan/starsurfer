@@ -195,6 +195,13 @@ export class MartianMode {
             this.packs.push({ x: 0, z: 0, alive: false, respawn: 0, mesh: null });
         }
 
+        /** Set from `main`, like `weapons`: the Solar Flare's crescent is a
+         *  force front, and the hunt reads it to strike whoever stands in it. */
+        this.spells = null;
+        /** Martians already struck by the current wave — once per cast. */
+        this._sweepStruck = new Set();
+        this._sweepCast = 0;
+
         /** @type {{x:number,z:number,heading:number,bob:number,alive:boolean,
          *          hp:number,respawn:number,windup:number,cooldown:number,
          *          stagger:number,mesh:any}[]} */
@@ -778,6 +785,40 @@ export class MartianMode {
     }
 
     /**
+     * The Solar Flare's crescent as a weapon: standing in the arc while it
+     * runs past costs one point and a shove outward — the crowd answer to a
+     * pack of hunters, worth a stagger apiece rather than a kill. Each
+     * martian is struck once per cast, the horns taper to nothing and strike
+     * nothing, and a wave that has collapsed to a swell no longer hits.
+     */
+    _sweepDamage() {
+        const fr = this.spells?.sweep?.front;
+        if (!fr) return;
+        if (fr.id !== this._sweepCast) {
+            this._sweepCast = fr.id;
+            this._sweepStruck.clear();
+        }
+        if (!fr.live || fr.env < 0.15 || fr.height < 0.5) return;
+        const cosArc = Math.cos(fr.arc * 0.8);
+        for (const m of this.martians) {
+            if (!m.alive || this._sweepStruck.has(m)) continue;
+            const vx = m.x - fr.kx, vz = m.z - fr.kz;
+            const d = Math.hypot(vx, vz) || 1;
+            // On the ring the crest is drawing, inside the meaty part of
+            // the arc. The band is wide enough that nothing walks through
+            // the front between two frames.
+            if (Math.abs(d - fr.r) > 1.35) continue;
+            if ((vx * fr.dx + vz * fr.dz) / d < cosArc) continue;
+            this._sweepStruck.add(m);
+            // The shove before the damage: a survivor should stagger where
+            // the wave left it, and a kill respawns elsewhere anyway.
+            m.x += (vx / d) * 1.8;
+            m.z += (vz / d) * 1.8;
+            this._damage(m, 1);
+        }
+    }
+
+    /**
      * The charged shot leaves: a slow, bright bolt projectile aimed at where
      * the player is heading, not just where they are — dodging is a change
      * of direction, which is the shooter contract.
@@ -854,6 +895,7 @@ export class MartianMode {
 
         this._pushUniforms();
         this._updatePacks(dt);
+        this._sweepDamage();
         this._invuln = Math.max(0, this._invuln - dt);
 
         // The kill/bolt flash, while it lasts.

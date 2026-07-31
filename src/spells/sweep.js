@@ -71,6 +71,19 @@ export class Sweep {
         this.reach = 0;
         this._brushOwed = 0;
         this._sprayOwed = 0;
+
+        /**
+         * The live crest, published for whatever the wave can run over — the
+         * hunt reads it to strike martians standing in the arc. One object,
+         * written in place each frame: circle centre and radius, facing,
+         * half-angle, and how much of the wave is still standing. `live`
+         * follows the cast; `id` marks each cast so a target struck once
+         * stays struck for that wave.
+         */
+        this.front = {
+            live: false, id: 0, kx: 0, kz: 0, r: CURVE,
+            dx: 0, dz: 1, arc: ARC0, env: 0, height: 0,
+        };
     }
 
     /** @param {number} ax @param {number} az flat aim direction */
@@ -94,6 +107,9 @@ export class Sweep {
         this._brushOwed = 0;
         this._sprayOwed = 0;
         this.active = true;
+        // A new cast is a new wave: whoever it already struck is fair game.
+        this.front.id += 1;
+        this.front.live = false;
     }
 
     /** @param {number} dt */
@@ -140,6 +156,13 @@ export class Sweep {
         // The crest's own right, for the arc parametrisation.
         const wx = this.dz;
         const wz = -this.dx;
+
+        // Publish the front where it is actually drawn this frame.
+        const fr = this.front;
+        fr.live = true;
+        fr.kx = kx; fr.kz = kz;
+        fr.dx = this.dx; fr.dz = this.dz;
+        fr.arc = arc; fr.env = env; fr.height = height;
 
         let px = 0, py = 0, pz = 0;
         for (let c = 0; c < COLS; c++) {
@@ -331,6 +354,7 @@ export class Sweep {
 
     _end() {
         this.active = false;
+        this.front.live = false;
         if (this.strand >= 0) {
             this.ctx.water.release(this.strand);
             this.strand = -1;

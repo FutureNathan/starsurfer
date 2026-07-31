@@ -194,15 +194,33 @@ export function initMinimap(terrain, sky, character) {
             ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
             ctx.clip();
 
-            // Heading-up: the whole chart turns about its centre so the way
-            // the rider faces is always the top of the map. Everything below
-            // — relief, boundary, symbols, arrow — draws inside this one
-            // rotation; the arrow's own facing rotation then cancels against
-            // it, leaving the arrow pointing straight up, which is the
-            // grammar every car navigator taught.
-            ctx.translate(size / 2, size / 2);
-            ctx.rotate(character.facing - Math.PI);
-            ctx.translate(-size / 2, -size / 2);
+            // Off-chart void, for the sliver of disc the world can rotate
+            // out of when the rider stands near its edge.
+            ctx.fillStyle = "rgba(4, 5, 10, 0.9)";
+            ctx.fillRect(0, 0, size, size);
+
+            // Heading-up, the way a car navigator does it: the chart pivots
+            // about the *rider*, so their arrow holds still while the world
+            // turns around them, and the way they face is always the top of
+            // the map.
+            //
+            // Two things make the turn read correctly. The pivot is the
+            // rider's own chart position, not the chart's centre — pivoting
+            // off-centre made the arrow sweep an arc across the map on every
+            // turn. And the chart is drawn as a true top-down view: the
+            // backing stores world +z down its rows, so it is flipped here —
+            // without the flip the projection is mirrored, and on a mirrored
+            // chart every rotation runs backwards: turn right and the world
+            // spun the wrong way. Flipped, rotate(-facing) turns the world
+            // exactly the way the ground does.
+            const px = toMap(character.position.x);
+            const py = size - toMap(character.position.z);
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(-character.facing);
+            ctx.translate(-px, -py);
+            ctx.translate(0, size);
+            ctx.scale(1, -1);
 
             ctx.imageSmoothingEnabled = true;
             ctx.drawImage(backing, 0, 0, size, size);
@@ -235,15 +253,12 @@ export function initMinimap(terrain, sky, character) {
                     ctx.stroke();
                 }
             }
+            ctx.restore();
 
-            // The rider: an arrow at their position, nose to their facing.
-            // Forward is (sin f, cos f) in world x/z, which maps to
-            // right/down here, so the canvas rotation is pi - f.
-            const px = toMap(character.position.x);
-            const pz = toMap(character.position.z);
+            // The rider: the arrow stands at the pivot and points straight
+            // up — heading-up means the arrow never rotates, the world does.
             const s = size / 168;
-            ctx.translate(px, pz);
-            ctx.rotate(Math.PI - character.facing);
+            ctx.translate(px, py);
             ctx.beginPath();
             ctx.moveTo(0, -6.5 * s);
             ctx.lineTo(4.6 * s, 5.5 * s);
