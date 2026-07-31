@@ -53,6 +53,16 @@ export class FlightWeapons {
          *          tx:number,ty:number,tz:number,life:number}[]} */
         this._rockets = [];
         this._hit = { x: 0, y: 0, z: 0 };
+
+        /**
+         * Mode hooks, set by whoever owns targets (Martian Hunt today).
+         * `getLock()` may return {x,y,z,ref} to override the aim with a
+         * locked target; `onHit(lock)` fires when a laser takes it;
+         * `onBlast(x,y,z,r)` fires at every rocket detonation.
+         */
+        this.getLock = null;
+        this.onHit = null;
+        this.onBlast = null;
     }
 
     /**
@@ -82,6 +92,12 @@ export class FlightWeapons {
     _fireLaser() {
         const ch = this.ch;
         this._aim(this._hit);
+        // A locked target beats the aim point: the lock is the whole deal
+        // of hunting from the air.
+        const lock = this.getLock?.();
+        if (lock) {
+            this._hit.x = lock.x; this._hit.y = lock.y; this._hit.z = lock.z;
+        }
         const hx = this._hit.x, hy = this._hit.y, hz = this._hit.z;
 
         // The scorch, once, and the first fan of sparks off it.
@@ -113,6 +129,7 @@ export class FlightWeapons {
         };
         this._beams.push(beam);
         this._beamTick(beam);
+        if (lock) this.onHit?.(lock);
         ch.firedLaser = true;
     }
 
@@ -154,6 +171,10 @@ export class FlightWeapons {
     _fireRocket() {
         const ch = this.ch;
         this._aim(this._hit);
+        const lock = this.getLock?.();
+        if (lock) {
+            this._hit.x = lock.x; this._hit.y = lock.y; this._hit.z = lock.z;
+        }
         const sx = ch.position.x, sy = ch.position.y + 1.0, sz = ch.position.z;
         const dx = this._hit.x - sx, dy = this._hit.y - sy, dz = this._hit.z - sz;
         const l = Math.hypot(dx, dy, dz) || 1;
@@ -201,6 +222,7 @@ export class FlightWeapons {
         const d = Math.hypot(r.x - ch.position.x, r.z - ch.position.z);
         const near = Math.max(0, 1 - d / 60);
         this.rig.addTrauma(0.05 + 0.20 * near);
+        this.onBlast?.(r.x, r.y, r.z, 4.5);
         ch.rocketBoom = true;
     }
 

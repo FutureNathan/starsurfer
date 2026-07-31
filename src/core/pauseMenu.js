@@ -200,6 +200,39 @@ const CSS = `
 .pm-credit:hover { color: #ffffff; }
 .pm-credit .up { font-size: 9px; opacity: 0.7; }
 
+/* The mode tab: two big cards and the hunt's leaderboard. */
+.pm-mode {
+    display: block;
+    width: 100%;
+    margin: 0.5em 0;
+    padding: 0.9em 1.1em;
+    border: 1px solid rgba(255, 246, 224, 0.25);
+    border-radius: 12px;
+    background: rgba(16, 16, 34, 0.85);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.pm-mode b { display: block; letter-spacing: 0.22em; margin-bottom: 0.3em; }
+.pm-mode span { font-size: 11px; opacity: 0.75; line-height: 1.6; }
+.pm-mode:hover { background: rgba(26, 26, 52, 0.92); }
+.pm-mode.on {
+    border-color: rgba(150, 255, 175, 0.65);
+    background: rgba(14, 34, 18, 0.9);
+}
+#pm-scores {
+    margin: 0.4em 0 0;
+    padding: 0;
+    list-style-position: inside;
+    font-size: 11.5px;
+    line-height: 1.9;
+    max-height: 180px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+#pm-scores li b { float: right; }
+
 /* The sound tab: two switch-and-slider rows, Minecraft's arrangement. */
 .pm-srow {
     display: flex;
@@ -387,7 +420,7 @@ function keycaps(spec) {
  *   and no pointer-lock dance on resume
  * @returns {{ readonly paused: boolean, show(): void }}
  */
-export function initPauseMenu(canvas, overlay, audio, touch) {
+export function initPauseMenu(canvas, overlay, audio, touch, modes) {
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
@@ -408,6 +441,7 @@ export function initPauseMenu(canvas, overlay, audio, touch) {
             <div class="pm-mark">STARSURFER</div>
             <div class="pm-tabs">
                 <button class="pm-tab on" data-page="controls">controls</button>
+                <button class="pm-tab" data-page="mode">mode</button>
                 <button class="pm-tab" data-page="sound">sound</button>
                 <button class="pm-tab" data-page="settings">settings &amp; stats</button>
             </div>
@@ -420,6 +454,22 @@ export function initPauseMenu(canvas, overlay, audio, touch) {
                     <div class="pm-seed">world <b>${S.worldSeed}</b> · add
                         <b>?seed=${S.worldSeed}</b> to the address to come back
                         to it</div>
+                </div>
+                <div class="pm-page" data-page="mode" hidden>
+                    <div class="pm-h">game mode</div>
+                    <button class="pm-mode" data-mode="free">
+                        <b>FREE ROAM</b>
+                        <span>the moon, the board, the pack, the five powers —
+                        nothing hunting you</span>
+                    </button>
+                    <button class="pm-mode" data-mode="martian">
+                        <b>MARTIAN HUNT</b>
+                        <span>green martians on the ground; get close and their
+                        lightning ends the run. Fly, lock, fire — one point a
+                        martian, and they keep coming</span>
+                    </button>
+                    <div class="pm-h">top twenty — martian hunt</div>
+                    <ol id="pm-scores"></ol>
                 </div>
                 <div class="pm-page" data-page="sound" hidden>
                     <div class="pm-h">music</div>
@@ -539,6 +589,7 @@ export function initPauseMenu(canvas, overlay, audio, touch) {
 
     const show = () => {
         open = true;
+        refreshModes();
         root.classList.add("show");
         escHint?.classList.add("off");
     };
@@ -567,10 +618,42 @@ export function initPauseMenu(canvas, overlay, audio, touch) {
     // one small button — but clicks inside the panel stay in the panel.
     root.addEventListener("click", (e) => { if (e.target === root) resume(); });
 
+    // ------------------------------------------------------------- modes
+    // The mode page, when a mode API is provided: two cards and the hunt's
+    // top twenty, refreshed on every open (scores move between visits).
+    const refreshModes = () => {
+        if (!modes) return;
+        const cur = modes.current();
+        for (const b of root.querySelectorAll(".pm-mode")) {
+            b.classList.toggle("on", b.dataset.mode === cur);
+        }
+        const ol = root.querySelector("#pm-scores");
+        if (ol) {
+            const sc = modes.scores();
+            ol.innerHTML = sc.length
+                ? sc.map((s) =>
+                    `<li>${String(s.name).replace(/[<>&]/g, "")} <b>${s.score}</b></li>`
+                  ).join("")
+                : "<li>no hunts on the board yet</li>";
+        }
+    };
+    for (const b of root.querySelectorAll(".pm-mode")) {
+        b.addEventListener("click", () => {
+            modes?.set(b.dataset.mode);
+            refreshModes();
+            resume();
+        });
+    }
+
     // Losing pointer lock *is* the pause gesture. Escape, alt-tab and focus
-    // loss all arrive here, and all of them mean the player has left the game.
+    // loss all arrive here, and all of them mean the player has left the game
+    // — unless something with its own screen (the hunt's death panel) vetoes
+    // the auto-open.
+    let lockVeto = null;
     document.addEventListener("pointerlockchange", () => {
-        if (document.pointerLockElement !== canvas && !open) show();
+        if (document.pointerLockElement !== canvas && !open && !lockVeto?.()) {
+            show();
+        }
     });
 
     // With the pointer never locked (first load, or a trackpad user who
@@ -582,5 +665,11 @@ export function initPauseMenu(canvas, overlay, audio, touch) {
         else if (document.pointerLockElement !== canvas) { show(); }
     });
 
-    return { get paused() { return open; }, show };
+    return {
+        get paused() { return open; },
+        show,
+        /** Let another full-screen owner (the hunt's death panel) suppress
+         *  the menu's auto-open on pointer-lock loss. */
+        setLockVeto(fn) { lockVeto = fn; },
+    };
 }

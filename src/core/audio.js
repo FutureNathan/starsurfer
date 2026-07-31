@@ -765,6 +765,38 @@ export function initAudio() {
                 reap(bn, bl, bng);
             }
 
+            // Martian Hunt. The bolt that ends you is the harshest thing
+            // short of the asteroid — a bright electric tear with a body
+            // under it; the kill confirm is two quick rising notes, the
+            // arcade's oldest good idea.
+            if (ch.boltShock) {
+                const e1 = noise(t);
+                const ehp = filter("highpass", 1400);
+                const eg = env(t, 0.7, 0.004, 0.35);
+                e1.connect(ehp); ehp.connect(eg);
+                e1.stop(t + 0.4);
+                reap(e1, ehp, eg);
+                const e2 = ctx.createOscillator();
+                e2.type = "sawtooth";
+                e2.frequency.setValueAtTime(880, t);
+                e2.frequency.exponentialRampToValueAtTime(70, t + 0.4);
+                const e2g = env(t, 0.5, 0.005, 0.45);
+                e2.connect(e2g);
+                e2.start(t); e2.stop(t + 0.5);
+                reap(e2, e2g);
+            }
+            if (ch.martianDown) {
+                for (let i = 0; i < 2; i++) {
+                    const o = ctx.createOscillator();
+                    o.type = "triangle";
+                    o.frequency.value = i === 0 ? 660 : 990;
+                    const og2 = env(t + i * 0.07, 0.22, 0.008, 0.10);
+                    o.connect(og2);
+                    o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.14);
+                    reap(o, og2);
+                }
+            }
+
             // The superhero landing: a real thump — a pitch-dropping thud
             // with a dust whump over it, well under the asteroid but well
             // over a footstep. Edge-triggered off the flourish the

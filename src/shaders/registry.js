@@ -10,6 +10,8 @@
  */
 
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import martianVert from "./martian.vertex.wgsl?raw";
+import martianFrag from "./martian.fragment.wgsl?raw";
 
 import noiseLib from "./lib/noise.wgsl?raw";
 import terrainLib from "./lib/terrain.wgsl?raw";
@@ -108,6 +110,10 @@ const SHADERS = {
 
     // The camera-space depth prepass. One fragment stage shared by everything
     // that has nothing to discard; the wake carries its own because it does.
+    // The martians' suits — Martian Hunt mode.
+    martianVertexShader: martianVert,
+    martianPixelShader: martianFrag,
+
     prepassPixelShader: prepassFrag,
     terrainPrepassVertexShader: terrainPrepassVert,
     charPrepassVertexShader: charPrepassVert,

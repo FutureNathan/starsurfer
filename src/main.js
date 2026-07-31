@@ -31,6 +31,7 @@ import { SprayField } from "./vfx/particles.js";
 import { SurfWake } from "./vfx/surfWake.js";
 import { SpellSystem } from "./spells/spellSystem.js";
 import { FlightWeapons } from "./spells/flightWeapons.js";
+import { MartianMode } from "./game/martians.js";
 import { Overlay } from "./ui/overlay.js";
 import { initMinimap } from "./ui/minimap.js";
 import { Sky } from "./render/sky.js";
@@ -174,6 +175,13 @@ async function boot() {
     // Built entirely from the pools above — no pipelines of their own.
     const weapons = new FlightWeapons(terrain, spray, spells.lights, character, rig);
 
+    // Martian Hunt, dormant until the menu's mode page turns it on.
+    const martians = new MartianMode({
+        scene, terrain, sky, spray,
+        lights: spells.lights, character, rig, canvas,
+    });
+    martians.weapons = weapons;
+
     // The rig needs ground heights to keep the spring arm above the dust —
     // including the tube roofs, judged from the camera's own storey, so the
     // camera rides over a roof the rider is on instead of clipping into it.
@@ -198,7 +206,14 @@ async function boot() {
     // The pause menu, on every device: Escape opens it on a keyboard, the ⚙
     // button opens it on a touchscreen, and either way it pauses the loop
     // below, shows the controls and hosts the overlay on its settings tab.
-    const pauseMenu = initPauseMenu(canvas, overlay, audio, wantsTouchControls());
+    const pauseMenu = initPauseMenu(canvas, overlay, audio, wantsTouchControls(), {
+        current: () => (martians.active ? "martian" : "free"),
+        set: (m) => (m === "martian" ? martians.enable() : martians.disable()),
+        scores: () => martians.topScores(),
+    });
+    // The hunt's death panel owns the screen when it is up — the pause menu
+    // must not auto-open over it when the pointer unlocks.
+    pauseMenu.setLockVeto(() => martians.dead);
     // The on-screen controls, when the primary pointer is a finger. Their ⚙
     // opens the menu; the overlay stays reachable through its settings tab.
     if (wantsTouchControls()) {
@@ -274,8 +289,9 @@ async function boot() {
         const tFrame = performance.now();
 
         character.update(dt, rig);
-        // Before the audio, which reads the fired/boom flags this sets.
+        // Before the audio, which reads the fired/boom/shock flags these set.
         weapons.update(dt);
+        martians.update(dt);
         audio.frame(character, false);
         terrain.heightfield.clampToPlayArea(character.position);
         // Pose and simulate before the contact pass: the footprints are stamped
