@@ -468,9 +468,10 @@ export function initPauseMenu(canvas, overlay, audio, touch, modes) {
                         <span>green martians hunt you with lightning bolts you
                         can dodge — three hits ends either side. Aim the laser
                         with the crosshair; missiles auto-lock but eat ammo
-                        from the glowing crates. Every kill breeds a meaner
+                        from the gold crates. Every kill breeds a meaner
                         replacement: wider hunting range, faster, sharper aim
-                        — and the veterans are visibly bigger</span>
+                        — and the rank shows: white suits, then orange,
+                        crimson, and the big black-suited veterans</span>
                     </button>
                     <div class="pm-h">top twenty — martian hunt</div>
                     <ol id="pm-scores"></ol>

@@ -18,6 +18,7 @@ uniform sunRadiance: vec3f;
 uniform shR: array<vec4f, 9>;
 uniform ambientIntensity: f32;
 uniform hitFlash: f32;
+uniform suitColor: vec3f;
 uniform fogDensity: f32;
 uniform fogHeightFalloff: f32;
 uniform fogStart: f32;
@@ -34,10 +35,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let world = input.vWorld;
     let lp = input.vLocal;
 
-    // Suit green, boots and gloves darker, pack darker still.
-    var albedo = vec3f(0.030, 0.115, 0.040);
+    // The suit wears whatever colour its owner was issued — rookie white
+    // through veteran tiers, or crate gold — boots darker, pack darker
+    // still. The HEAD is always the martian: green above the collar,
+    // whatever the rank of the suit below it.
+    var albedo = uniforms.suitColor;
     albedo *= mix(0.45, 1.0, smoothstep(0.12, 0.34, lp.y));
     if (lp.z < -0.16) { albedo *= 0.6; }
+    let head = smoothstep(1.14, 1.24, lp.y);
+    albedo = mix(albedo, vec3f(0.035, 0.150, 0.048), head);
 
     const INV_PI: f32 = 0.31830988618;
     let diff = wrapDiffuse(dot(N, L), 0.3);

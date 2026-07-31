@@ -214,14 +214,27 @@ export class MartianMode {
     // ------------------------------------------------------------- the body
     async _buildSkin(scene) {
         const [{ Mesh }, { CreateCapsule }, { CreateSphere }, { CreateBox },
-               { ShaderMaterial }, { ShaderLanguage }] = await Promise.all([
-            import("@babylonjs/core/Meshes/mesh"),
-            import("@babylonjs/core/Meshes/Builders/capsuleBuilder"),
-            import("@babylonjs/core/Meshes/Builders/sphereBuilder"),
-            import("@babylonjs/core/Meshes/Builders/boxBuilder"),
-            import("@babylonjs/core/Materials/shaderMaterial"),
-            import("@babylonjs/core/Materials/shaderLanguage"),
-        ]);
+               { ShaderMaterial }, { ShaderLanguage }, { Color3 }] =
+            await Promise.all([
+                import("@babylonjs/core/Meshes/mesh"),
+                import("@babylonjs/core/Meshes/Builders/capsuleBuilder"),
+                import("@babylonjs/core/Meshes/Builders/sphereBuilder"),
+                import("@babylonjs/core/Meshes/Builders/boxBuilder"),
+                import("@babylonjs/core/Materials/shaderMaterial"),
+                import("@babylonjs/core/Materials/shaderLanguage"),
+                import("@babylonjs/core/Maths/math.color"),
+            ]);
+
+        // The rank insignia is the whole suit: rookie white, then orange,
+        // then crimson, then the void-black of a level-fifteen veteran.
+        // (Linear-light values; the head stays green in the shader.)
+        this._suitTiers = [
+            new Color3(0.22, 0.23, 0.25),
+            new Color3(0.45, 0.16, 0.03),
+            new Color3(0.38, 0.045, 0.05),
+            new Color3(0.028, 0.028, 0.05),
+        ];
+        this._crateGold = new Color3(0.55, 0.36, 0.08);
 
         const part = (m, x, y, z, rx = 0, rz = 0) => {
             m.position.set(x, y, z);
@@ -251,13 +264,15 @@ export class MartianMode {
                 uniforms: [
                     "world", "viewProjection", "cameraPosition",
                     "sunDir", "sunRadiance", "shR", "ambientIntensity",
-                    "hitFlash",
+                    "hitFlash", "suitColor",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                 ],
                 samplers: ["skyLUT"],
                 shaderLanguage: ShaderLanguage.WGSL,
             });
         mat.backFaceCulling = true;
+        // The base material is the crates' material: ammo gold.
+        mat.setColor3("suitColor", this._crateGold);
         proto.material = mat;
         this.material = mat;
         this._scene = scene;
@@ -272,6 +287,7 @@ export class MartianMode {
             m.alwaysSelectAsActiveMesh = true;
             m.renderingGroupId = 1;
             const mi = mat.clone("martianMat" + i);
+            mi.setColor3("suitColor", this._suitTiers[0]);
             m.material = mi;
             this._mats.push(mi);
             this.martians[i].mesh = m;
@@ -539,8 +555,13 @@ export class MartianMode {
 
         if (m.mesh) {
             m.mesh.isVisible = true;
-            // The veteran's tell: up to thirty percent bigger at the cap.
+            // The veteran's tells: up to thirty percent bigger at the cap,
+            // and the suit wears the rank — white, orange, crimson, void.
             m.mesh.scaling.setAll(1 + Math.min(10, lvl) * 0.03);
+            if (m.mat && this._suitTiers) {
+                const tier = lvl >= 15 ? 3 : lvl >= 10 ? 2 : lvl >= 5 ? 1 : 0;
+                m.mat.setColor3("suitColor", this._suitTiers[tier]);
+            }
         }
     }
 
