@@ -59,14 +59,13 @@ const JUMP_V = 4.3;
 const AIR_G = 6.8;
 
 /**
- * The jetpack: double-tap the Delete key and hold. Thrust settles the climb
- * at `JET_CLIMB` until `JET_CEIL` metres over the ground, the stick steers a
- * flat glide at `JET_SPEED`, and letting go hands straight back to the
- * ordinary ballistic fall and landing. No fuel — the hold is the limit.
+ * The jetpack: double-tap the Delete key and hold. The thrust axis is the
+ * *body* axis and the body follows the aim — see the flight branch — so the
+ * one speed here is simply how fast he goes wherever the helmet points.
+ * Letting go hands straight back to the ordinary ballistic fall and
+ * landing. No fuel — the hold is the limit.
  */
-const JET_CLIMB = 6.8;
-const JET_SPEED = 13.5;
-const JET_ACCEL = 24;
+const JET_FLY = 17;
 const JET_CEIL = 36;
 /** Seconds between the two taps that arm it. */
 const JET_TAP = 0.45;
@@ -155,6 +154,8 @@ export class CharacterController {
         this.jetting = false;
         /** Falling after the pack cut out — thrusters still brake the drop. */
         this.jetFall = false;
+        /** Body-axis pitch off vertical while flying; the figure wears it. */
+        this.jetPitch = 0;
         /** 1 at a hard flight touchdown, decaying: the three-point landing. */
         this.heroLand = 0;
         this._jetArm = false;
@@ -258,46 +259,36 @@ export class CharacterController {
                 this.trickFlip = 0;
             }
         } else if (this.jetting) {
-            // Iron Man mode. The mouse is the stick: the camera's own pitch
-            // steers the climb — look up and rise, look at the horizon and
-            // hold with a gentle float, look at the ground and dive. The
-            // move keys steer the glide, the body turns to face it, and the
-            // ceiling only clips the climb, never the dive. The moment the
-            // key lifts, the ballistic branch takes the same velocity down
-            // to the landing.
+            // Iron Man flight. The thrust axis IS the body axis, and the
+            // body follows the camera's pitch, doubled: look level or up
+            // and he stands on the flame — a straight figure going straight
+            // up, fast. Drop the aim and the whole body pitches over with
+            // it: about forty-five degrees of look-down is level cruise in
+            // the full prone pose, head leading; straight down is a hard
+            // dive. He always flies where the top of the helmet points,
+            // which is what makes the lean *be* the steering rather than
+            // decoration on it.
+            const f = rig.forward;
+            const theta = f ? Math.asin(Scalar.Clamp(f.y, -1, 1)) : 0;
+            const phi = Math.PI / 2 + Math.min(0, theta) * 2;
+            const yaw = f ? Math.atan2(f.x, f.z) : this.facing;
+            const cph = Math.cos(phi);
+            let dy = Math.sin(phi);
+            const dx = Math.sin(yaw) * cph;
+            const dz = Math.cos(yaw) * cph;
             const lift = this.position.y - this.groundY;
-            // `?? 0.2`: a rig without a full look vector (the test harness)
-            // flies a gentle default climb.
-            const aimY = rig.forward ? rig.forward.y : 0.2;
-            let targetVy = aimY * 11 + 1.2;
-            if (lift >= JET_CEIL) targetVy = Math.min(targetVy, 0);
-            this.vy += (targetVy - this.vy) * Math.min(1, 3.2 * h);
+            if (lift >= JET_CEIL && dy > 0) dy = 0;
+
+            const k = Math.min(1, 3.0 * h);
+            this.velocity.x += (dx * JET_FLY - this.velocity.x) * k;
+            this.velocity.z += (dz * JET_FLY - this.velocity.z) * k;
+            this.vy += (dy * JET_FLY - this.vy) * k;
             this.position.y += this.vy * h;
             this.airTuck = 0;
-
-            _wish.set(
-                _fwd.x * input.moveZ + _right.x * input.moveX,
-                0,
-                _fwd.z * input.moveZ + _right.z * input.moveX
-            );
-            const wl = Math.hypot(_wish.x, _wish.z);
-            if (wl > 0.001) {
-                const a = JET_ACCEL * h;
-                this.velocity.x += Scalar.Clamp(
-                    (_wish.x / wl) * JET_SPEED - this.velocity.x, -a, a);
-                this.velocity.z += Scalar.Clamp(
-                    (_wish.z / wl) * JET_SPEED - this.velocity.z, -a, a);
-                this.facing = angleDamp(
-                    this.facing, Math.atan2(_wish.x, _wish.z), 6, h);
-            } else {
-                const d = 6 * h;
-                const sp = Math.hypot(this.velocity.x, this.velocity.z);
-                if (sp > 0.0001) {
-                    const k = Math.max(0, sp - d) / sp;
-                    this.velocity.x *= k;
-                    this.velocity.z *= k;
-                }
-            }
+            this.facing = angleDamp(this.facing, yaw, 8, h);
+            // Published for the figure: the body axis's forward pitch off
+            // vertical this frame — 0 upright, pi/2 prone, past it diving.
+            this.jetPitch = Math.PI / 2 - phi;
             // Flying into the ground: a dive that meets it plants the
             // three-point landing; a shallow skim just rides the face.
             if (this.position.y < this.groundY) {

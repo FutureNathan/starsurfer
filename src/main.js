@@ -302,18 +302,26 @@ async function boot() {
         // After the shadow refit, so the figure's uniforms carry this frame's
         // cascade matrices rather than last frame's.
         figure.sync(rig.camera.position);
-        // Jetpack exhaust: a spit of hot grains out of the pack while flying,
-        // emitted before the spray pool uploads so they render this frame.
+        // Jetpack exhaust: hot grains streaming opposite the travel — out of
+        // the boots, since the thrust axis is the body axis — emitted before
+        // the spray pool uploads so they render this frame. Hovering vents
+        // straight down.
         if (character.jetting) {
-            const jx = Math.sin(character.facing), jz = Math.cos(character.facing);
+            const jvx = character.velocity.x, jvy = character.vy,
+                  jvz = character.velocity.z;
+            const jvl = Math.hypot(jvx, jvy, jvz);
+            const ex = jvl > 1 ? -jvx / jvl : 0;
+            const ey = jvl > 1 ? -jvy / jvl : -1;
+            const ez = jvl > 1 ? -jvz / jvl : 0;
             for (let i = 0; i < 3; i++) {
+                const sp = 7 + Math.random() * 3;
                 spray.emit(
-                    character.position.x - jx * 0.28 + (Math.random() - 0.5) * 0.16,
-                    character.position.y + 1.05,
-                    character.position.z - jz * 0.28 + (Math.random() - 0.5) * 0.16,
-                    (Math.random() - 0.5) * 1.5,
-                    -7.5 - Math.random() * 3,
-                    (Math.random() - 0.5) * 1.5,
+                    character.position.x + ex * 0.5 + (Math.random() - 0.5) * 0.2,
+                    character.position.y + 0.55 + ey * 0.5,
+                    character.position.z + ez * 0.5 + (Math.random() - 0.5) * 0.2,
+                    ex * sp + (Math.random() - 0.5) * 1.5,
+                    ey * sp - 1.5,
+                    ez * sp + (Math.random() - 0.5) * 1.5,
                     0.030 + Math.random() * 0.030,
                     0.5 + Math.random() * 0.4,
                     1,

@@ -390,6 +390,25 @@ export function initAudio() {
     function jetSet(onNow) {
         if (onNow && !jetNodes) {
             const t = ctx.currentTime;
+
+            // Ignition: the repulsor spool. A rising whine under a swelling
+            // whoosh for half a second, and then the cruise hiss owns it.
+            const ig = noise(t);
+            const igbp = filter("bandpass", 300, 1.1);
+            igbp.frequency.exponentialRampToValueAtTime(1500, t + 0.45);
+            const igg = env(t, 0.38, 0.06, 0.5);
+            ig.connect(igbp); igbp.connect(igg);
+            ig.stop(t + 0.6);
+            reap(ig, igbp, igg);
+            const wh = ctx.createOscillator();
+            wh.type = "sine";
+            wh.frequency.setValueAtTime(160, t);
+            wh.frequency.exponentialRampToValueAtTime(820, t + 0.5);
+            const whg = env(t, 0.12, 0.05, 0.55);
+            wh.connect(whg);
+            wh.start(t); wh.stop(t + 0.65);
+            reap(wh, whg);
+
             const src = noise(t);
             const bp = filter("bandpass", 950, 0.7);
             const g = ctx.createGain();
@@ -576,6 +595,7 @@ export function initAudio() {
     let surfGainSent = -1;
     let surfFreqSent = -1;
     let airPrev = false;
+    let heroPrev = 0;
 
     /**
      * Write an AudioParam without leaking its timeline.
@@ -670,6 +690,29 @@ export function initAudio() {
                 src.stop(t + 0.35);
                 reap(src, lp, g);
             }
+
+            // The superhero landing: a real thump — a pitch-dropping thud
+            // with a dust whump over it, well under the asteroid but well
+            // over a footstep. Edge-triggered off the flourish the
+            // controller sets exactly once per touchdown.
+            const heroNow = ch.heroLand || 0;
+            if (heroNow > 0.99 && heroPrev <= 0.99) {
+                const thb = ctx.createOscillator();
+                thb.type = "sine";
+                thb.frequency.setValueAtTime(72, t);
+                thb.frequency.exponentialRampToValueAtTime(30, t + 0.5);
+                const tg2 = env(t, 0.85, 0.012, 0.7);
+                thb.connect(tg2);
+                thb.start(t); thb.stop(t + 0.8);
+                reap(thb, tg2);
+                const cr = noise(t);
+                const crl = filter("lowpass", 480);
+                const cg2 = env(t, 0.5, 0.010, 0.30);
+                cr.connect(crl); crl.connect(cg2);
+                cr.stop(t + 0.4);
+                reap(cr, crl, cg2);
+            }
+            heroPrev = heroNow;
 
             if (input.spellPressed) power(input.spellPressed);
             ionSet(input.spellHeld2);

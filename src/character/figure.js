@@ -423,7 +423,12 @@ export class Figure {
             0.10 * run
             + 0.012 * clamp(fwdAcc, -9, 22)
             + surf * (0.30 + 0.16 * ch.speed01)
-            + this.jetLean * (0.72 + 0.38 * ch.speed01)
+            // In flight the body wears the flight attitude itself: upright
+            // when climbing straight up, prone when cruising, past prone in
+            // a dive. The controller derives it from the aim; the figure
+            // just puts the body on it — a straight figure on a straight
+            // vector, no bend at the waist.
+            + this.jetLean * clamp(ch.jetPitch ?? 0, 0, 1.9)
             + hero * 0.20;
         this.pitch = damp(this.pitch, pitchWant, 7, h);
 
@@ -703,17 +708,23 @@ export class Figure {
             }
         }
 
-        // Flying: the boots trail down and behind the lean. The reach clamp
-        // in `_poseLeg` brings these onto the leg's own sphere, so what
-        // survives is the direction — legs streaming aft of a body pitched
-        // toward prone, which is the other half of the Iron Man silhouette.
+        // Flying: the boots stream straight down the body axis, opposite
+        // the helmet — the missile silhouette, whatever the attitude. The
+        // body-up direction is rebuilt here from the flight pitch (the
+        // composed basis does not exist yet at this point in the frame),
+        // and the reach clamp keeps the legs at true length along it.
         const jl = this.jetLean;
         if (jl > 0.01 && (ch.airborne || ch.jetFall)) {
+            const jp = Math.max(0, Math.min(ch.jetPitch ?? 0, 1.9));
+            const sj = Math.sin(jp), cj = Math.cos(jp);
+            const upx = fwdX * sj, upy = cj, upz = fwdZ * sj;
+            const hipX = ch.position.x, hipY2 = ch.position.y + 0.88,
+                  hipZ = ch.position.z;
             for (let f = 0; f < 2; f++) {
-                const side = f === 0 ? -0.13 : 0.13;
-                const txf = ch.position.x - fwdX * 0.42 + rgtX * side;
-                const tyf = ch.position.y - 0.30;
-                const tzf = ch.position.z - fwdZ * 0.42 + rgtZ * side;
+                const side = f === 0 ? -0.12 : 0.12;
+                const txf = hipX - upx * 0.80 + rgtX * side;
+                const tyf = hipY2 - upy * 0.80;
+                const tzf = hipZ - upz * 0.80 + rgtZ * side;
                 const o = f * 3;
                 this.footPos[o] += (txf - this.footPos[o]) * jl;
                 this.footPos[o + 1] += (tyf - this.footPos[o + 1]) * jl;
@@ -1028,14 +1039,16 @@ export class Figure {
                 tz += (sz - tz) * surf;
             }
 
-            // ---- flight: both hands swept down and aft, palms as thrusters --
-            // In the *body* frame, which is pitched most of the way to prone,
-            // so the arms trail like Iron Man's rather than dangling.
+            // ---- flight: arms straight back along the body ------------------
+            // Nearly the whole arm's reach, so the elbows lock out and the
+            // arms streamline along the flanks — the cruise silhouette, not
+            // a crooked dangle. In the body frame, so upright flight sweeps
+            // them down the sides and prone flight sweeps them aft.
             const jl = this.jetLean;
             if (jl > 0.001) {
-                const jx = _sh[0] - uX * 0.32 - fX * 0.18 + rX * (sgn * 0.20);
-                const jy = _sh[1] - uY * 0.32 - fY * 0.18 + rY * (sgn * 0.20);
-                const jz = _sh[2] - uZ * 0.32 - fZ * 0.18 + rZ * (sgn * 0.20);
+                const jx = _sh[0] - uX * 0.46 - fX * 0.12 + rX * (sgn * 0.16);
+                const jy = _sh[1] - uY * 0.46 - fY * 0.12 + rY * (sgn * 0.16);
+                const jz = _sh[2] - uZ * 0.46 - fZ * 0.12 + rZ * (sgn * 0.16);
                 tx += (jx - tx) * jl;
                 ty += (jy - ty) * jl;
                 tz += (jz - tz) * jl;

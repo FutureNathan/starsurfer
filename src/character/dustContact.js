@@ -88,6 +88,41 @@ export class DustContact {
         else this._segX = NaN;   // next run starts a fresh groove segment
         if (ch.surf < 0.98) this._walk(dt, moved);
 
+        // The superhero landing leaves its mark: a shallow metre-wide bowl
+        // with a torn rim under the point of arrival, and a ring of thrown
+        // dust skating out of it. Edge-triggered off the controller's
+        // flourish, which is set exactly once per touchdown.
+        const hero = ch.heroLand || 0;
+        if (hero > 0.99 && (this._heroPrev || 0) <= 0.99) {
+            f.brush(
+                ch.position.x, ch.position.z,
+                1.05,
+                0.14, 0.11,
+                1.0, 0,
+                ch.facing, 1.15, 1.0
+            );
+            const sp = this.spray;
+            if (sp) {
+                for (let k = 0; k < 26; k++) {
+                    const a = Math.random() * Math.PI * 2;
+                    const out = 2.2 + Math.random() * 3.6;
+                    sp.emit(
+                        ch.position.x + Math.cos(a) * 0.4,
+                        ch.position.y + 0.06 + Math.random() * 0.10,
+                        ch.position.z + Math.sin(a) * 0.4,
+                        Math.cos(a) * out,
+                        0.7 + Math.random() * 1.6,
+                        Math.sin(a) * out,
+                        0.030 + Math.random() * 0.045,
+                        0.5 + Math.random() * 0.6,
+                        Math.random() < 0.4 ? 1 : 0,
+                        1.4
+                    );
+                }
+            }
+        }
+        this._heroPrev = hero;
+
         // Footfalls fire regardless of mode; the gait suppresses them while
         // surfing because the feet are on the board.
         const fig = this.figure;
