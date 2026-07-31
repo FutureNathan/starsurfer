@@ -803,6 +803,28 @@ export function initAudio() {
                     reap(o, og2);
                 }
             }
+            // Ammo: a two-note pickup chime, and the dead click of an empty
+            // rack — the oldest vocabulary in shooters, because it works.
+            if (ch.ammoPickup) {
+                for (let i = 0; i < 2; i++) {
+                    const o = ctx.createOscillator();
+                    o.type = "sine";
+                    o.frequency.value = i === 0 ? 520 : 784;
+                    const g2 = env(t + i * 0.09, 0.24, 0.010, 0.14);
+                    o.connect(g2);
+                    o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.2);
+                    reap(o, g2);
+                }
+            }
+            if (ch.dryFire) {
+                const dsrc = noise(t);
+                const dlp = filter("lowpass", 700);
+                const dg = env(t, 0.18, 0.003, 0.05);
+                dsrc.connect(dlp); dlp.connect(dg);
+                dsrc.stop(t + 0.08);
+                reap(dsrc, dlp, dg);
+            }
+
             // A hit that did not kill: a short metallic tick, so the count
             // to three is audible.
             if (ch.martianHit) {

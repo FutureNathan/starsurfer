@@ -40,7 +40,8 @@ const SECTIONS = [
         ["sprint · trick jump", "shift"],
         ["star-surf · hold", "right·mouse"],
         ["jetpack · hold", "delete"],
-        ["laser / rocket · in flight", "click double·click"],
+        ["laser · aim with crosshair", "click"],
+        ["missile · needs ammo crates", "double·click"],
     ]],
     ["the five powers", [
         ["solar flare", "1"],
@@ -465,9 +466,10 @@ export function initPauseMenu(canvas, overlay, audio, touch, modes) {
                     <button class="pm-mode" data-mode="martian">
                         <b>MARTIAN HUNT</b>
                         <span>green martians hunt you with slow lightning bolts
-                        you can dodge — three hits ends either side. Lasers,
-                        rockets and auto-lock from foot, board or air; one
-                        point a martian, and they keep coming</span>
+                        you can dodge — three hits ends either side. Aim the
+                        laser with the crosshair; missiles auto-lock but eat
+                        ammo from the glowing crates. One point a martian,
+                        and they keep coming</span>
                     </button>
                     <div class="pm-h">top twenty — martian hunt</div>
                     <ol id="pm-scores"></ol>

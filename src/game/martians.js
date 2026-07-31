@@ -25,7 +25,7 @@
 
 import { S } from "../core/settings.js";
 
-const COUNT = 8;
+const COUNT = 14;
 /** Martians keep inside this radius of the world centre, metres. */
 const WANDER_R = 560;
 /** Hit points. Both sides carry three — an even match, by request. */
@@ -53,6 +53,12 @@ const STAGGER = 0.45;
 const LOCK_R = 45;
 /** Seconds a dead martian stays gone. */
 const RESPAWN_T = 1.6;
+/** Missile ammo packs standing on the ground, world-wide. */
+const PACK_COUNT = 5;
+const PACK_R = 2.8;
+const PACK_AMMO = 3;
+const AMMO_CAP = 9;
+const PACK_RESPAWN = 18;
 /** Seconds of grace after a restart. */
 const INVULN = 2.5;
 const RUN_SPEED = 3.4;
@@ -176,6 +182,14 @@ export class MartianMode {
          *         life:number}[]} */
         this._bolts = [];
 
+        /** Missile ammo packs. Alive in every mode — the rocket eats ammo
+         *  whether or not anything is hunting you.
+         * @type {{x:number,z:number,alive:boolean,respawn:number,mesh:any}[]} */
+        this.packs = [];
+        for (let i = 0; i < PACK_COUNT; i++) {
+            this.packs.push({ x: 0, z: 0, alive: false, respawn: 0, mesh: null });
+        }
+
         /** @type {{x:number,z:number,heading:number,bob:number,alive:boolean,
          *          hp:number,respawn:number,windup:number,cooldown:number,
          *          stagger:number,mesh:any}[]} */
@@ -252,6 +266,34 @@ export class MartianMode {
             this.martians[i].mesh = m;
         }
         this._proto = proto;
+
+        // The ammo crates: the same suit material — a box's local Y sits
+        // under the visor band, so it comes out dark crate-green — with a
+        // beacon of glowing grains doing the long-distance advertising.
+        const crateProto = CreateBox("mzCrate", {
+            width: 0.6, height: 0.5, depth: 0.6,
+        }, scene);
+        crateProto.material = mat;
+        crateProto.isVisible = false;
+        crateProto.isPickable = false;
+        for (const p of this.packs) {
+            const c = crateProto.clone("mzPack");
+            c.isVisible = false;
+            c.isPickable = false;
+            c.alwaysSelectAsActiveMesh = true;
+            c.renderingGroupId = 1;
+            c.material = mat;
+            p.mesh = c;
+        }
+        this._crateProto = crateProto;
+        // Meshes may finish building after the first spawns.
+        for (const p of this.packs) {
+            if (p.alive && p.mesh) {
+                p.mesh.isVisible = true;
+                p.mesh.position.set(
+                    p.x, this.terrain.heightAt(p.x, p.z) + 0.26, p.z);
+            }
+        }
     }
 
     /** Per-frame scalar uniforms off the live sky — mirrors the terrain's. */
@@ -374,11 +416,14 @@ export class MartianMode {
             this._chip.style.display = "";
             this._chipText();
         }
-        // The weapons lock on while the hunt is on. A laser is one point of
-        // damage; a rocket's blast is the full three — the explosion is the
-        // heavy answer.
+        // While the hunt is on: the LASER is pure aim — its ray is tested
+        // against the martians, one point of damage on a true hit — and only
+        // the MISSILE keeps the auto-lock, paying for the privilege in ammo.
+        // A blast is the full three points, the heavy answer.
         const w = this.weapons;
         if (w) {
+            w.rayTest = (sx, sy, sz, tx, ty, tz) =>
+                this._rayHit(sx, sy, sz, tx, ty, tz);
             w.getLock = () => this._nearestLock();
             w.onHit = (lock) => { if (lock.ref) this._damage(lock.ref, 1); };
             w.onBlast = (x, y, z, r) => this._blast(x, y, z, r);
@@ -397,7 +442,12 @@ export class MartianMode {
         if (this._chip) this._chip.style.display = "none";
         if (this._panel) this._panel.style.display = "none";
         const w = this.weapons;
-        if (w) { w.getLock = null; w.onHit = null; w.onBlast = null; }
+        if (w) {
+            w.rayTest = null;
+            w.getLock = null;
+            w.onHit = null;
+            w.onBlast = null;
+        }
     }
 
     restart() {
@@ -421,7 +471,7 @@ export class MartianMode {
         const ch = this.ch;
         // An annulus around the player: near enough to matter, never on top.
         const a = Math.random() * Math.PI * 2;
-        const d = 90 + Math.random() * 190;
+        const d = 60 + Math.random() * 160;
         m.x = ch.position.x + Math.sin(a) * d;
         m.z = ch.position.z + Math.cos(a) * d;
         const r = Math.hypot(m.x, m.z);
@@ -437,6 +487,102 @@ export class MartianMode {
         m.stagger = 0;
         m.respawn = 0;
         if (m.mesh) m.mesh.isVisible = true;
+    }
+
+    // ------------------------------------------------------------ ammo packs
+    _spawnPack(p) {
+        const ch = this.ch;
+        const a = Math.random() * Math.PI * 2;
+        const d = 70 + Math.random() * 250;
+        p.x = ch.position.x + Math.sin(a) * d;
+        p.z = ch.position.z + Math.cos(a) * d;
+        const r = Math.hypot(p.x, p.z);
+        if (r > WANDER_R) { p.x *= WANDER_R / r; p.z *= WANDER_R / r; }
+        p.alive = true;
+        p.respawn = 0;
+        if (p.mesh) {
+            p.mesh.isVisible = true;
+            p.mesh.position.set(
+                p.x, this.terrain.heightAt(p.x, p.z) + 0.26, p.z);
+        }
+    }
+
+    /** Runs in every mode: the crates stand, beckon, and refill missiles. */
+    _updatePacks(dt) {
+        const ch = this.ch;
+        const w = this.weapons;
+        for (const p of this.packs) {
+            if (!p.alive) {
+                p.respawn -= dt;
+                if (p.respawn <= 0) this._spawnPack(p);
+                continue;
+            }
+            const gy = this.terrain.heightAt(p.x, p.z);
+            // The beacon: a slow fountain of charged grains off the crate.
+            if (this.spray && Math.random() < 0.45) {
+                this.spray.emit(
+                    p.x + (Math.random() - 0.5) * 0.4,
+                    gy + 0.5, p.z + (Math.random() - 0.5) * 0.4,
+                    (Math.random() - 0.5) * 0.4,
+                    1.6 + Math.random() * 1.4,
+                    (Math.random() - 0.5) * 0.4,
+                    0.022 + Math.random() * 0.018,
+                    0.6 + Math.random() * 0.5,
+                    1, 0.4
+                );
+            }
+            const d = Math.hypot(
+                p.x - ch.position.x,
+                gy + 0.3 - ch.position.y,
+                p.z - ch.position.z
+            );
+            if (d < PACK_R && w && w.missiles < AMMO_CAP) {
+                w.missiles = Math.min(AMMO_CAP, w.missiles + PACK_AMMO);
+                w.onAmmo?.(w.missiles);
+                ch.ammoPickup = true;
+                p.alive = false;
+                p.respawn = PACK_RESPAWN;
+                if (p.mesh) p.mesh.isVisible = false;
+            }
+        }
+    }
+
+    /**
+     * The laser's hit test: the nearest live martian within arm's width of
+     * the fired ray, if any — aim is the whole game now, the lock is gone.
+     */
+    _rayHit(sx, sy, sz, tx, ty, tz) {
+        const dx = tx - sx, dy = ty - sy, dz = tz - sz;
+        const len2 = dx * dx + dy * dy + dz * dz;
+        if (len2 < 1e-6) return null;
+        let best = null, bestU = 2;
+        for (const m of this.martians) {
+            if (!m.alive) continue;
+            const my = this.terrain.heightAt(m.x, m.z) + 1.0;
+            const u = ((m.x - sx) * dx + (my - sy) * dy + (m.z - sz) * dz) / len2;
+            if (u < 0 || u > 1) continue;
+            const px = sx + dx * u, py = sy + dy * u, pz = sz + dz * u;
+            const d = Math.hypot(m.x - px, my - py, m.z - pz);
+            if (d < 1.9 && u < bestU) {
+                bestU = u;
+                best = { x: m.x, y: my, z: m.z, ref: m };
+            }
+        }
+        return best;
+    }
+
+    /** Mini-map markers: foes and ammo, drawn by the chart. */
+    mapMarkers() {
+        const out = [];
+        if (this.active) {
+            for (const m of this.martians) {
+                if (m.alive) out.push({ x: m.x, z: m.z, kind: "foe" });
+            }
+        }
+        for (const p of this.packs) {
+            if (p.alive) out.push({ x: p.x, z: p.z, kind: "ammo" });
+        }
+        return out;
     }
 
     _nearestLock() {
@@ -589,11 +735,16 @@ export class MartianMode {
         ch.boltShock = false;
         ch.martianDown = false;
         ch.martianHit = false;
-        if (!this.active) return;
+        ch.ammoPickup = false;
 
         this._t += dt;
-        this._invuln = Math.max(0, this._invuln - dt);
+        // The crates live in every mode — missiles are scarce everywhere —
+        // so their upkeep and the material's uniforms run outside the gate.
         this._pushUniforms();
+        this._updatePacks(dt);
+        if (!this.active) return;
+
+        this._invuln = Math.max(0, this._invuln - dt);
 
         // The kill/bolt flash, while it lasts.
         if (this._pulse && this.lights) {
@@ -705,19 +856,34 @@ export class MartianMode {
             b.life += dt;
             b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
             if (this.spray) {
-                for (let k = 0; k < 3; k++) {
+                // A fat crackling head you cannot miss...
+                for (let k = 0; k < 6; k++) {
                     this.spray.emit(
-                        b.x + (Math.random() - 0.5) * 0.22,
-                        b.y + (Math.random() - 0.5) * 0.22,
-                        b.z + (Math.random() - 0.5) * 0.22,
+                        b.x + (Math.random() - 0.5) * 0.3,
+                        b.y + (Math.random() - 0.5) * 0.3,
+                        b.z + (Math.random() - 0.5) * 0.3,
                         0, 0, 0,
-                        0.035 + Math.random() * 0.02,
-                        0.07 + Math.random() * 0.05,
+                        0.055 + Math.random() * 0.035,
+                        0.08 + Math.random() * 0.06,
                         1, 14
                     );
                 }
+                // ...towing a lingering tail that marks the whole flight
+                // path, which is what makes the dodge readable.
+                for (let k = 0; k < 3; k++) {
+                    this.spray.emit(
+                        b.x - b.vx * 0.03 * k, b.y - b.vy * 0.03 * k,
+                        b.z - b.vz * 0.03 * k,
+                        (Math.random() - 0.5) * 0.6,
+                        (Math.random() - 0.5) * 0.6,
+                        (Math.random() - 0.5) * 0.6,
+                        0.028 + Math.random() * 0.016,
+                        0.35 + Math.random() * 0.25,
+                        1, 3
+                    );
+                }
             }
-            this.lights?.add(b.x, b.y, b.z, 6, 0.35, 1.0, 0.45, 9);
+            this.lights?.add(b.x, b.y, b.z, 8, 0.35, 1.0, 0.45, 15);
 
             const pd = Math.hypot(
                 b.x - ch.position.x,

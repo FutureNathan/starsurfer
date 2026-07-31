@@ -34,6 +34,7 @@ import { FlightWeapons } from "./spells/flightWeapons.js";
 import { MartianMode } from "./game/martians.js";
 import { Overlay } from "./ui/overlay.js";
 import { initMinimap } from "./ui/minimap.js";
+import { initHud } from "./ui/hud.js";
 import { Sky } from "./render/sky.js";
 import { ShadowSystem } from "./render/shadows.js";
 import { Terrain } from "./terrain/terrain.js";
@@ -262,6 +263,13 @@ async function boot() {
     // After warm-up, so the sun the relief is shaded under is the one the
     // scene settled on. Renders its whole chart here, once — see the module.
     const minimap = initMinimap(terrain, sky, character);
+    minimap.setMarkers(() => martians.mapMarkers());
+
+    // The reticle and the missile counter.
+    const hud = initHud();
+    hud.setAmmo(weapons.missiles);
+    weapons.onAmmo = (n) => hud.setAmmo(n);
+    weapons.onDry = () => hud.flashDry();
 
     // ------------------------------------------------------------- run loop
     let prev = performance.now();

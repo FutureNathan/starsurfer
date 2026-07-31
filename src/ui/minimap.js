@@ -126,6 +126,9 @@ export function initMinimap(terrain, sky, character) {
     const lm = landmarkPoses(Number(S.worldSeed));
     const INK = (a) => `rgba(255, 246, 224, ${a})`;
 
+    /** Live markers (foes, ammo) provided by whoever owns them. */
+    let markersFn = null;
+
     function marks() {
         const k = size / (RANGE * 2); // px per metre
         const s = size / 168;
@@ -164,6 +167,8 @@ export function initMinimap(terrain, sky, character) {
     }
 
     return {
+        /** Provide (or clear) the live-marker source. */
+        setMarkers(fn) { markersFn = fn; },
         /** Once per frame: blit the portrait, draw the rider. */
         frame() {
             const now = Math.round(cssSize() * dpr);
@@ -202,6 +207,25 @@ export function initMinimap(terrain, sky, character) {
             ctx.stroke();
 
             marks();
+
+            // Live markers: green for martians, gold for ammo crates —
+            // inside the rotation, so they turn with the world.
+            const mk = markersFn?.();
+            if (mk && mk.length) {
+                const s2 = size / 168;
+                for (const p of mk) {
+                    ctx.beginPath();
+                    ctx.arc(toMap(p.x), toMap(p.z),
+                        (p.kind === "ammo" ? 2.3 : 2.8) * s2, 0, Math.PI * 2);
+                    ctx.fillStyle = p.kind === "ammo"
+                        ? "rgba(255, 214, 110, 0.95)"
+                        : "rgba(110, 255, 150, 0.95)";
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+                    ctx.lineWidth = 1;
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
 
             // The rider: an arrow at their position, nose to their facing.
             // Forward is (sin f, cos f) in world x/z, which maps to

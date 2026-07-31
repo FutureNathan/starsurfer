@@ -75,6 +75,9 @@ export function initInput(canvas, hooks) {
 
     document.addEventListener("pointerlockchange", () => {
         input.locked = document.pointerLockElement === canvas;
+        // The HUD's reticle keys off this: crosshair only when the mouse is
+        // the aim, never alongside a real cursor.
+        document.body.classList.toggle("locked", input.locked);
         if (!input.locked) {
             // Drop held state so the character doesn't run off while unfocused.
             for (const k in keys) keys[k] = false;

@@ -56,13 +56,24 @@ export class FlightWeapons {
 
         /**
          * Mode hooks, set by whoever owns targets (Martian Hunt today).
-         * `getLock()` may return {x,y,z,ref} to override the aim with a
-         * locked target; `onHit(lock)` fires when a laser takes it;
-         * `onBlast(x,y,z,r)` fires at every rocket detonation.
+         * `rayTest(sx,sy,sz,tx,ty,tz)` may return {x,y,z,ref} where the
+         * laser's ray actually crosses a target — the laser is pure aim;
+         * `getLock()` may return a lock for the MISSILE only; `onHit(hit)`
+         * fires when a laser connects; `onBlast(x,y,z,r)` at detonation.
          */
+        this.rayTest = null;
         this.getLock = null;
         this.onHit = null;
         this.onBlast = null;
+
+        /**
+         * Missile ammo. Lasers are the sidearm — free forever; the guided
+         * missile is spent ordnance, refilled by the crates standing out on
+         * the moon. `onAmmo` tells the HUD; `onDry` is the empty *click*.
+         */
+        this.missiles = 2;
+        this.onAmmo = null;
+        this.onDry = null;
     }
 
     /**
@@ -92,11 +103,15 @@ export class FlightWeapons {
     _fireLaser() {
         const ch = this.ch;
         this._aim(this._hit);
-        // A locked target beats the aim point: the lock is the whole deal
-        // of hunting from the air.
-        const lock = this.getLock?.();
-        if (lock) {
-            this._hit.x = lock.x; this._hit.y = lock.y; this._hit.z = lock.z;
+        // The laser is pure aim: no lock, just the ray — tested against
+        // whatever the mode has standing in it. A crossing shortens the
+        // beam to the thing it hit.
+        const hit = this.rayTest?.(
+            ch.position.x, ch.position.y + 1.1, ch.position.z,
+            this._hit.x, this._hit.y, this._hit.z
+        ) || null;
+        if (hit) {
+            this._hit.x = hit.x; this._hit.y = hit.y; this._hit.z = hit.z;
         }
         const hx = this._hit.x, hy = this._hit.y, hz = this._hit.z;
 
@@ -129,7 +144,7 @@ export class FlightWeapons {
         };
         this._beams.push(beam);
         this._beamTick(beam);
-        if (lock) this.onHit?.(lock);
+        if (hit) this.onHit?.(hit);
         ch.firedLaser = true;
     }
 
@@ -170,6 +185,14 @@ export class FlightWeapons {
 
     _fireRocket() {
         const ch = this.ch;
+        // Spent ordnance: no crate, no rocket — just the empty click.
+        if (this.missiles <= 0) {
+            ch.dryFire = true;
+            this.onDry?.();
+            return;
+        }
+        this.missiles -= 1;
+        this.onAmmo?.(this.missiles);
         this._aim(this._hit);
         const lock = this.getLock?.();
         if (lock) {
@@ -233,6 +256,7 @@ export class FlightWeapons {
         ch.firedLaser = false;
         ch.firedRocket = false;
         ch.rocketBoom = false;
+        ch.dryFire = false;
 
         // Fire from anywhere — foot, board, or air. The pack was the gate
         // once, but a shooter arms the astronaut, not the jetpack.
