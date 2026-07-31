@@ -59,16 +59,15 @@ const JUMP_V = 4.3;
 const AIR_G = 6.8;
 
 /**
- * The jetpack: double-tap the Delete key and hold. The thrust axis is the
- * *body* axis and the body follows the aim — see the flight branch — so the
- * one speed here is simply how fast he goes wherever the helmet points.
- * Letting go hands straight back to the ordinary ballistic fall and
- * landing. No fuel — the hold is the limit.
+ * The jetpack: hold the Delete key. The thrust axis is the *body* axis and
+ * the body follows the aim — see the flight branch — so the one speed here
+ * is simply how fast he goes wherever the helmet points. Letting go hands
+ * straight back to the ordinary ballistic fall and landing; touching the
+ * ground disarms it, and a fresh press is needed to light it again. No
+ * fuel — the hold is the limit.
  */
 const JET_FLY = 17;
 const JET_CEIL = 36;
-/** Seconds between the two taps that arm it. */
-const JET_TAP = 0.45;
 
 export class CharacterController {
     /**
@@ -159,7 +158,6 @@ export class CharacterController {
         /** 1 at a hard flight touchdown, decaying: the three-point landing. */
         this.heroLand = 0;
         this._jetArm = false;
-        this._jetTapAt = -9;
         this._prevJetKey = false;
         this._clock = 0;
         /** Visual-only spin the figure adds to its stance during the trick. */
@@ -198,12 +196,12 @@ export class CharacterController {
         rig.getFlatForward(_fwd);
         rig.getFlatRight(_right);
 
-        // ---- the jetpack gesture: double-tap Delete, hold to fly ----------
+        // ---- the jetpack gesture: press Delete and hold -------------------
+        // The arm bit exists for one reason: a landing clears it, so a key
+        // still held through a touchdown does not relight the pack — that
+        // takes a fresh press.
         const jk = input.jetKey;
-        if (jk && !this._prevJetKey) {
-            if (this._clock - this._jetTapAt < JET_TAP) this._jetArm = true;
-            this._jetTapAt = this._clock;
-        }
+        if (jk && !this._prevJetKey) this._jetArm = true;
         if (!jk) this._jetArm = false;
         this._prevJetKey = jk;
         const wantJet = this._jetArm && jk;

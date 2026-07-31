@@ -39,7 +39,7 @@ const SECTIONS = [
         ["zoom", "wheel"],
         ["sprint · trick jump", "shift"],
         ["star-surf · hold", "right·mouse"],
-        ["jetpack · double-tap, hold", "delete"],
+        ["jetpack · hold", "delete"],
         ["laser / rocket · in flight", "click double·click"],
     ]],
     ["the five powers", [

@@ -19,8 +19,15 @@ import { POWERS } from "./powers.js";
 
 /** Seconds between clicks that makes the second one a rocket. */
 const DOUBLE = 0.33;
-/** Rocket flight speed, m/s. */
-const ROCKET_V = 38;
+/** Seconds the laser beam stays lit. */
+const BEAM_TIME = 0.7;
+/**
+ * Rocket cruise speed, m/s. Slow enough to *watch*: the missile pops off
+ * the pack upward, then banks onto its locked target — the whole arc is
+ * the point, and at the old thirty-eight it was over before the eye found
+ * it.
+ */
+const ROCKET_V = 26;
 
 export class FlightWeapons {
     /**
@@ -40,7 +47,10 @@ export class FlightWeapons {
         this._lastFire = -9;
         /** @type {{x:number,y:number,z:number,ttl:number,max:number,big:number}[]} */
         this._pulses = [];
-        /** @type {{x:number,y:number,z:number,vx:number,vy:number,vz:number,life:number}[]} */
+        /** @type {{tx:number,ty:number,tz:number,ttl:number}[]} */
+        this._beams = [];
+        /** @type {{x:number,y:number,z:number,vx:number,vy:number,vz:number,
+         *          tx:number,ty:number,tz:number,life:number}[]} */
         this._rockets = [];
         this._hit = { x: 0, y: 0, z: 0 };
     }
@@ -73,29 +83,13 @@ export class FlightWeapons {
         const ch = this.ch;
         this._aim(this._hit);
         const hx = this._hit.x, hy = this._hit.y, hz = this._hit.z;
-        const sx = ch.position.x, sy = ch.position.y + 1.1, sz = ch.position.z;
-        const dx = hx - sx, dy = hy - sy, dz = hz - sz;
-        const dist = Math.hypot(dx, dy, dz) || 1;
 
-        // The bolt: grains down the whole ray, alive for a blink.
-        const n = Math.min(80, Math.max(10, (dist / 1.1) | 0));
-        const sp = this.spray;
-        for (let i = 0; i < n; i++) {
-            const u = (i + Math.random() * 0.8) / n;
-            sp.emit(
-                sx + dx * u, sy + dy * u, sz + dz * u,
-                0, 0, 0,
-                0.024 + Math.random() * 0.012,
-                0.09 + Math.random() * 0.07,
-                1,
-                12
-            );
-        }
-        // The scorch, and the sparks off it.
+        // The scorch, once, and the first fan of sparks off it.
         this.terrain.deform.brush(
             hx, hz, 0.35, 0.04, 0.03, 0.6, 0.45,
             0, 1, 0.8
         );
+        const sp = this.spray;
         for (let i = 0; i < 16; i++) {
             const a = Math.random() * Math.PI * 2;
             sp.emit(
@@ -109,21 +103,68 @@ export class FlightWeapons {
                 1.2
             );
         }
-        this._pulses.push({ x: hx, y: hy + 0.4, z: hz, ttl: 0.22, max: 0.22, big: 0 });
+        // The beam itself lives as state: the target stays where it was
+        // struck, the origin rides the flyer, and `_beamTick` keeps the
+        // line dense every frame until it dies — a beam you can see, held
+        // long enough to mean it.
+        const beam = { tx: hx, ty: hy, tz: hz, ttl: BEAM_TIME };
+        this._beams.push(beam);
+        this._beamTick(beam);
         ch.firedLaser = true;
+    }
+
+    /** One frame of beam: a run of short-lived grains down the current ray. */
+    _beamTick(b) {
+        const ch = this.ch;
+        const sx = ch.position.x, sy = ch.position.y + 1.1, sz = ch.position.z;
+        const dx = b.tx - sx, dy = b.ty - sy, dz = b.tz - sz;
+        const dist = Math.hypot(dx, dy, dz) || 1;
+        const n = Math.min(26, Math.max(8, (dist / 2.6) | 0));
+        const sp = this.spray;
+        for (let i = 0; i < n; i++) {
+            const u = Math.random();
+            sp.emit(
+                sx + dx * u, sy + dy * u, sz + dz * u,
+                0, 0, 0,
+                0.030 + Math.random() * 0.016,
+                0.08 + Math.random() * 0.05,
+                1,
+                14
+            );
+        }
+        // A trickle of sparks at the struck point, all beam long.
+        for (let i = 0; i < 2; i++) {
+            const a = Math.random() * Math.PI * 2;
+            sp.emit(
+                b.tx, b.ty + 0.05, b.tz,
+                Math.cos(a) * (0.8 + Math.random() * 2),
+                1.0 + Math.random() * 2.2,
+                Math.sin(a) * (0.8 + Math.random() * 2),
+                0.016 + Math.random() * 0.018,
+                0.25 + Math.random() * 0.35,
+                1,
+                1.2
+            );
+        }
     }
 
     _fireRocket() {
         const ch = this.ch;
         this._aim(this._hit);
         const sx = ch.position.x, sy = ch.position.y + 1.0, sz = ch.position.z;
-        let dx = this._hit.x - sx, dy = this._hit.y - sy, dz = this._hit.z - sz;
+        const dx = this._hit.x - sx, dy = this._hit.y - sy, dz = this._hit.z - sz;
         const l = Math.hypot(dx, dy, dz) || 1;
+        // Launched *upward* off the pack, mostly — the guidance below banks
+        // it onto the locked target, and that pop-then-curve is the whole
+        // "guided missile" read.
+        const lx = dx / l * 0.45, ly = dy / l * 0.45 + 0.9, lz = dz / l * 0.45;
+        const ll = Math.hypot(lx, ly, lz) || 1;
         this._rockets.push({
             x: sx, y: sy, z: sz,
-            vx: (dx / l) * ROCKET_V,
-            vy: (dy / l) * ROCKET_V,
-            vz: (dz / l) * ROCKET_V,
+            vx: (lx / ll) * ROCKET_V,
+            vy: (ly / ll) * ROCKET_V,
+            vz: (lz / ll) * ROCKET_V,
+            tx: this._hit.x, ty: this._hit.y, tz: this._hit.z,
             life: 0,
         });
         ch.firedRocket = true;
@@ -174,29 +215,67 @@ export class FlightWeapons {
             this._lastFire = this._t;
         }
 
-        // Rockets fly; the ground ends them, and a spent motor ends them.
+        // The beams: each keeps its line dense until it burns out.
+        const bm = this._beams;
+        for (let i = bm.length - 1; i >= 0; i--) {
+            const b = bm[i];
+            b.ttl -= dt;
+            if (b.ttl <= 0) { bm.splice(i, 1); continue; }
+            this._beamTick(b);
+            const ion0 = POWERS.ion;
+            const bk = b.ttl / BEAM_TIME;
+            this.lights.add(b.tx, b.ty + 0.4, b.tz, 5,
+                ion0.hue[0], ion0.hue[1], ion0.hue[2], 10 * bk);
+        }
+
+        // Rockets fly: steered onto their locked target, the ground or the
+        // proximity fuse ends them, and a spent motor ends them quietly.
         const rk = this._rockets;
         for (let i = rk.length - 1; i >= 0; i--) {
             const r = rk[i];
             r.life += dt;
+            // Guidance: the velocity banks toward the target at a rate that
+            // makes the arc legible — launch up, curve over, come down.
+            const gx = r.tx - r.x, gy = r.ty - r.y, gz = r.tz - r.z;
+            const gd = Math.hypot(gx, gy, gz) || 1;
+            const gk = Math.min(1, 3.2 * dt);
+            r.vx += ((gx / gd) * ROCKET_V - r.vx) * gk;
+            r.vy += ((gy / gd) * ROCKET_V - r.vy) * gk;
+            r.vz += ((gz / gd) * ROCKET_V - r.vz) * gk;
             r.x += r.vx * dt; r.y += r.vy * dt; r.z += r.vz * dt;
-            // Exhaust off the tail.
-            for (let k = 0; k < 2; k++) {
+
+            // The missile itself: a fat glowing slug at the head, re-drawn
+            // every frame, with exhaust peeling off behind it.
+            for (let k = 0; k < 5; k++) {
                 this.spray.emit(
-                    r.x - r.vx * 0.02, r.y - r.vy * 0.02, r.z - r.vz * 0.02,
-                    (Math.random() - 0.5) * 1.2,
-                    (Math.random() - 0.5) * 1.2,
-                    (Math.random() - 0.5) * 1.2,
-                    0.02 + Math.random() * 0.02,
-                    0.12 + Math.random() * 0.12,
+                    r.x + (Math.random() - 0.5) * 0.14,
+                    r.y + (Math.random() - 0.5) * 0.14,
+                    r.z + (Math.random() - 0.5) * 0.14,
+                    0, 0, 0,
+                    0.05 + Math.random() * 0.03,
+                    0.07 + Math.random() * 0.05,
                     1,
-                    8
+                    14
+                );
+            }
+            for (let k = 0; k < 3; k++) {
+                this.spray.emit(
+                    r.x - r.vx * 0.03, r.y - r.vy * 0.03, r.z - r.vz * 0.03,
+                    (Math.random() - 0.5) * 1.4,
+                    (Math.random() - 0.5) * 1.4,
+                    (Math.random() - 0.5) * 1.4,
+                    0.022 + Math.random() * 0.022,
+                    0.25 + Math.random() * 0.20,
+                    1,
+                    5
                 );
             }
             const ion = POWERS.ion;
-            this.lights.add(r.x, r.y, r.z, 5, ion.hue[0], ion.hue[1], ion.hue[2], 5);
-            if (r.y <= this.terrain.heightAt(r.x, r.z) + 0.2 || r.life > 4.5) {
-                if (r.life <= 4.5) this._explode(r);
+            this.lights.add(r.x, r.y, r.z, 7, ion.hue[0], ion.hue[1], ion.hue[2], 9);
+            const nearTarget = gd < 2.0;
+            if (nearTarget || r.y <= this.terrain.heightAt(r.x, r.z) + 0.2
+                || r.life > 6) {
+                if (r.life <= 6) this._explode(r);
                 rk.splice(i, 1);
             }
         }
