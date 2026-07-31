@@ -246,6 +246,7 @@ export class MartianMode {
                 uniforms: [
                     "world", "viewProjection", "cameraPosition",
                     "sunDir", "sunRadiance", "shR", "ambientIntensity",
+                    "hitFlash",
                     "fogDensity", "fogHeightFalloff", "fogStart", "aerialStrength",
                 ],
                 samplers: ["skyLUT"],
@@ -255,6 +256,9 @@ export class MartianMode {
         proto.material = mat;
         this.material = mat;
         this._scene = scene;
+        /** Every live material — the base (crates wear it) plus one clone
+         *  per martian, so each can carry its own red hit-flash. */
+        this._mats = [mat];
 
         for (let i = 0; i < COUNT; i++) {
             const m = proto.clone("mz" + i);
@@ -262,8 +266,11 @@ export class MartianMode {
             m.isPickable = false;
             m.alwaysSelectAsActiveMesh = true;
             m.renderingGroupId = 1;
-            m.material = mat;
+            const mi = mat.clone("martianMat" + i);
+            m.material = mi;
+            this._mats.push(mi);
             this.martians[i].mesh = m;
+            this.martians[i].mat = mi;
         }
         this._proto = proto;
 
@@ -296,21 +303,23 @@ export class MartianMode {
         }
     }
 
-    /** Per-frame scalar uniforms off the live sky — mirrors the terrain's. */
+    /** Per-frame scalar uniforms off the live sky — mirrors the terrain's,
+     *  for the base material and every martian's own clone. */
     _pushUniforms() {
-        const m = this.material;
         const sky = this.sky;
-        if (!m || !sky || !this._scene) return;
-        m.setVector3("cameraPosition", this._scene.activeCamera.globalPosition);
-        m.setVector3("sunDir", sky.sunDir);
-        m.setColor3("sunRadiance", sky.sunRadiance);
-        m.setArray4("shR", sky.sh);
-        m.setFloat("ambientIntensity", S.ambientIntensity);
-        m.setTexture("skyLUT", sky.lut);
-        m.setFloat("fogDensity", S.fogDensity);
-        m.setFloat("fogHeightFalloff", S.fogHeightFalloff);
-        m.setFloat("fogStart", S.fogStart);
-        m.setFloat("aerialStrength", S.aerialStrength);
+        if (!this._mats || !sky || !this._scene) return;
+        for (const m of this._mats) {
+            m.setVector3("cameraPosition", this._scene.activeCamera.globalPosition);
+            m.setVector3("sunDir", sky.sunDir);
+            m.setColor3("sunRadiance", sky.sunRadiance);
+            m.setArray4("shR", sky.sh);
+            m.setFloat("ambientIntensity", S.ambientIntensity);
+            m.setTexture("skyLUT", sky.lut);
+            m.setFloat("fogDensity", S.fogDensity);
+            m.setFloat("fogHeightFalloff", S.fogHeightFalloff);
+            m.setFloat("fogStart", S.fogStart);
+            m.setFloat("aerialStrength", S.aerialStrength);
+        }
     }
 
     // --------------------------------------------------------------- the UI
@@ -412,9 +421,13 @@ export class MartianMode {
         this._bolts.length = 0;
         this._invuln = INVULN;
         for (const m of this.martians) this._spawn(m);
+        for (const p of this.packs) this._spawnPack(p);
         if (this._chip) {
             this._chip.style.display = "";
             this._chipText();
+        }
+        if (typeof document !== "undefined") {
+            document.body.classList.add("combat");
         }
         // While the hunt is on: the LASER is pure aim — its ray is tested
         // against the martians, one point of damage on a true hit — and only
@@ -422,6 +435,7 @@ export class MartianMode {
         // A blast is the full three points, the heavy answer.
         const w = this.weapons;
         if (w) {
+            w.armed = true;
             w.rayTest = (sx, sy, sz, tx, ty, tz) =>
                 this._rayHit(sx, sy, sz, tx, ty, tz);
             w.getLock = () => this._nearestLock();
@@ -439,10 +453,20 @@ export class MartianMode {
             m.alive = false;
             if (m.mesh) m.mesh.isVisible = false;
         }
+        // The crates leave with the mode — free roam carries no ordnance.
+        for (const p of this.packs) {
+            p.alive = false;
+            p.respawn = 0;
+            if (p.mesh) p.mesh.isVisible = false;
+        }
         if (this._chip) this._chip.style.display = "none";
         if (this._panel) this._panel.style.display = "none";
+        if (typeof document !== "undefined") {
+            document.body.classList.remove("combat");
+        }
         const w = this.weapons;
         if (w) {
+            w.armed = false;
             w.rayTest = null;
             w.getLock = null;
             w.onHit = null;
@@ -611,6 +635,7 @@ export class MartianMode {
         if (!m.alive) return;
         m.hp -= amount;
         const gy = this.terrain.heightAt(m.x, m.z);
+        m.flash = 1;
         if (m.hp > 0) {
             m.stagger = STAGGER;
             this.ch.martianHit = true;
@@ -738,12 +763,10 @@ export class MartianMode {
         ch.ammoPickup = false;
 
         this._t += dt;
-        // The crates live in every mode — missiles are scarce everywhere —
-        // so their upkeep and the material's uniforms run outside the gate.
-        this._pushUniforms();
-        this._updatePacks(dt);
         if (!this.active) return;
 
+        this._pushUniforms();
+        this._updatePacks(dt);
         this._invuln = Math.max(0, this._invuln - dt);
 
         // The kill/bolt flash, while it lasts.
@@ -822,6 +845,7 @@ export class MartianMode {
             }
 
             m.bob += dt * (speed > 1 ? 9 : 2);
+            m.flash = Math.max(0, (m.flash || 0) - dt * 4);
             if (m.mesh) {
                 m.mesh.position.set(
                     m.x,
@@ -831,6 +855,7 @@ export class MartianMode {
                 );
                 m.mesh.rotation.y = m.heading;
                 m.mesh.rotation.x = speed > 1 ? 0.14 : 0.02;
+                m.mat?.setFloat("hitFlash", m.flash);
             }
 
             // Dust off the boots at the stride rate.

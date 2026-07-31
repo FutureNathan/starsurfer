@@ -784,6 +784,18 @@ export function initAudio() {
                 e2.connect(e2g);
                 e2.start(t); e2.stop(t + 0.5);
                 reap(e2, e2g);
+                // The suit's own protest: two falling alarm beeps after the
+                // crack, so a hit is unambiguous even mid-chaos.
+                for (let i = 0; i < 2; i++) {
+                    const ao = ctx.createOscillator();
+                    ao.type = "square";
+                    ao.frequency.value = i === 0 ? 880 : 620;
+                    const ag = env(t + 0.16 + i * 0.14, 0.10, 0.008, 0.09);
+                    ao.connect(ag);
+                    ao.start(t + 0.16 + i * 0.14);
+                    ao.stop(t + 0.16 + i * 0.14 + 0.12);
+                    reap(ao, ag);
+                }
             }
             if (ch.martianDown) {
                 // The pop of the kill under the arcade confirm.
@@ -825,17 +837,24 @@ export function initAudio() {
                 reap(dsrc, dlp, dg);
             }
 
-            // A hit that did not kill: a short metallic tick, so the count
-            // to three is audible.
+            // The hit-marker: a crisp tick with a bright ping over it — the
+            // sound of a shot that landed, clear over everything else.
             if (ch.martianHit) {
                 const o = ctx.createOscillator();
                 o.type = "triangle";
                 o.frequency.setValueAtTime(1250, t);
                 o.frequency.exponentialRampToValueAtTime(700, t + 0.07);
-                const og3 = env(t, 0.16, 0.004, 0.08);
+                const og3 = env(t, 0.32, 0.004, 0.09);
                 o.connect(og3);
-                o.start(t); o.stop(t + 0.1);
+                o.start(t); o.stop(t + 0.12);
                 reap(o, og3);
+                const ping = ctx.createOscillator();
+                ping.type = "sine";
+                ping.frequency.value = 1480;
+                const pg2 = env(t, 0.18, 0.003, 0.14);
+                ping.connect(pg2);
+                ping.start(t); ping.stop(t + 0.18);
+                reap(ping, pg2);
             }
 
             // The superhero landing: a real thump — a pitch-dropping thud

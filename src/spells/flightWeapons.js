@@ -31,13 +31,14 @@ const ROCKET_V = 26;
 
 export class FlightWeapons {
     /**
+     * @param {import("@babylonjs/core/scene").Scene|null} scene null runs headless
      * @param {import("../terrain/terrain.js").Terrain} terrain
      * @param {import("../vfx/particles.js").SprayField} spray
      * @param {import("./spellLights.js").SpellLights} lights
      * @param {import("../character/controller.js").CharacterController} character
      * @param {import("../core/camera.js").CameraRig} rig
      */
-    constructor(terrain, spray, lights, character, rig) {
+    constructor(scene, terrain, spray, lights, character, rig) {
         this.terrain = terrain;
         this.spray = spray;
         this.lights = lights;
@@ -45,10 +46,16 @@ export class FlightWeapons {
         this.rig = rig;
         this._t = 0;
         this._lastFire = -9;
+
+        /** Weapons live only where a mode arms them (Martian Hunt). Free
+         *  roam is a moon and a board — no guns, no crates, no reticle. */
+        this.armed = false;
+
+        /** The solid beam meshes, three shots deep. @type {any[]} */
+        this._beamPool = [];
+        if (scene) this._buildBeams(scene);
         /** @type {{x:number,y:number,z:number,ttl:number,max:number,big:number}[]} */
         this._pulses = [];
-        /** @type {{tx:number,ty:number,tz:number,ttl:number}[]} */
-        this._beams = [];
         /** @type {{x:number,y:number,z:number,vx:number,vy:number,vz:number,
          *          tx:number,ty:number,tz:number,life:number}[]} */
         this._rockets = [];
@@ -74,6 +81,52 @@ export class FlightWeapons {
         this.missiles = 2;
         this.onAmmo = null;
         this.onDry = null;
+    }
+
+    /**
+     * The beam pool: three unit cylinders wearing the additive beam shader,
+     * stretched shot-by-shot from muzzle to mark. Three is plenty — a beam
+     * lives a second and the trigger cannot cycle three in one.
+     */
+    async _buildBeams(scene) {
+        const [{ CreateCylinder }, { ShaderMaterial }, { ShaderLanguage },
+               { Quaternion, Vector3 }, { Constants }] = await Promise.all([
+            import("@babylonjs/core/Meshes/Builders/cylinderBuilder"),
+            import("@babylonjs/core/Materials/shaderMaterial"),
+            import("@babylonjs/core/Materials/shaderLanguage"),
+            import("@babylonjs/core/Maths/math.vector"),
+            import("@babylonjs/core/Engines/constants"),
+        ]);
+        this._Q = Quaternion;
+        this._up = new Vector3(0, 1, 0);
+        this._dir = new Vector3(0, 1, 0);
+        for (let i = 0; i < 3; i++) {
+            const mesh = CreateCylinder("beam" + i,
+                { height: 1, diameter: 1, tessellation: 12 }, scene);
+            const mat = new ShaderMaterial("beamMat" + i, scene,
+                { vertex: "beam", fragment: "beam" },
+                {
+                    attributes: ["position"],
+                    uniforms: ["world", "viewProjection", "beamColor", "intensity"],
+                    needAlphaBlending: true,
+                    shaderLanguage: ShaderLanguage.WGSL,
+                });
+            mat.backFaceCulling = false;
+            mat.alphaMode = Constants.ALPHA_ADD;
+            mat.disableDepthWrite = true;
+            const ion = POWERS.ion;
+            mat.setVector3("beamColor",
+                new Vector3(ion.hue[0], ion.hue[1], ion.hue[2]));
+            mat.setFloat("intensity", 0);
+            mesh.material = mat;
+            mesh.isVisible = false;
+            mesh.isPickable = false;
+            mesh.alwaysSelectAsActiveMesh = true;
+            mesh.renderingGroupId = 1;
+            mesh.rotationQuaternion = new Quaternion();
+            this._beamPool.push({ mesh, mat, ttl: 0, tx: 0, ty: 0, tz: 0 });
+        }
+        this._beamNext = 0;
     }
 
     /**
@@ -134,53 +187,26 @@ export class FlightWeapons {
                 1.2
             );
         }
-        // The beam itself lives as state: BOTH endpoints lock at the moment
-        // of firing — a dead-straight rod of light standing in the world
-        // for its full second, however the flyer moves — and `_beamTick`
-        // keeps the line dense every frame until it dies.
-        const beam = {
-            sx: ch.position.x, sy: ch.position.y + 1.1, sz: ch.position.z,
-            tx: hx, ty: hy, tz: hz, ttl: BEAM_TIME,
-        };
-        this._beams.push(beam);
-        this._beamTick(beam);
+        // The rod of light itself: one solid mesh, planted muzzle-to-mark,
+        // both endpoints locked at the moment of firing. No particles — a
+        // beam is a beam.
+        if (this._beamPool.length) {
+            const b = this._beamPool[this._beamNext];
+            this._beamNext = (this._beamNext + 1) % this._beamPool.length;
+            const sx = ch.position.x, sy = ch.position.y + 1.1, sz = ch.position.z;
+            const dx = hx - sx, dy = hy - sy, dz = hz - sz;
+            const len = Math.hypot(dx, dy, dz) || 1;
+            b.mesh.position.set(sx + dx / 2, sy + dy / 2, sz + dz / 2);
+            b.mesh.scaling.set(0.22, len, 0.22);
+            this._dir.set(dx / len, dy / len, dz / len);
+            this._Q.FromUnitVectorsToRef(
+                this._up, this._dir, b.mesh.rotationQuaternion);
+            b.mesh.isVisible = true;
+            b.ttl = BEAM_TIME;
+            b.tx = hx; b.ty = hy; b.tz = hz;
+        }
         if (hit) this.onHit?.(hit);
         ch.firedLaser = true;
-    }
-
-    /** One frame of beam: a dense run of very short-lived grains down the
-     *  locked ray. Short lives are what keep the rod crisp — every frame
-     *  the line is mostly new. */
-    _beamTick(b) {
-        const dx = b.tx - b.sx, dy = b.ty - b.sy, dz = b.tz - b.sz;
-        const dist = Math.hypot(dx, dy, dz) || 1;
-        const n = Math.min(42, Math.max(12, (dist / 1.6) | 0));
-        const sp = this.spray;
-        for (let i = 0; i < n; i++) {
-            const u = Math.random();
-            sp.emit(
-                b.sx + dx * u, b.sy + dy * u, b.sz + dz * u,
-                0, 0, 0,
-                0.036 + Math.random() * 0.016,
-                0.05 + Math.random() * 0.04,
-                1,
-                16
-            );
-        }
-        // A trickle of sparks at the struck point, all beam long.
-        for (let i = 0; i < 2; i++) {
-            const a = Math.random() * Math.PI * 2;
-            sp.emit(
-                b.tx, b.ty + 0.05, b.tz,
-                Math.cos(a) * (0.8 + Math.random() * 2),
-                1.0 + Math.random() * 2.2,
-                Math.sin(a) * (0.8 + Math.random() * 2),
-                0.016 + Math.random() * 0.018,
-                0.25 + Math.random() * 0.35,
-                1,
-                1.2
-            );
-        }
     }
 
     _fireRocket() {
@@ -258,25 +284,41 @@ export class FlightWeapons {
         ch.rocketBoom = false;
         ch.dryFire = false;
 
-        // Fire from anywhere — foot, board, or air. The pack was the gate
-        // once, but a shooter arms the astronaut, not the jetpack.
-        if (input.firePressed) {
+        // Fire from anywhere — foot, board, or air — but only when a mode
+        // has armed the weapons. Free roam carries no guns.
+        if (input.firePressed && this.armed) {
             if (this._t - this._lastFire < DOUBLE) this._fireRocket();
             else this._fireLaser();
             this._lastFire = this._t;
         }
 
-        // The beams: each keeps its line dense until it burns out.
-        const bm = this._beams;
-        for (let i = bm.length - 1; i >= 0; i--) {
-            const b = bm[i];
+        // The beams: solid rods fading over their hold, sparking and lit at
+        // the mark the whole while.
+        const ion0 = POWERS.ion;
+        for (const b of this._beamPool) {
+            if (b.ttl <= 0) continue;
             b.ttl -= dt;
-            if (b.ttl <= 0) { bm.splice(i, 1); continue; }
-            this._beamTick(b);
-            const ion0 = POWERS.ion;
+            if (b.ttl <= 0) {
+                b.mesh.isVisible = false;
+                b.mat.setFloat("intensity", 0);
+                continue;
+            }
             const bk = b.ttl / BEAM_TIME;
+            b.mat.setFloat("intensity", 3 + 27 * bk * bk);
             this.lights.add(b.tx, b.ty + 0.4, b.tz, 6,
                 ion0.hue[0], ion0.hue[1], ion0.hue[2], 16 * bk);
+            if (this.spray && Math.random() < 0.7) {
+                const a = Math.random() * Math.PI * 2;
+                this.spray.emit(
+                    b.tx, b.ty + 0.05, b.tz,
+                    Math.cos(a) * (0.8 + Math.random() * 2),
+                    1.0 + Math.random() * 2.2,
+                    Math.sin(a) * (0.8 + Math.random() * 2),
+                    0.016 + Math.random() * 0.018,
+                    0.25 + Math.random() * 0.35,
+                    1, 1.2
+                );
+            }
         }
 
         // Rockets fly: steered onto their locked target, the ground or the

@@ -12,6 +12,8 @@
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import martianVert from "./martian.vertex.wgsl?raw";
 import martianFrag from "./martian.fragment.wgsl?raw";
+import beamVert from "./beam.vertex.wgsl?raw";
+import beamFrag from "./beam.fragment.wgsl?raw";
 
 import noiseLib from "./lib/noise.wgsl?raw";
 import terrainLib from "./lib/terrain.wgsl?raw";
@@ -113,6 +115,9 @@ const SHADERS = {
     // The martians' suits — Martian Hunt mode.
     martianVertexShader: martianVert,
     martianPixelShader: martianFrag,
+    // The laser's solid rod of light.
+    beamVertexShader: beamVert,
+    beamPixelShader: beamFrag,
 
     prepassPixelShader: prepassFrag,
     terrainPrepassVertexShader: terrainPrepassVert,

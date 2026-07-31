@@ -40,8 +40,8 @@ const SECTIONS = [
         ["sprint · trick jump", "shift"],
         ["star-surf · hold", "right·mouse"],
         ["jetpack · hold", "delete"],
-        ["laser · aim with crosshair", "click"],
-        ["missile · needs ammo crates", "double·click"],
+        ["laser · martian hunt only", "click"],
+        ["missile · hunt, ammo crates", "double·click"],
     ]],
     ["the five powers", [
         ["solar flare", "1"],

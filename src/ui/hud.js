@@ -23,7 +23,7 @@ const CSS = /* css */ `
     pointer-events: none;
     display: none;
 }
-body.locked #xhair { display: block; }
+body.locked.combat #xhair { display: block; }
 #xhair::before {
     content: "";
     position: absolute;
@@ -58,7 +58,7 @@ body.locked #xhair { display: block; }
     display: none;
     transition: color 120ms ease;
 }
-body.locked #ammo { display: block; }
+body.locked.combat #ammo { display: block; }
 #ammo.dry { color: rgba(255, 120, 100, 0.95); }
 `;
 

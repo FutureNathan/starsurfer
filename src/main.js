@@ -174,7 +174,8 @@ async function boot() {
 
     // The flight weapons: laser and rocket, live only while the pack burns.
     // Built entirely from the pools above — no pipelines of their own.
-    const weapons = new FlightWeapons(terrain, spray, spells.lights, character, rig);
+    const weapons = new FlightWeapons(
+        scene, terrain, spray, spells.lights, character, rig);
 
     // Martian Hunt, dormant until the menu's mode page turns it on.
     const martians = new MartianMode({

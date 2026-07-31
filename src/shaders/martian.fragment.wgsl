@@ -17,6 +17,7 @@ uniform sunDir: vec3f;
 uniform sunRadiance: vec3f;
 uniform shR: array<vec4f, 9>;
 uniform ambientIntensity: f32;
+uniform hitFlash: f32;
 uniform fogDensity: f32;
 uniform fogHeightFalloff: f32;
 uniform fogStart: f32;
@@ -48,6 +49,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     let band = smoothstep(1.24, 1.32, lp.y) * (1.0 - smoothstep(1.46, 1.54, lp.y));
     let front = smoothstep(0.06, 0.19, lp.z);
     col += vec3f(0.30, 1.0, 0.42) * band * front * 5.0;
+
+    // The hit-marker on the body itself: the whole suit floods red for the
+    // flash's fraction of a second, emissive so it reads at any range in
+    // any light — you know your shot landed because THEY know.
+    let flash = clamp(uniforms.hitFlash, 0.0, 1.0);
+    col = mix(col, vec3f(5.0, 0.30, 0.22), flash * 0.85);
 
     let dir = normalize(world - uniforms.cameraPosition);
     let t = aerialTransmittance(
