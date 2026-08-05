@@ -1,10 +1,10 @@
 /**
  * On-screen controls, for when the primary pointer is a finger.
  *
- * A thumbstick at the bottom left, the five powers at the bottom right, and the
- * rest of the screen is a look pad. The layout is the one every twin-stick mobile
- * game has converged on, and it converged there for reasons worth stating,
- * because they are what the fiddly parts below are for:
+ * A thumbstick at the bottom left, the five powers plus the two board buttons at
+ * the bottom right, and the rest of the screen is a look pad. The layout is the
+ * one every twin-stick mobile game has converged on, and it converged there for
+ * reasons worth stating, because they are what the fiddly parts below are for:
  *
  *   The stick floats. Its ring is drawn where the thumb lands rather than at a
  *   fixed spot, anywhere in the lower-left quadrant. A fixed stick demands the
@@ -56,6 +56,15 @@ export const touch = {
     /** 0, or 1..5 for the frame a power button was pressed. */
     pressed: 0,
     held2: false,
+    /**
+     * 0, or 1 for the frame TRICK was pressed. A press rather than a hold,
+     * exactly like a power — and it is a separate signal from `sprint` because
+     * the stick is already holding that high through every surf, so a trick
+     * routed through it would never have an edge. See `input.trickPressed`.
+     */
+    trick: 0,
+    /** FLY, held: the pack burns while the thumb is down. */
+    jet: false,
 };
 
 const CSS = `
@@ -99,6 +108,13 @@ const CSS = `
     width: 196px;
     height: 196px;
     pointer-events: auto;
+    /* Without this the browser reads the very first millimetre of a stick push
+       as the start of a pan, takes the gesture for the compositor, and sends a
+       pointercancel — which drops the stick back to centre in the middle of a
+       carve. Cancelling the pointerdown cannot stop it: by then the scroll
+       decision has already been made. The buttons and the canvas both carry
+       this already; the zone was the one interactive surface that did not. */
+    touch-action: none;
 }
 
 #tc-ring, #tc-knob {
@@ -202,6 +218,25 @@ const CSS = `
 }
 .tc-power span { font-size: 8px; }
 
+/* The two board buttons — the trick and the pack.
+ *
+ * They sit in the power fan's two free horns rather than in the fan itself,
+ * and they are deliberately not powers to look at: smaller, and outlined in
+ * the star white instead of the dust violet the five wear. A player reaching
+ * for a power in a hurry is reaching by position and by colour, and a sixth
+ * and seventh circle in the same livery is exactly how a Gravity Well gets
+ * cast when what was wanted was a jump. */
+.tc-board {
+    width: 46px;
+    height: 46px;
+    right: var(--tc-r);
+    bottom: var(--tc-b);
+    border-color: rgba(255, 246, 224, 0.34);
+    background: radial-gradient(circle at 50% 35%,
+        rgba(28, 30, 56, 0.62) 0%, rgba(5, 6, 15, 0.52) 100%);
+}
+.tc-board span { font-size: 8px; opacity: 0.9; }
+
 /* --------------------------------------------------------------- overlay tab */
 
 #tc-gear {
@@ -250,6 +285,12 @@ body.tc-on #hint {
         bottom: calc(var(--tc-b) * 0.86);
     }
     .tc-power span { font-size: 7px; }
+    .tc-board {
+        width: 42px; height: 42px;
+        right: calc(var(--tc-r) * 0.82);
+        bottom: calc(var(--tc-b) * 0.86);
+    }
+    .tc-board span { font-size: 7px; }
 }
 
 /* Landscape on a phone: barely any vertical room, so everything comes in. */
@@ -265,6 +306,8 @@ body.tc-on #hint {
     }
     .tc-power { width: 46px; height: 46px; }
     .tc-power span { font-size: 7px; }
+    .tc-board { width: 42px; height: 42px; }
+    .tc-board span { font-size: 7px; }
     #tc-pad { right: 12px; bottom: 12px; }
 }
 `;
@@ -347,6 +390,33 @@ const ARC = [
 ];
 
 /**
+ * The two board buttons, in the same (right, bottom) frame as `ARC`.
+ *
+ * These are the moves rather than the powers: TRICK pops the board off the
+ * ground and, pressed again in the air, turns the spin into a front flip; FLY
+ * is held, and holds the jetpack lit for as long as the thumb is down.
+ *
+ * Both have to be under the *right* thumb, and that is forced rather than
+ * chosen. Surfing means the left thumb is pinned at the edge of the stick's
+ * ring — that is what surfing *is* here — so it cannot leave to press anything,
+ * and a trick is a thing you do in the middle of a carve.
+ *
+ * Where they go is what is left after the five powers, and the honest answer is
+ * that the fan already fills the comfortable sweep: there is no room for a pair
+ * side by side without moving powers that have their positions for reasons of
+ * their own. So they take the fan's two free horns — TRICK out at the low end,
+ * along the bottom edge, which is the easiest travel there is and the right
+ * place for the button pressed most; FLY at the high end, straight up the right
+ * edge above the fan, which is a longer reach for something entered
+ * deliberately and then held. Both sit inside the radius the fan already
+ * spends, so nothing here asks for a stretch the powers do not.
+ */
+const BOARD = [
+    { key: "trick", label: "TRICK", r: 142, b: 8 },
+    { key: "fly", label: "FLY", r: 10, b: 156 },
+];
+
+/**
  * Mount the controls and start feeding `touch`.
  *
  * @param {HTMLCanvasElement} canvas the look pad
@@ -377,17 +447,47 @@ export function initTouch(canvas, hooks) {
     const pad = root.querySelector("#tc-pad");
     const gear = root.querySelector("#tc-gear");
 
+    /** One circular button on the pad, placed off the (right, bottom) pair. */
+    const mount = (cls, id, label, r, b) => {
+        const el = document.createElement("button");
+        el.className = "tc-btn " + cls;
+        el.id = id;
+        el.setAttribute("aria-label", label);
+        el.style.setProperty("--tc-r", r + "px");
+        el.style.setProperty("--tc-b", b + "px");
+        el.innerHTML = `<span>${label}</span>`;
+        pad.appendChild(el);
+        return el;
+    };
+
     for (let i = 0; i < POWERS.length; i++) {
         const p = POWERS[i];
-        const b = document.createElement("button");
-        b.className = "tc-btn tc-power";
-        b.id = "tc-p" + p.n;
-        b.setAttribute("aria-label", p.label);
-        b.style.setProperty("--tc-r", ARC[i][0] + "px");
-        b.style.setProperty("--tc-b", ARC[i][1] + "px");
-        b.innerHTML = `<span>${p.label}</span>`;
-        pad.appendChild(b);
-        bindPower(b, p.n);
+        const b = mount("tc-power", "tc-p" + p.n, p.label, ARC[i][0], ARC[i][1]);
+        bindButton(
+            b,
+            () => {
+                touch.pressed = p.n;
+                if (p.n === 2) touch.held2 = true;
+            },
+            () => {
+                if (p.n === 2) touch.held2 = false;
+            }
+        );
+    }
+
+    for (const d of BOARD) {
+        const b = mount("tc-board", "tc-" + d.key, d.label, d.r, d.b);
+        if (d.key === "fly") {
+            // Held. The controller wants a fresh press to relight the pack
+            // after a landing, and a hold gives it one for free: the thumb has
+            // to come up and go down again, which is what the key does too.
+            bindButton(b, () => (touch.jet = true), () => (touch.jet = false));
+        } else {
+            // A press, consumed and cleared by `endFrame()` exactly as a power
+            // is — and pressed again in the air it is the flip, because the
+            // controller reads the second edge inside the arc.
+            bindButton(b, () => (touch.trick = 1));
+        }
     }
 
     // --------------------------------------------------------------- stick
@@ -531,25 +631,29 @@ export function initTouch(canvas, hooks) {
     });
 
     /**
-     * Power 2 is a held cast, so its button holds. The other four fire once on
-     * press: `pressed` is consumed and cleared by `endFrame()`, exactly as a
-     * keydown is.
+     * The press/release plumbing every button on the pad shares: capture the
+     * pointer, so a thumb that slides off keeps driving the button it started
+     * on; mirror the state in the `on` class; and swallow the event so no
+     * synthetic mouse click arrives later to fire the same thing twice.
+     *
+     * `down` and `up` are what the button *means* — a one-frame flag for the
+     * momentary ones (the four powers that cast on press, and TRICK), a
+     * boolean set and cleared for the held ones (ION and FLY).
      */
-    function bindPower(btn, n) {
+    function bindButton(btn, down, up) {
         btn.addEventListener("pointerdown", (e) => {
             btn.setPointerCapture(e.pointerId);
             btn.classList.add("on");
-            touch.pressed = n;
-            if (n === 2) touch.held2 = true;
+            down();
             e.preventDefault();
         });
-        const up = (e) => {
+        const release = (e) => {
             btn.classList.remove("on");
-            if (n === 2) touch.held2 = false;
+            up?.();
             if (e) e.preventDefault();
         };
-        btn.addEventListener("pointerup", up);
-        btn.addEventListener("pointercancel", up);
+        btn.addEventListener("pointerup", release);
+        btn.addEventListener("pointercancel", release);
     }
 
     // A backgrounded tab keeps whatever was held, and on a phone that means a
@@ -557,6 +661,7 @@ export function initTouch(canvas, hooks) {
     const release = () => {
         touch.surf = false;
         touch.held2 = false;
+        touch.jet = false;
         touch.moveX = 0;
         touch.moveZ = 0;
         touch.sprint = false;

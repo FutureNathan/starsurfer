@@ -24,10 +24,34 @@ are no textures, no meshes, no HDRIs and no animation data in this repository.
 | `W` `A` `S` `D` | move, relative to the camera |
 | Mouse | look · **Wheel** zoom |
 | `Shift` | sprint on foot · **trick jump** on the board |
-| **Right mouse (hold)** | star-surf — carve across the regolith and throw a luminous wake |
+| **Right mouse or `Space` (hold)** | star-surf — carve across the regolith and throw a luminous wake |
+| `Delete` / `Backspace` (hold) | the jetpack — fly where the helmet points |
 | `1` – `5` | the five powers (`2` is a held cast) |
 | `Esc` | pause menu — frees the mouse, shows the controls |
 | `F1` or `` ` `` | settings and performance overlay |
+
+**Surfing is on two keys, and the second one is not a convenience.** "Hold the
+right button" is a gesture a Mac trackpad does not have: secondary click there
+is a two-finger *tap*, over the instant it happens, so there is nothing to hold
+— which made the headline verb of this demo unreachable for a good share of the
+people arriving on it. `Space` can be held by anybody, on any machine, and it
+sits under the left thumb while the same hand is already steering on WASD.
+
+The right button itself is assembled from more signals than it looks like it
+should need, all of them in `core/input.js`. The context menu is suppressed on
+`window` in the capture phase rather than on the canvas, because under pointer
+lock the event does not reliably arrive at the canvas, and one that gets
+through is not untidy but fatal: the native menu takes the pointer lock down
+with it, and losing the lock is this game's *pause* gesture — so a right-click
+meant to surf produced a context menu and the pause panel instead. The press is
+no longer gated on the lock being held, so a lock that quietly failed can no
+longer take the right button with it. And `contextmenu` doubles as a press
+signal for any browser that has never once sent a right-button `mousedown` —
+conditional, because on Windows that event fires on *release*, and trusting it
+unconditionally would latch the surf on at the moment the button came up.
+Release is layered the same way: `mouseup`, `pointerup`, and a watchdog on
+`buttons` that first has to watch the bit go *up* before it is allowed to
+believe the bit going down.
 
 `Esc` is the player's menu, and it now *hosts* the instrument panel too.
 Escape drops pointer lock (the browser does that part and no page may veto
@@ -81,7 +105,35 @@ they write into the same input struct the keyboard and mouse do.
 | Thumbstick (bottom left) | **the throttle** — nudge to walk, most of the way to run, out to the ring to surf |
 | Two-finger pinch | zoom |
 | Five ringed buttons (bottom right) | the powers · **ION** is held |
+| **TRICK** | pop the board off the ground · again in the air for the flip |
+| **FLY** (hold) | the jetpack, lit for as long as the thumb is down |
 | ⚙ (top right) | settings and performance overlay |
+
+**TRICK and FLY are under the right thumb, and that is forced rather than
+chosen.** Surfing means the left thumb is pinned at the edge of the stick's ring
+— that is what surfing *is* here — so it cannot leave to press anything, and a
+trick is a thing you do in the middle of a carve. Where they go is then whatever
+the five powers have left, and the honest answer is that the fan already fills
+the comfortable sweep: there is no room for a pair side by side without moving
+powers that hold their positions for reasons of their own. So they take the
+fan's two free horns — TRICK out at the low end along the bottom edge, which is
+the easiest travel there is and belongs to the button pressed most; FLY at the
+high end, straight up the right edge, a longer reach for something entered
+deliberately and then held. Both land inside the radius the fan already spends,
+so neither asks for a stretch the powers do not.
+
+They are also deliberately not powers to look at: smaller, and outlined in the
+star white rather than the dust violet the five wear. A thumb reaching for a
+power mid-carve is reaching by position and by colour, and a sixth and seventh
+circle in the same livery is exactly how a Gravity Well gets cast when what was
+wanted was a jump.
+
+TRICK cannot route through `sprint` the way Shift does, and the reason is worth
+stating because it is not obvious: on a keyboard the trick *is* Shift's rising
+edge, but on a touchscreen `sprint` comes from the stick's throttle, which is
+already held high the entire time anyone is surfing. There would be no edge left
+to find. It gets its own one-frame flag, and the controller takes the trick from
+either.
 
 **The camera follows you.** Once the look input has been idle for a beat, the rig
 takes the view back behind the rider's heading, at a rate that scales with speed
@@ -113,6 +165,13 @@ than the floating stick needed: full deflection now means the thumb is genuinely
 at the edge of the ring, which is a place it can be held, rather than "still
 travelling outward", which pinned any moving thumb at the top of the range by
 definition. Surf engages at 0.78 of travel and releases at 0.64.
+
+The stick's zone carries `touch-action: none`, which the buttons and the canvas
+always had and it did not. Without it the browser reads the first millimetre of
+a push as the start of a pan, hands the gesture to the compositor and sends a
+`pointercancel` — and the stick drops back to centre in the middle of a carve.
+Cancelling the `pointerdown` cannot save it; by then the scroll decision has
+already been taken.
 
 Append `?touch=1` to force the controls on for a look at the layout from a
 desktop, or `?touch=0` to force them off.
