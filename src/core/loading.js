@@ -39,7 +39,7 @@ const KEYS = [
     ["W A S D", "move"],
     ["mouse", "look · wheel to zoom"],
     ["shift", "sprint · surf trick"],
-    ["right mouse", "star-surf"],
+    ["right mouse · space", "star-surf · hold"],
     ["1 – 5", "the five powers · 2 is held"],
     ["esc", "menu · pause"],
 ];
@@ -49,6 +49,7 @@ const TOUCH_KEYS = [
     ["thumbstick", "walk · push out to surf"],
     ["two fingers", "zoom"],
     ["five buttons", "powers · ion is held"],
+    ["trick · fly", "pop a trick · hold to fly"],
     ["⚙", "settings and stats"],
 ];
 
@@ -57,7 +58,7 @@ const TOUCH_KEYS = [
  * source as the table above, cut to the three things somebody who skipped the
  * loading screen still needs.
  */
-const HINT = "click to look · wasd to move · right mouse to surf · esc for the menu";
+const HINT = "click to look · wasd to move · space or right mouse to surf · esc for the menu";
 const TOUCH_HINT = "drag to look · nudge the stick to walk · push it out to surf";
 
 /**

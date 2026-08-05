@@ -38,7 +38,7 @@ const SECTIONS = [
         ["look", "mouse"],
         ["zoom", "wheel"],
         ["sprint · trick jump", "shift"],
-        ["star-surf · hold", "right·mouse"],
+        ["star-surf · hold", "right·mouse space"],
         ["jetpack · hold", "delete"],
         ["laser · martian hunt only", "click"],
         ["missile · hunt, ammo crates", "double·click"],
@@ -57,6 +57,8 @@ const SECTIONS_TOUCH = [
     ["surfing", [
         ["look", "drag"],
         ["walk · push out to surf", "stick"],
+        ["trick jump · again in the air to flip", "trick"],
+        ["jetpack · hold", "fly"],
         ["zoom", "two·fingers"],
         ["pause · this menu", "⚙"],
     ]],

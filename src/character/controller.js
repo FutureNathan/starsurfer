@@ -142,7 +142,9 @@ export class CharacterController {
         /**
          * The trick jump. Shift on a moving board pops it off the ground;
          * on foot the same key stays sprint, so nothing anyone has learned
-         * changes. While airborne the ground forces are simply absent — no
+         * changes. On a touchscreen it is the TRICK button, because the
+         * stick's throttle has already spent `sprint` on the surf itself.
+         * While airborne the ground forces are simply absent — no
          * thrust, no scrub, no grip — which is both the physics and the
          * feel: a jump is a commitment.
          */
@@ -250,7 +252,13 @@ export class CharacterController {
         }
 
         this.landed = false;
-        const sprintEdge = input.sprint && !this._prevSprint;
+        // The trick gesture: Shift's rising edge on a keyboard, where the same
+        // key is sprint on foot, or the TRICK button on a touchscreen. The
+        // button cannot come through `sprint` — the stick holds that high for
+        // the whole of a surf, so there would be no edge left to find — so it
+        // arrives as its own one-frame flag. Both feed the pop below and the
+        // mid-air second press that turns the spin into a flip.
+        const sprintEdge = (input.sprint && !this._prevSprint) || input.trickPressed;
         this._prevSprint = input.sprint;
 
         if (!this.airborne) {
